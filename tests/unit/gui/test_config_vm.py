@@ -24,20 +24,20 @@ FULL = textwrap.dedent(
       database: invoicing
       dsn_env: PROD_INVOICING_DSN
       schemas:
-      - cumo-invoicing
-      - public
+        - cumo-invoicing
+        - public
     targets:
-    - label: qa
-      dsn_env: QA_INVOICING_DSN
-      schema_map:
-        cumo-invoicing: invoicing_qa
-    - label: local
-      dsn_env: LOCAL_DSN
-      liquibase:
-        schema: cumo-invoicing
-        table: DATABASECHANGELOG
+      - label: qa
+        dsn_env: QA_INVOICING_DSN
+        schema_map:
+          cumo-invoicing: invoicing_qa
+      - label: local
+        dsn_env: LOCAL_DSN
+        liquibase:
+          schema: cumo-invoicing
+          table: DATABASECHANGELOG
     exclude_schemas:
-    - quartz
+      - quartz
     options:
       fail_on: warning
       max_workers: 2
@@ -143,7 +143,9 @@ class TestValidation:
 
     def test_every_error_is_a_gui_error_not_a_traceback(self, document):
         document.update_source("qa", "dsn_env", "")
-        assert all(isinstance(error, GuiError) for error in document.validate())
+        errors = document.validate()
+        assert errors
+        assert all(isinstance(error, GuiError) for error in errors)
 
     def test_loading_an_invalid_file_raises_a_gui_error(self, tmp_path):
         path = tmp_path / "broken.yaml"
@@ -190,3 +192,102 @@ class TestComments:
 
     def test_a_file_without_comments_is_not_flagged(self, document):
         assert document.had_comments() is False
+
+    def test_a_hash_inside_a_value_is_not_a_comment(self, tmp_path):
+        path = tmp_path / "hash.yaml"
+        path.write_text(FULL.replace("name: invoicing", "name: invoicing#1"))
+        assert ConfigDocument.load(path).had_comments() is False
+
+    def test_an_indented_comment_is_flagged(self, tmp_path):
+        path = tmp_path / "c.yaml"
+        path.write_text(FULL.replace("  host: db-prod", "  # primary\n  host: db-prod"))
+        assert ConfigDocument.load(path).had_comments() is True
+
+
+SECRET = "postgresql://u:s3cret@h/db"
+
+
+class TestCredentialsNeverReachTheFile:
+    def test_a_dsn_in_dsn_env_is_rejected_without_echoing_it(self, document):
+        document.update_source("qa", "dsn_env", SECRET)
+        errors = document.validate()
+        assert errors
+        assert any(error.field == "targets.0.dsn_env" for error in errors)
+        for error in errors:
+            assert "s3cret" not in str(error)
+            assert SECRET not in str(error)
+
+    def test_to_yaml_and_save_refuse_it(self, document, tmp_path):
+        document.update_source("qa", "dsn_env", SECRET)
+        with pytest.raises(GuiError) as exc:
+            document.to_yaml()
+        assert "s3cret" not in str(exc.value)
+        out = tmp_path / "out.yaml"
+        with pytest.raises(GuiError) as exc:
+            document.save(out)
+        assert "s3cret" not in str(exc.value)
+        assert not out.exists()
+
+    def test_the_master_is_checked_too(self, document):
+        document.update_source("prod", "dsn_env", "a b")
+        assert any(error.field == "master.dsn_env" for error in document.validate())
+
+    def test_surrounding_whitespace_is_stripped(self, document):
+        document.update_source("qa", "dsn_env", "  QA_DSN  ")
+        assert document.config.targets[0].dsn_env == "QA_DSN"
+        assert document.validate() == []
+        assert "dsn_env: QA_DSN\n" in document.to_yaml()
+
+
+class TestFurtherEditing:
+    def test_edits_survive_save_and_reload(self, document, tmp_path):
+        document.update_source("prod", "host", "db-prod-2")
+        document.update_source("prod", "schemas", ["a-b", "c"])
+        document.add_target("dev")
+        out = tmp_path / "e.yaml"
+        document.save(out)
+        again = ConfigDocument.load(out).config
+        assert again.master.host == "db-prod-2"
+        assert again.master.schemas == ("a-b", "c")
+        assert [t.label for t in again.targets] == ["qa", "local", "dev"]
+        assert again.targets[2].dsn_env == "DEV_DSN"
+
+    def test_a_comma_separated_string_becomes_schema_names(self, document):
+        document.update_source("prod", "schemas", "a, b-c ,")
+        assert document.config.master.schemas == ("a", "b-c")
+
+    def test_an_unknown_field_is_refused(self, document):
+        with pytest.raises(GuiError, match="hots"):
+            document.update_source("qa", "hots", "x")
+
+    def test_saving_clears_dirty_and_adopts_the_path(self, document, tmp_path):
+        document.update_source("qa", "host", "h")
+        out = tmp_path / "new.yaml"
+        document.save(out)
+        assert document.dirty is False
+        assert document.path == out
+
+    def test_loading_a_directory_of_configs_is_a_gui_error(self, tmp_path):
+        (tmp_path / "a.yaml").write_text(FULL)
+        (tmp_path / "b.yaml").write_text(FULL)
+        with pytest.raises(GuiError, match="single"):
+            ConfigDocument.load(tmp_path)
+
+    def test_sequences_are_indented_under_their_key(self, document):
+        assert "  schemas:\n    - cumo-invoicing\n" in document.to_yaml()
+
+    def test_ignores_file_is_rewritten_on_save_as_elsewhere(self, tmp_path):
+        first = tmp_path / "a"
+        second = tmp_path / "b" / "deeper"
+        first.mkdir()
+        second.mkdir(parents=True)
+        (first / "ignores.yaml").write_text("version: 1\n")
+        (first / "c.yaml").write_text(FULL + "ignores_file: ignores.yaml\n")
+        document = ConfigDocument.load(first / "c.yaml")
+        out = second / "c.yaml"
+        document.save(out)
+        reloaded = ConfigDocument.load(out)
+        assert reloaded.config.ignores_file is not None
+        assert (second / reloaded.config.ignores_file).resolve() == (
+            first / "ignores.yaml"
+        ).resolve()

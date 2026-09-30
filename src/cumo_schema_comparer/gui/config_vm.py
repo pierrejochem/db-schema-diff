@@ -26,6 +26,16 @@ from .errors import GuiError
 #: Keys of a source, in the order a person writes them: identity, then connection, then scope.
 _SOURCE_KEY_ORDER = ("label", "host", "database", "dsn_env", "schemas", "schema_map", "liquibase")
 _OPTIONAL_TEXT_FIELDS = ("host", "database")
+#: POSIX environment variable name. The config holds names, never DSNs, and this is what keeps a
+#: pasted connection string from being written into a file that is committed to git.
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class _IndentedDumper(yaml.SafeDumper):
+    """Indent block sequences under their key, so list edits produce reviewable diffs."""
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        return super().increase_indent(flow, False)
 
 
 @dataclass
@@ -40,10 +50,13 @@ class ConfigDocument:
 
     @classmethod
     def load(cls, path: Path) -> ConfigDocument:
+        if path.is_dir():
+            raise GuiError(f"{path}: a single config file is required, not a directory")
         try:
-            ((_, config),) = load_config_files([path])
+            loaded = load_config_files([path])
         except ConfigError as exc:
             raise GuiError(str(exc)) from exc
+        ((_, config),) = loaded
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
@@ -72,7 +85,18 @@ class ConfigDocument:
         return self._had_comments
 
     def to_yaml(self) -> str:
-        data = self.config.model_dump(mode="json", exclude_unset=True, by_alias=True)
+        """The YAML for this document. Refuses an invalid one rather than writing it."""
+        self._require_valid(self.config)
+        return self._render(self.config)
+
+    def _require_valid(self, config: ComparerConfig) -> None:
+        errors = _problems(config)
+        if errors:
+            summary = "; ".join(f"{e.field}: {e}" if e.field else str(e) for e in errors)
+            raise GuiError(f"cannot write an invalid configuration ({summary})", errors[0].field)
+
+    def _render(self, config: ComparerConfig) -> str:
+        data = config.model_dump(mode="json", exclude_unset=True, by_alias=True)
         ordered: dict[str, Any] = {"version": data.pop("version", 1)}
         ordered.update(data)
         if "master" in ordered:
@@ -80,15 +104,21 @@ class ConfigDocument:
         if "targets" in ordered:
             ordered["targets"] = [_order_source(t) for t in ordered["targets"]]
         ordered = _follow(ordered, self._key_order)
-        return yaml.safe_dump(
-            ordered, sort_keys=False, allow_unicode=True, default_flow_style=False
+        return yaml.dump(
+            ordered,
+            Dumper=_IndentedDumper,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=False,
         )
 
     def save(self, path: Path | None = None) -> None:
         target = path or self.path
         if target is None:
             raise GuiError("no file to save to; choose a path first")
-        text = self.to_yaml()
+        config = self._for_location(target)
+        self._require_valid(config)
+        text = self._render(config)
         tmp_name: str | None = None
         try:
             fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.")
@@ -104,18 +134,32 @@ class ConfigDocument:
             if tmp_name is not None:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp_name)
+        self.config = config
         self.path = target
         self.dirty = False
 
-    def validate(self) -> list[GuiError]:
+    def _for_location(self, target: Path) -> ComparerConfig:
+        """The config as it must read when stored at ``target``.
+
+        ``ignores_file`` is relative to the config file, so it is rewritten when the directory
+        changes; absolute if no relative spelling exists.
+        """
+        ref = self.config.ignores_file
+        if ref is None or self.path is None or os.path.isabs(ref):
+            return self.config
+        old_dir = self.path.parent.resolve()
+        new_dir = target.parent.resolve()
+        if old_dir == new_dir:
+            return self.config
+        resolved = old_dir / ref
         try:
-            ComparerConfig.model_validate(self.config.model_dump(by_alias=True))
-        except ValidationError as exc:
-            return [
-                GuiError(str(e["msg"]), field=".".join(str(p) for p in e["loc"]) or None)
-                for e in exc.errors()
-            ]
-        return []
+            moved = os.path.relpath(resolved, new_dir)
+        except ValueError:
+            moved = str(resolved)
+        return self.config.model_copy(update={"ignores_file": moved})
+
+    def validate(self) -> list[GuiError]:
+        return _problems(self.config)
 
     def source_rows(self) -> list[dict[str, Any]]:
         return [
@@ -136,10 +180,16 @@ class ConfigDocument:
         The result is not validated here: a form passes through half-typed states, and
         :meth:`validate` reports them against the field.
         """
+        if field not in SourceRef.model_fields:
+            raise GuiError(f"unknown source field {field!r}", field=field)
         if field in _OPTIONAL_TEXT_FIELDS and value == "":
             value = None
+        if field == "dsn_env" and isinstance(value, str):
+            value = value.strip()
         if field == "schemas":
-            value = tuple(value) if value else None
+            items = value.split(",") if isinstance(value, str) else (value or ())
+            names = tuple(n.strip() for n in items if n.strip())
+            value = names or None
         config = self.config
         if config.master.label == label:
             master = config.master.model_copy(update={field: value})
@@ -201,3 +251,31 @@ def _follow(data: Any, reference: Any) -> Any:
             out.append(_follow(item, ref))
         return out
     return data
+
+
+def _problems(config: ComparerConfig) -> list[GuiError]:
+    """Everything wrong with ``config``, never quoting a value: it may be a credential."""
+    errors: list[GuiError] = []
+    try:
+        ComparerConfig.model_validate(config.model_dump(by_alias=True))
+    except ValidationError as exc:
+        errors = [
+            GuiError(str(e["msg"]), field=".".join(str(p) for p in e["loc"]) or None)
+            for e in exc.errors()
+        ]
+    reported = {e.field for e in errors}
+    named = [
+        ("master", config.master),
+        *((f"targets.{i}", t) for i, t in enumerate(config.targets)),
+    ]
+    for prefix, source in named:
+        location = f"{prefix}.dsn_env"
+        if location not in reported and not _ENV_NAME.match(source.dsn_env):
+            errors.append(
+                GuiError(
+                    f"dsn_env of source {source.label!r} must be an environment variable name "
+                    "(letters, digits and underscores), not a connection string",
+                    field=location,
+                )
+            )
+    return errors
