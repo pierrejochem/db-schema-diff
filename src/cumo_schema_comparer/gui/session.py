@@ -15,8 +15,8 @@ Threading contract
 * ``on_progress`` runs inline in the session: keep it quick. If it raises, the exception is logged
   (type only) and dropped; a broken consumer cannot fail a comparison.
 * ``cancel()`` may be called from any thread.
-* A ``Session`` runs one comparison at a time; a second ``compare`` while one is active (including
-  one that is still draining after a cancel) raises ``GuiError``.
+* A ``Session`` runs one comparison or ``check_all`` at a time; starting another while one is
+  active (including one still draining after a cancel) raises ``GuiError``.
 
 Cancellation
 ------------
@@ -25,12 +25,18 @@ one. ``cancel()`` therefore does the strongest thing available:
 
 * sources not yet started never start (a flag is checked before each capture, and a source waits on
   a semaphore before it is handed to a thread);
-* sources in flight run until they finish, bounded by the configured statement and connect
-  timeouts, and their result is discarded;
+* sources in flight run until they finish and their result is discarded. The only bound is the
+  library's timeouts, and those are per statement: one capture issues 14 catalog queries plus the
+  changelog queries, so a discarded capture can keep querying for roughly
+  ``connect_timeout + 14 x statement_timeout`` - about 14 minutes at the defaults (10 s and 60 s),
+  and far longer if ``statement_timeout`` is raised (the maximum is 3600 s). The worst case is
+  minutes, not seconds, and the window must not imply otherwise;
 * every source that has not already finished is reported ``CANCELLED`` immediately, so the window
-  updates at once;
-* ``compare`` then waits for the in-flight threads to end before it raises ``CancelledError``, so
-  when it has raised nothing is still touching a database and a new run cannot overlap the old one.
+  updates at once - well before production has necessarily gone quiet;
+* ``compare`` then waits for the in-flight threads to end, however long that takes, before it raises
+  ``CancelledError``, and nothing delivered during that wait (a second ``cancel()``, a task
+  cancellation) cuts it short. The session stays busy until then, so a new run can never overlap an
+  old capture. The wait is on the drain, not on the caller: the UI is already told.
 
 No partial report is ever returned. A cancelled session can be used again.
 
@@ -44,12 +50,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
+from typing import TypeVar
 
 from .. import runner
 from ..baseline import apply_baseline
@@ -66,8 +74,7 @@ from .errors import GuiError
 
 log = logging.getLogger(__name__)
 
-#: Shorter fragments would mangle ordinary words when scrubbed out of a message.
-_MIN_SCRUB_LENGTH = 6
+_R = TypeVar("_R")
 
 
 class SourceState(StrEnum):
@@ -121,11 +128,36 @@ class Session:
         return await asyncio.to_thread(self._check_blocking, source)
 
     async def check_all(self) -> list[ConnectionStatus]:
-        """Check the master and every target, concurrently, in configuration order."""
+        """Check the master and every target, in configuration order.
+
+        Bounded by ``max_workers`` (one at a time when ``parallel`` is off) and stoppable with
+        ``cancel()``, exactly like ``compare``; cancelling raises ``CancelledError``.
+        """
         sources = [self._config.master, *self._config.targets]
-        return list(
-            await asyncio.gather(*(asyncio.to_thread(self._check_blocking, s) for s in sources))
-        )
+        options = self._config.options
+        workers = min(len(sources), options.max_workers) if options.parallel else 1
+        self._begin("a check or comparison is already running")
+        try:
+            done = await self._drive(
+                sources,
+                workers,
+                self._check_blocking,
+                lambda source, exc: ConnectionStatus(
+                    label=source.label,
+                    ok=False,
+                    error=f"{source.label}: check failed unexpectedly ({type(exc).__name__})",
+                ),
+                lambda status: (
+                    SourceState.CAPTURED if status.ok else SourceState.FAILED,
+                    None,
+                ),
+                announce=False,
+            )
+            if any(source.label not in done for source in sources):
+                raise asyncio.CancelledError
+            return [done[source.label] for source in sources]
+        finally:
+            self._end()
 
     def _source(self, label: str) -> SourceRef:
         for source in (self._config.master, *self._config.targets):
@@ -179,13 +211,7 @@ class Session:
         Raises ``asyncio.CancelledError`` if cancelled; never returns a partial report. One
         source failing does not stop the others: it becomes a skipped target in the report.
         """
-        if self._running:
-            raise GuiError("a comparison is already running")
-        self._running = True
-        self._generation += 1
-        self._cancel_requested.clear()
-        self._loop = asyncio.get_running_loop()
-        self._task = asyncio.current_task()
+        self._begin("a check or comparison is already running")
         try:
             captures = await self._capture_sources(sequential, skip_liquibase)
             report = await asyncio.to_thread(
@@ -199,8 +225,20 @@ class Session:
                 report = apply_baseline(report, baseline).report
             return report
         finally:
-            self._task = None
-            self._running = False
+            self._end()
+
+    def _begin(self, busy_message: str) -> None:
+        if self._running:
+            raise GuiError(busy_message)
+        self._running = True
+        self._generation += 1
+        self._cancel_requested.clear()
+        self._loop = asyncio.get_running_loop()
+        self._task = asyncio.current_task()
+
+    def _end(self) -> None:
+        self._task = None
+        self._running = False
 
     async def _capture_sources(
         self, sequential: bool, skip_liquibase: bool
@@ -210,45 +248,75 @@ class Session:
         workers = (
             1 if sequential or not options.parallel else min(len(sources), options.max_workers)
         )
+        finished = await self._drive(
+            sources,
+            workers,
+            lambda source: self._capture_blocking(source, skip_liquibase),
+            lambda source, exc: CaptureResult(
+                label=source.label,
+                error=f"{source.label}: capture failed unexpectedly ({type(exc).__name__})",
+            ),
+            lambda result: (
+                (SourceState.CAPTURED, None) if result.ok else (SourceState.FAILED, result.error)
+            ),
+            announce=True,
+        )
+        if any(source.label not in finished for source in sources):
+            # A source that settled as cancelled while the gather completed: never build a report
+            # from what is left.
+            raise asyncio.CancelledError
+        return {source.label: finished[source.label] for source in sources}
+
+    async def _drive(
+        self,
+        sources: list[SourceRef],
+        workers: int,
+        work: Callable[[SourceRef], _R | None],
+        failure: Callable[[SourceRef, BaseException], _R],
+        outcome: Callable[[_R], tuple[SourceState, str | None]],
+        *,
+        announce: bool,
+    ) -> dict[str, _R]:
+        """Run ``work`` for every source on at most ``workers`` threads, cancellably.
+
+        ``work`` returns ``None`` if it was cancelled before it started. Returns the results of
+        the sources that finished; raises ``CancelledError`` after the threads have ended.
+        """
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="capture")
         slots = asyncio.Semaphore(workers)
-        finished: dict[str, CaptureResult] = {}
+        finished: dict[str, _R] = {}
         terminal: set[str] = set()
         loop = asyncio.get_running_loop()
 
-        def settle(label: str, state: SourceState, detail: str | None = None) -> bool:
-            """Record a source's one terminal state. False if it already has one."""
+        def settle(label: str, state: SourceState, detail: str | None = None) -> None:
+            """Record a source's one terminal state."""
             if label in terminal:
-                return False
+                return
             terminal.add(label)
-            self._emit(ProgressEvent(label, state, detail))
-            return True
+            if announce:
+                self._emit(ProgressEvent(label, state, detail))
 
         async def one(source: SourceRef) -> None:
+            result: _R | None
             async with slots:
                 if self._cancel_requested.is_set():
                     settle(source.label, SourceState.CANCELLED)
                     return
-                self._emit(ProgressEvent(source.label, SourceState.CAPTURING))
+                if announce:
+                    self._emit(ProgressEvent(source.label, SourceState.CAPTURING))
                 try:
-                    result = await loop.run_in_executor(
-                        pool, self._capture_blocking, source, skip_liquibase
-                    )
+                    result = await loop.run_in_executor(pool, work, source)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:  # pragma: no cover - _capture_blocking never raises
-                    result = CaptureResult(
-                        label=source.label, error=f"{source.label}: {type(exc).__name__}"
-                    )
+                except BaseException as exc:
+                    log.warning("%s: failed unexpectedly (%s)", source.label, type(exc).__name__)
+                    result = failure(source, exc)
             if result is None or source.label in terminal:
                 settle(source.label, SourceState.CANCELLED)
                 return
-            if result.ok:
-                finished[source.label] = result
-                settle(source.label, SourceState.CAPTURED)
-            else:
-                finished[source.label] = result
-                settle(source.label, SourceState.FAILED, result.error)
+            finished[source.label] = result
+            state, detail = outcome(result)
+            settle(source.label, state, detail)
 
         tasks = [asyncio.create_task(one(source)) for source in sources]
         try:
@@ -264,9 +332,15 @@ class Session:
             raise
         finally:
             # Nothing is left running when this returns: queued work is dropped, in-flight work is
-            # waited for. On the normal path every thread has already finished, so this is instant.
-            await asyncio.shield(asyncio.to_thread(pool.shutdown, True, cancel_futures=True))
-        return {source.label: finished[source.label] for source in sources}
+            # waited for. The wait cannot be cut short: a cancellation delivered meanwhile is
+            # absorbed, because abandoning it would free the session while a capture still queries.
+            drain = asyncio.ensure_future(
+                asyncio.to_thread(pool.shutdown, True, cancel_futures=True)
+            )
+            while not drain.done():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.shield(drain)
+        return finished
 
     def _capture_blocking(self, source: SourceRef, skip_liquibase: bool) -> CaptureResult | None:
         """Runs on a worker thread. Returns ``None`` if cancelled before it started.
@@ -307,7 +381,10 @@ class Session:
             return
         try:
             self._on_progress(event)
-        except Exception as exc:
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            # Whatever the consumer does, the run must still settle every source.
             log.warning("progress consumer raised (%s)", type(exc).__name__)
 
     # -- baseline and cancellation -----------------------------------------------------------
@@ -345,12 +422,15 @@ class Session:
 
 
 def _scrub(text: str, dsn: Dsn) -> str:
-    """Second layer: remove any credential that reached a message the library already redacted."""
+    """Second layer, as strong as the library's, over a message it already redacted.
+
+    Every fragment is replaced whatever its length, and any token containing ``@`` goes too, since
+    a password fragment can travel inside a mis-parsed host.
+    """
     cleaned = text.replace(dsn.value, "***")
     for fragment in dsn.secret_fragments():
-        if len(fragment) >= _MIN_SCRUB_LENGTH:
-            cleaned = cleaned.replace(fragment, "***")
-    return cleaned
+        cleaned = cleaned.replace(fragment, "***")
+    return re.sub(r"\S*@\S*", "***", cleaned)
 
 
 __all__ = ["ProgressEvent", "Session", "SourceState"]

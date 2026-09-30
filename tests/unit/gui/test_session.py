@@ -10,6 +10,7 @@ test opens, so every interleaving asserted below is forced rather than hoped for
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections import defaultdict
@@ -126,6 +127,49 @@ async def until(predicate: Any) -> None:
     await asyncio.wait_for(spin(), 10)
 
 
+def many_sources(count: int, *, max_workers: int, parallel: bool = True) -> ComparerConfig:
+    return ComparerConfig.model_validate(
+        {
+            "version": 1,
+            "name": "many",
+            "master": {"label": "s0", "dsn_env": "DSN_0"},
+            "targets": [{"label": f"s{i}", "dsn_env": f"DSN_{i}"} for i in range(1, count)],
+            "options": {"max_workers": max_workers, "parallel": parallel},
+        }
+    )
+
+
+def many_store(count: int) -> CredentialStore:
+    return CredentialStore(
+        backend=None, environ={f"DSN_{i}": DSN for i in range(count)}, _import_keyring=False
+    )
+
+
+class PeakCounter:
+    """Counts how many calls are live at once. Each call holds briefly on a 2-party barrier."""
+
+    def __init__(self) -> None:
+        self.live = 0
+        self.peak = 0
+        self._lock = threading.Lock()
+        self._pair = threading.Barrier(2, timeout=0.3)
+
+    def call(self, result: Any) -> Any:
+        def run(source: Any, *args: Any, **kwargs: Any) -> Any:
+            with self._lock:
+                self.live += 1
+                self.peak = max(self.peak, self.live)
+            try:
+                with contextlib.suppress(threading.BrokenBarrierError):
+                    self._pair.wait()
+                return result(source)
+            finally:
+                with self._lock:
+                    self.live -= 1
+
+        return run
+
+
 class TestProgress:
     @pytest.mark.asyncio
     async def test_every_source_reports_capturing_then_captured(self):
@@ -208,13 +252,54 @@ class TestProgress:
 
     @pytest.mark.asyncio
     async def test_a_consumer_that_raises_cannot_fail_the_comparison(self):
+        calls: list[ProgressEvent] = []
+
         def broken(event: ProgressEvent) -> None:
+            calls.append(event)
             raise ValueError(f"consumer bug {DSN}")
 
         subject = Session(CONFIG, store(), on_progress=broken)
         with mock.patch(CAPTURE, side_effect=succeed):
             report = await subject.compare()
-        assert report.targets
+        assert len(calls) == 6  # still told of every change, despite raising each time
+        assert [t.target_label for t in report.targets] == ["qa", "dev"]
+        assert report.probe_failed is False
+        assert all(t.failed is None for t in report.targets)
+
+    @pytest.mark.asyncio
+    async def test_a_consumer_raising_a_base_exception_still_settles_every_source(self):
+        class Fatal(BaseException):
+            pass
+
+        seen: list[ProgressEvent] = []
+
+        def broken(event: ProgressEvent) -> None:
+            seen.append(event)
+            raise Fatal
+
+        subject = Session(CONFIG, store(), on_progress=broken)
+        with mock.patch(CAPTURE, side_effect=succeed):
+            await subject.compare()
+        assert_every_source_ended_exactly_once(seen)
+
+    @pytest.mark.asyncio
+    async def test_a_base_exception_from_capture_fails_that_source_only(self):
+        class Fatal(BaseException):
+            pass
+
+        def capture(source, *args, **kwargs):
+            if source.label == "qa":
+                raise Fatal(f"fatal {DSN}")
+            return ok_capture(source.label)
+
+        subject, events = session()
+        with mock.patch(CAPTURE, side_effect=capture):
+            report = await subject.compare()
+        assert by_label(events)["qa"][-1] is SourceState.FAILED
+        assert by_label(events)["dev"][-1] is SourceState.CAPTURED
+        assert report.probe_failed is True
+        assert_every_source_ended_exactly_once(events)
+        assert_no_secret(events)
 
 
 class TestCallbackThread:
@@ -281,37 +366,65 @@ class TestConcurrency:
 
     @pytest.mark.asyncio
     async def test_sequential_captures_one_at_a_time(self):
-        # A real overlap check: each capture holds a lock non-blockingly, so two at once would fail.
-        overlap = threading.Lock()
-        collisions: list[str] = []
+        # Each capture waits for a partner. Sequential mode can never supply one, so the barrier
+        # opening would prove two captures were live at once.
+        barrier = threading.Barrier(2, timeout=0.2)
+        opened: list[str] = []
 
         def capture(source, *args, **kwargs):
-            if not overlap.acquire(blocking=False):
-                collisions.append(source.label)
-                return ok_capture(source.label)
-            try:
-                return ok_capture(source.label)
-            finally:
-                overlap.release()
+            with contextlib.suppress(threading.BrokenBarrierError):
+                barrier.wait()
+                opened.append(source.label)
+            return ok_capture(source.label)
 
         subject, _ = session()
         with mock.patch(CAPTURE, side_effect=capture):
             await subject.compare(sequential=True)
-        assert not collisions
+        assert opened == []
+
+    @pytest.mark.asyncio
+    async def test_the_same_harness_does_detect_overlap_when_parallel(self):
+        # Guards the test above: proves that barrier can open, so its silence means something.
+        barrier = threading.Barrier(3, timeout=10)
+        opened: list[str] = []
+
+        def capture(source, *args, **kwargs):
+            with contextlib.suppress(threading.BrokenBarrierError):
+                barrier.wait()
+                opened.append(source.label)
+            return ok_capture(source.label)
+
+        subject, _ = session()
+        with mock.patch(CAPTURE, side_effect=capture):
+            await subject.compare()
+        assert len(opened) == 3
 
     @pytest.mark.asyncio
     async def test_parallel_mode_really_overlaps_captures(self):
         # All three must be inside capture at once: a barrier that only opens when they are.
         barrier = threading.Barrier(3, timeout=10)
+        opened: list[str] = []
 
         def capture(source, *args, **kwargs):
             barrier.wait()
+            opened.append(source.label)
             return ok_capture(source.label)
 
-        subject, _ = session()
+        subject, events = session()
         with mock.patch(CAPTURE, side_effect=capture):
             report = await subject.compare()
-        assert report.targets
+        assert sorted(opened) == sorted(LABELS)
+        assert report.probe_failed is False
+        assert all(s[-1] is SourceState.CAPTURED for s in by_label(events).values())
+
+    @pytest.mark.asyncio
+    async def test_max_workers_caps_compare(self):
+        config = many_sources(9, max_workers=2)
+        peak = PeakCounter()
+        subject = Session(config, many_store(9))
+        with mock.patch(CAPTURE, side_effect=peak.call(lambda s: ok_capture(s.label))):
+            await subject.compare()
+        assert peak.peak == 2
 
 
 class TestCancellation:
@@ -361,6 +474,39 @@ class TestCancellation:
         assert_every_source_ended_exactly_once(events)
         # The finished-but-discarded capture did not turn into a CAPTURED event.
         assert not [e for e in events if e.state is SourceState.CAPTURED]
+
+    @pytest.mark.asyncio
+    async def test_a_second_cancel_during_the_drain_does_not_release_the_session(self):
+        """Double-clicking Cancel must not let a new run start over a capture still querying."""
+        gate = Gate(expected=1)
+        subject, events = session()
+        with mock.patch(CAPTURE, side_effect=gate.capture):
+            task = asyncio.create_task(subject.compare(sequential=True))
+            await gate.all_entered()
+            subject.cancel()
+            await until(lambda: len([e for e in events if e.state is SourceState.CANCELLED]) == 3)
+            assert not task.done()
+
+            subject.cancel()  # the impatient second click
+            for _ in range(10):  # let the threadsafe callback run
+                await asyncio.sleep(0)
+            assert not task.done(), "second cancel abandoned the drain"
+            with pytest.raises(GuiError, match="already running"):
+                await subject.compare(sequential=True)
+            assert gate.started == ["prod"]
+
+            gate.release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert gate.finished == ["prod"]
+
+            # Only now is the session free, and a fresh run does not overlap the old capture.
+            events.clear()
+            gate2 = Gate(expected=0)
+            gate2.release.set()
+        with mock.patch(CAPTURE, side_effect=gate2.capture):
+            report = await subject.compare(sequential=True)
+        assert [t.target_label for t in report.targets] == ["qa", "dev"]
 
     @pytest.mark.asyncio
     async def test_parallel_cancel_reports_every_source_once(self):
@@ -419,11 +565,13 @@ class TestCancellation:
 
     @pytest.mark.asyncio
     async def test_a_cancelled_session_can_run_again(self):
-        subject, _ = session()
+        subject, events = session()
         subject.cancel()
         with mock.patch(CAPTURE, side_effect=succeed):
             report = await subject.compare()
-        assert report.targets
+        assert [t.target_label for t in report.targets] == ["qa", "dev"]
+        assert report.probe_failed is False
+        assert all(s[-1] is SourceState.CAPTURED for s in by_label(events).values())
 
     @pytest.mark.asyncio
     async def test_a_session_cancelled_mid_run_can_run_again_with_fresh_events(self):
@@ -445,14 +593,53 @@ class TestCancellation:
             s == [SourceState.CAPTURING, SourceState.CAPTURED] for s in by_label(events).values()
         )
 
+    def test_a_worker_picking_up_a_cancelled_job_does_not_query(self):
+        subject, _ = session()
+        subject.cancel()
+        with mock.patch(CAPTURE, side_effect=succeed) as capture:
+            assert subject._capture_blocking(CONFIG.targets[0], False) is None
+        capture.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_a_late_cancel_does_not_kill_the_next_run(self):
-        subject, _ = session()
+        subject, events = session()
         with mock.patch(CAPTURE, side_effect=succeed):
             await subject.compare()
             subject.cancel()  # nothing running: must be inert, not queued against the next run
+            events.clear()
             report = await subject.compare()
-        assert report.targets
+        assert [t.target_label for t in report.targets] == ["qa", "dev"]
+        assert all(
+            s == [SourceState.CAPTURING, SourceState.CAPTURED] for s in by_label(events).values()
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_consumer_cancelling_on_captured_stops_the_next_source_starting(self):
+        # Sequential: prod releases its slot before CAPTURED is emitted, so qa is already woken
+        # when the consumer cancels. Without the start-of-source check qa would visibly begin
+        # after Cancel.
+        captured_labels: list[str] = []
+        holder: dict[str, Session] = {}
+
+        def on_progress(event: ProgressEvent) -> None:
+            events.append(event)
+            if event.state is SourceState.CAPTURED:
+                holder["s"].cancel()
+
+        events: list[ProgressEvent] = []
+        subject = Session(CONFIG, store(), on_progress=on_progress)
+        holder["s"] = subject
+
+        def capture(source, *args, **kwargs):
+            captured_labels.append(source.label)
+            return ok_capture(source.label)
+
+        with mock.patch(CAPTURE, side_effect=capture), pytest.raises(asyncio.CancelledError):
+            await subject.compare(sequential=True)
+        assert captured_labels == ["prod"]
+        assert by_label(events)["qa"] == [SourceState.CANCELLED]
+        assert by_label(events)["dev"] == [SourceState.CANCELLED]
+        assert_every_source_ended_exactly_once(events)
 
     @pytest.mark.asyncio
     async def test_cancelling_the_task_directly_is_treated_the_same(self):
@@ -486,6 +673,28 @@ class TestNoCredentialLeaks:
         with mock.patch(CAPTURE, side_effect=capture):
             report = await subject.compare()
         assert_no_secret(events, report.targets)
+
+    @pytest.mark.asyncio
+    async def test_a_short_password_is_scrubbed_from_library_text(self):
+        short = "postgresql://u:pw1@h/db"
+        environ = {"PROD_DSN": short, "QA_DSN": short, "DEV_DSN": short}
+        events: list[ProgressEvent] = []
+        subject = Session(
+            CONFIG,
+            CredentialStore(backend=None, environ=environ, _import_keyring=False),
+            on_progress=events.append,
+        )
+
+        def capture(source, *args, **kwargs):
+            if source.label == "qa":
+                return CaptureResult(label="qa", error="qa: rejected password pw1 for u@h")
+            return ok_capture(source.label)
+
+        with mock.patch(CAPTURE, side_effect=capture):
+            report = await subject.compare()
+        shown = f"{events} {report.targets} {report.notes}"
+        assert "pw1" not in shown
+        assert "u@h" not in shown
 
     @pytest.mark.asyncio
     async def test_unexpected_exception_reaches_no_event_log_or_report(self, caplog):
@@ -596,9 +805,18 @@ class TestBaseline:
 
     @pytest.mark.asyncio
     async def test_no_baseline_leaves_the_report_untouched(self):
+        def capture(source, *args, **kwargs):
+            if source.label == "qa":
+                return CaptureResult(
+                    label="qa",
+                    inventory=inventory(table("public", "t", cols=[col("c", "int8")]), label="qa"),
+                )
+            return ok_capture(source.label)
+
         subject, _ = session()
-        with mock.patch(CAPTURE, side_effect=succeed):
+        with mock.patch(CAPTURE, side_effect=capture):
             report = await subject.compare(baseline=None)
+        assert [f for t in report.targets for f in t.findings], "nothing to leave untouched"
         assert all(target.ignored == () for target in report.targets)
 
     def test_loading_a_malformed_baseline_is_a_gui_error(self, tmp_path):
@@ -617,8 +835,67 @@ class TestCheckConnection:
     async def test_checking_one_source_returns_its_status(self):
         status = ConnectionStatus(label="qa", ok=True, server_version="15.19")
         subject, _ = session()
-        with mock.patch(CHECK, return_value=status):
+        with mock.patch(CHECK, return_value=status) as check:
             assert (await subject.check_connection("qa")).server_version == "15.19"
+        source, dsn = check.call_args.args
+        assert source.label == "qa"
+        assert dsn.env_name == "QA_DSN"
+        assert dsn.value == DSN
+
+    @pytest.mark.asyncio
+    async def test_check_all_honours_max_workers(self):
+        # 9 sources at max_workers=2: a barrier wanting all 9 live at once must never open.
+        config = many_sources(9, max_workers=2)
+        barrier = threading.Barrier(9, timeout=0.2)
+        opened: list[str] = []
+        peak = PeakCounter()
+
+        def check(source, *args, **kwargs):
+            with contextlib.suppress(threading.BrokenBarrierError):
+                barrier.wait()
+                opened.append(source.label)
+            return ConnectionStatus(label=source.label, ok=True)
+
+        subject = Session(config, many_store(9))
+        with mock.patch(CHECK, side_effect=peak.call(lambda s: check(s))):
+            statuses = await subject.check_all()
+        assert opened == []
+        assert peak.peak == 2
+        assert [s.label for s in statuses] == [f"s{i}" for i in range(9)]
+
+    @pytest.mark.asyncio
+    async def test_check_all_can_be_cancelled_and_waits_for_its_threads(self):
+        config = many_sources(3, max_workers=1)
+        entered = threading.Semaphore(0)
+        release = threading.Event()
+        started: list[str] = []
+        finished: list[str] = []
+
+        def check(source, *args, **kwargs):
+            started.append(source.label)
+            entered.release()
+            assert release.wait(10)
+            finished.append(source.label)
+            return ConnectionStatus(label=source.label, ok=True)
+
+        subject = Session(config, many_store(3))
+        with mock.patch(CHECK, side_effect=check):
+            task = asyncio.create_task(subject.check_all())
+            assert await asyncio.to_thread(entered.acquire, True, 10)
+            subject.cancel()
+            for _ in range(10):
+                await asyncio.sleep(0)
+            assert not task.done()
+            with pytest.raises(GuiError, match="already running"):
+                await subject.check_all()
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert started == finished == ["s0"]
+        with mock.patch(
+            CHECK, side_effect=lambda s, *a, **k: ConnectionStatus(label=s.label, ok=True)
+        ):
+            assert len(await subject.check_all()) == 3
 
     @pytest.mark.asyncio
     async def test_checking_all_sources_returns_one_status_each(self):
