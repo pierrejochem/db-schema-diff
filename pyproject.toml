@@ -30,6 +30,7 @@ dependencies = [
 dev = [
   "pytest>=8",
   "pytest-cov>=5",
+  "pytest-asyncio>=0.24",
   "pytest-randomly>=3.15",
   # 4.15 dropped the "postgresql" extra and moved the module to
   # testcontainers.community.postgres; the base package now carries it.
