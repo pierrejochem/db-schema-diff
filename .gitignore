@@ -1,0 +1,29 @@
+# Python
+# The build-output patterns are anchored with a leading slash on purpose. hatchling honours
+# .gitignore when deciding what goes into the wheel, so an unanchored `build/` or `config/`
+# silently excludes any package subdirectory of that name — which is how
+# cumo_schema_comparer/config/ once went missing from the wheel while every test still passed.
+__pycache__/
+*.py[cod]
+*.egg-info/
+/.venv/
+/build/
+/dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Tool output — never commit a report, it can carry schema detail
+/report.html
+/report.json
+/junit.xml
+
+# Local configuration at the repo root. Only *.example.yaml is tracked.
+/config/
+!/config/*.example.yaml
+/.env

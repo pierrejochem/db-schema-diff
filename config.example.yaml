@@ -1,0 +1,65 @@
+# Example configuration. Copy to config/<service>.yaml and adjust.
+#
+# This file is NON-SECRET and safe to commit: it names environment *variables*, never the
+# connection strings themselves. There is no --dsn and no --password flag either, so a
+# credential can never reach argv or shell history.
+#
+# One file per service database. The CUMO server hosts ~18 databases, one per service, so the
+# unit of comparison is a (server, database) pair. Point --config at a directory to run them all.
+
+version: 1
+
+# Used as the report title and the JUnit suite name.
+name: invoicing
+
+master:
+  # Short name for reports and for --target.
+  label: prod
+  # host and database are documentation only — connections always use the DSN.
+  host: db-prod.internal
+  database: invoicing
+  # Name of the environment variable holding the libpq URI or keyword string.
+  dsn_env: PROD_INVOICING_DSN
+  # Optional allowlist. Omit to inventory every non-system schema.
+  schemas: ["cumo-invoicing", "public"]
+
+targets:
+  - label: qa
+    host: db-qa.internal
+    dsn_env: QA_INVOICING_DSN
+
+  - label: dev
+    host: db-dev.internal
+    dsn_env: DEV_INVOICING_DSN
+    # Some services deploy with a per-environment --defaultSchemaName (cumo-bpf does), so the
+    # same table lives under a different schema name here. Written master-name: target-name.
+    schema_map:
+      cumo-invoicing: invoicing_dev
+
+  - label: local
+    dsn_env: LOCAL_INVOICING_DSN
+    # Only needed when more than one DATABASECHANGELOG table exists. Normally the table is
+    # located by scanning the catalog, because it is not reliably in public.
+    liquibase:
+      schema: cumo-invoicing
+      table: DATABASECHANGELOG
+
+# Left out of the comparison entirely. quartz holds Quartz scheduler runtime state, which
+# diverges between environments by design.
+exclude_schemas:
+  - quartz
+
+options:
+  connect_timeout_seconds: 10
+  statement_timeout_seconds: 60
+  # Keeps a probe from parking behind concurrent DDL it will never get past.
+  lock_timeout_seconds: 3
+  parallel: true
+  max_workers: 4
+  # Lowest severity that should fail the run: error | warning | any | never.
+  fail_on: error
+  ignore_column_order: false
+  # Off by default: owners, comments and grants differ per environment by design.
+  include_owners: false
+  include_comments: false
+  include_grants: false

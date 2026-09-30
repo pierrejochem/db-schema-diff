@@ -1,0 +1,200 @@
+# CI for the code this repo owns: the comparer package, its unit tests, and its integration
+# tests against real PostgreSQL containers.
+#
+# Standalone rather than a reusable workflow: cubic-germany/workflows provides ctsd-maven,
+# ctsd-springboot, ctsd-node and ctsd-rn-app, and nothing for Python.
+#
+# No job needs a secret, so this runs on forks. The integration jobs deliberately have no
+# `services:` block — testcontainers starts and stops its own containers, which keeps one
+# definition of the fixture topology instead of two that can drift apart.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e '.[dev]'
+
+      - run: ruff format --check .
+      - run: ruff check --output-format=github .
+      - run: mypy
+
+  unit:
+    name: unit-py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e '.[dev]'
+
+      # No Docker needed: the default pytest options deselect the integration marker.
+      #
+      # The gate is 80 rather than the 85 this job could reach with the integration tests
+      # included. db/connect.py and db/introspect.py exist to talk to a real server, so nothing
+      # but an integration test can cover them, and mocking a connection here would buy a higher
+      # number and test nothing. The `integration` jobs cover them; combined coverage is ~88%.
+      - run: pytest --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-py${{ matrix.python }}
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  integration:
+    name: integration-pg${{ matrix.postgres }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 15 matches cumo-local-qa-env. 13 and 17 bracket it, so a catalog change at either
+        # end shows up here rather than on somebody's environment.
+        postgres: ['13', '15', '17']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e '.[dev]'
+
+      - name: Integration tests
+        env:
+          CUMO_SCHEMA_DIFF_TEST_IMAGE: postgres:${{ matrix.postgres }}
+        run: pytest -m integration
+
+  dogfood:
+    name: dogfood
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e '.[dev]'
+
+      # Run the real CLI against two deliberately-divergent databases and assert it reports
+      # the drift. The best end-to-end smoke test available, and it gives a reviewer an actual
+      # report to look at on every pull request.
+      - name: Compare two divergent databases
+        run: python scripts/dogfood.py
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: dogfood-report
+          path: |
+            build/report.html
+            build/report.json
+            build/junit.xml
+            build/console.txt
+          if-no-files-found: ignore
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install build
+
+      - run: python -m build
+
+      # Install the wheel into a clean environment and exercise it. This is the only check
+      # that sees what was actually packaged, and it has already earned its place twice:
+      # hatchling honours .gitignore, so an unanchored pattern silently dropped a whole
+      # subpackage from the wheel while every test in the repo still passed. Running from the
+      # source tree cannot catch that.
+      - name: Smoke-test the wheel
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/*.whl
+          /tmp/wheel-venv/bin/cumo-schema-diff --version
+          /tmp/wheel-venv/bin/cumo-schema-diff compare --help > /dev/null
+          /tmp/wheel-venv/bin/python - <<'PY'
+          import importlib, pkgutil
+          import cumo_schema_comparer
+
+          # Every subpackage must import from the installed wheel, not just from the checkout.
+          missing = []
+          for info in pkgutil.walk_packages(
+              cumo_schema_comparer.__path__, f"{cumo_schema_comparer.__name__}."
+          ):
+              try:
+                  importlib.import_module(info.name)
+              except ImportError as exc:
+                  missing.append(f"{info.name}: {exc}")
+          assert not missing, "modules missing from the wheel:\n" + "\n".join(missing)
+
+          # Package data is loaded at run time, so it fails on first real use, not at import.
+          from cumo_schema_comparer.db.introspect import load_query
+
+          for name in ("server", "schemas", "relations", "columns", "constraints", "indexes",
+                       "views", "sequences", "routines", "triggers", "types", "extensions",
+                       "changelog_locate", "changelog_columns"):
+              assert load_query(name).strip(), name
+
+          # The HTML template and the bundled ignore ruleset are package data too.
+          from cumo_schema_comparer.diff.ignores import load_default_ignores
+          from cumo_schema_comparer.report.html import load_template_source
+
+          assert load_template_source().strip()
+          assert load_default_ignores().rules
+
+          print("wheel is complete: every module imports and all package data loads")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

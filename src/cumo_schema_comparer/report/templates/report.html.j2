@@ -1,0 +1,412 @@
+{#-
+  The standalone HTML report.
+
+  Constraints, all deliberate:
+
+  * No network. Inline CSS, inline SVG, no fonts, no CDN. A drift report is often read from a CI
+    artifact on a machine with no outbound access, and a stylesheet that fails to load would make it
+    unreadable.
+  * Works without JavaScript. Expanding and collapsing uses <details>, so every finding is reachable
+    with scripting off. JavaScript only filters what is already on the page.
+  * Dark mode and print. Both are how people actually read these.
+-#}
+<!doctype html>
+<html lang="en" data-worst="{{ worst or 'none' }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ report.name }} — schema comparison</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --border: #d8dce2;
+  --text: #16191d;
+  --muted: #5b6672;
+  --error: #b42318;
+  --error-bg: #fee4e2;
+  --warning: #8a5a00;
+  --warning-bg: #fef0c7;
+  --info: #175cd3;
+  --info-bg: #d1e9ff;
+  --ok: #027a48;
+  --ok-bg: #d1fadf;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a;
+    --panel: #1d2126;
+    --border: #333a42;
+    --text: #e6e9ed;
+    --muted: #97a1ac;
+    --error: #ff9c92;
+    --error-bg: #55201c;
+    --warning: #f5cf6b;
+    --warning-bg: #4b3a10;
+    --info: #9dc7ff;
+    --info-bg: #17325c;
+    --ok: #7ae0a8;
+    --ok-bg: #123726;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 2rem 1rem 4rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 68rem; margin: 0 auto; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.15rem; margin: 2.5rem 0 .75rem; }
+h3 { font-size: .95rem; margin: 0; font-weight: 600; }
+code, .path { font-family: var(--mono); font-size: .87em; }
+.muted { color: var(--muted); }
+.meta { color: var(--muted); font-size: .85rem; margin: 0 0 1.5rem; }
+.meta > p { margin: 0; }
+.meta.versions { margin: .5rem 0 0; }
+.meta dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .75rem; margin: .5rem 0 0; }
+.meta dt { font-weight: 600; }
+.meta dd { margin: 0; }
+
+.verdict {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .75rem 1rem; border-radius: 8px; border: 1px solid var(--border);
+  font-weight: 600; margin: 0 0 1.5rem;
+}
+.verdict svg { flex: none; }
+.verdict.error   { background: var(--error-bg);   color: var(--error);   border-color: var(--error); }
+.verdict.warning { background: var(--warning-bg); color: var(--warning); border-color: var(--warning); }
+.verdict.info    { background: var(--info-bg);    color: var(--info);    border-color: var(--info); }
+.verdict.ok      { background: var(--ok-bg);      color: var(--ok);      border-color: var(--ok); }
+
+/* The matrix gains a column per target, so on a narrow screen it scrolls inside its own box
+   rather than pushing the whole page sideways. */
+.matrix-wrap { overflow-x: auto; }
+table.matrix { border-collapse: collapse; width: 100%; font-size: .9rem; }
+table.matrix th[scope="row"] { white-space: nowrap; }
+table.matrix th, table.matrix td {
+  border: 1px solid var(--border); padding: .4rem .6rem; text-align: left;
+}
+table.matrix thead th { background: var(--panel); }
+table.matrix td.count { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.count.error   { background: var(--error-bg);   color: var(--error); }
+td.count.warning { background: var(--warning-bg); color: var(--warning); }
+td.count.info    { background: var(--info-bg);    color: var(--info); }
+td.count.ok      { color: var(--ok); }
+td.count.skipped { color: var(--muted); font-style: italic; }
+
+details.target { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 1rem; background: var(--panel); }
+details.target > summary {
+  cursor: pointer; padding: .7rem 1rem; display: flex; align-items: baseline;
+  gap: .75rem; flex-wrap: wrap; border-radius: 8px;
+}
+details.target > summary::marker { color: var(--muted); }
+details.target[open] > summary { border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; }
+details.target > div { padding: .25rem 1rem 1rem; background: var(--bg); border-radius: 0 0 8px 8px; }
+
+details.kind { margin: .75rem 0 0; }
+details.kind > summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
+
+ul.findings { list-style: none; margin: .4rem 0 0; padding: 0 0 0 1rem; }
+ul.findings > li { padding: .3rem 0; border-top: 1px solid var(--border); }
+ul.findings > li:first-child { border-top: none; }
+.mark { display: inline-block; width: 1.1em; font-family: var(--mono); font-weight: 700; }
+.mark.missing_in_target { color: var(--error); }
+.mark.extra_in_target { color: var(--warning); }
+.mark.differs { color: var(--info); }
+.badge {
+  display: inline-block; padding: 0 .4em; border-radius: 4px;
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+  vertical-align: .08em;
+}
+.badge.error   { background: var(--error-bg);   color: var(--error); }
+.badge.warning { background: var(--warning-bg); color: var(--warning); }
+.badge.info    { background: var(--info-bg);    color: var(--info); }
+
+dl.deltas { margin: .25rem 0 .25rem 2rem; font-size: .85rem; display: grid; grid-template-columns: max-content 1fr; gap: 0 .6rem; }
+dl.deltas dt { font-family: var(--mono); color: var(--muted); }
+dl.deltas dd { margin: 0; }
+/* The master is the reference, so its value is shown plainly and the target's is highlighted.
+   A red-to-green pairing would read as "the target fixed something", which is backwards. */
+dl.deltas .from { color: var(--muted); }
+dl.deltas .to { color: var(--text); font-weight: 600; }
+dl.deltas .arrow { color: var(--muted); }
+dl.deltas .why { display: block; color: var(--muted); font-style: italic; }
+
+.notes { margin: .5rem 0 0; padding: 0; list-style: none; font-size: .85rem; }
+.notes li { padding: .2rem 0 .2rem .5rem; border-left: 3px solid var(--border); color: var(--muted); }
+.notes li.error { border-color: var(--error); }
+.notes li.warning { border-color: var(--warning); }
+
+.controls {
+  display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
+  margin: 0 0 1rem; padding: .6rem .8rem;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel);
+}
+.controls input[type="search"] {
+  flex: 1 1 14rem; min-width: 0; padding: .35rem .5rem; font: inherit; font-size: .9rem;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text);
+}
+.controls label { font-size: .85rem; display: inline-flex; gap: .3rem; align-items: center; }
+.controls .hits { font-size: .8rem; color: var(--muted); }
+[hidden] { display: none !important; }
+
+pre.payload { display: none; }
+
+@media print {
+  body { padding: 0; font-size: 11pt; }
+  .controls { display: none; }
+  details { border: none; }
+  details > div { padding: 0; }
+  details:not([open]) > div { display: block; }
+  a[href]::after { content: ""; }
+}
+</style>
+</head>
+<body>
+<main>
+
+<h1>{{ report.name }} — schema comparison</h1>
+{#- A <div>, not a <p>: HTML does not allow a <dl> inside a paragraph, and a browser closes the
+     paragraph early when it meets one, which silently breaks any `.meta dl` rule. -#}
+<div class="meta">
+  <p>master <strong>{{ report.master_label }}</strong>
+  against {{ report.targets | length }} target{{ '' if report.targets | length == 1 else 's' }}</p>
+  <dl>
+    <dt>Generated</dt><dd>{{ report.generated_at or 'unknown' }}</dd>
+    <dt>Tool</dt><dd>cumo-schema-diff {{ report.tool_version or '(unversioned)' }}</dd>
+    <dt>Gate</dt><dd>--fail-on {{ report.fail_on }}</dd>
+  </dl>
+</div>
+
+<div class="verdict {{ verdict.css }}">
+  {{ verdict.icon }}
+  <span>{{ verdict.text }}</span>
+</div>
+
+{%- if report.notes %}
+<ul class="notes">
+  {%- for note in report.notes %}
+  <li class="{{ note.severity.label }}">{{ note.message }}</li>
+  {%- endfor %}
+</ul>
+{%- endif %}
+
+<h2>Overview</h2>
+<div class="matrix-wrap">
+<table class="matrix">
+  <thead>
+    <tr>
+      <th scope="col">Object kind</th>
+      {%- for target in report.targets %}
+      <th scope="col">{{ target.target_label }}</th>
+      {%- endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {%- for row in matrix %}
+    <tr>
+      <th scope="row">{{ row.label }}</th>
+      {%- for cell in row.cells %}
+      <td class="count {{ cell.css }}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{{ cell.text }}</td>
+      {%- endfor %}
+    </tr>
+    {%- endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>Findings</h2>
+
+<div class="controls">
+  <input type="search" id="filter" placeholder="Filter by name, e.g. invoice or cumo-invoicing.*"
+         aria-label="Filter findings by name">
+  <label><input type="checkbox" class="sev" value="error" checked> error</label>
+  <label><input type="checkbox" class="sev" value="warning" checked> warning</label>
+  <label><input type="checkbox" class="sev" value="info" checked> info</label>
+  <span class="hits" id="hits"></span>
+</div>
+
+{%- for target in report.targets %}
+<details class="target" {% if target.worst_severity() %}open{% endif %}>
+  <summary>
+    <h3>{{ target.target_label }}</h3>
+    {%- if target.skipped %}
+    <span class="badge error">skipped</span>
+    <span class="muted">{{ target.failed }}</span>
+    {%- else %}
+    <span class="muted">{{ target_summary(target) }}</span>
+    {%- endif %}
+  </summary>
+  <div>
+    {%- if not target.skipped %}
+    {%- if target.master_source and target.target_source %}
+    <p class="meta versions">
+      {{ target.master_label }} PostgreSQL {{ short_version(target.master_source.server_version) }}
+      · {{ target.target_label }} PostgreSQL {{ short_version(target.target_source.server_version) }}
+      · captured {{ target.target_source.captured_at }}
+    </p>
+    {%- endif %}
+
+    {%- if target.notes %}
+    <ul class="notes">
+      {%- for note in target.notes %}
+      <li class="{{ note.severity.label }}">{{ note.message }}</li>
+      {%- endfor %}
+    </ul>
+    {%- endif %}
+
+    {%- if target.changelog and target.changelog.applicable %}
+    <details class="kind" {% if target.changelog.severity.label != 'info' %}open{% endif %}>
+      <summary>Liquibase <span class="badge {{ target.changelog.severity.label }}">{{ target.changelog.status.label }}</span></summary>
+      <ul class="findings">
+        <li>{{ target.changelog.headline(target.master_label, target.target_label) }}</li>
+        {%- if target.changelog.tag_line(target.master_label, target.target_label) %}
+        <li class="muted">{{ target.changelog.tag_line(target.master_label, target.target_label) }}</li>
+        {%- endif %}
+        {%- if target.changelog.first_divergence %}
+        <li>histories diverge at
+          <span class="path">{{ target.changelog.first_divergence[0] }}</span>
+          by {{ target.changelog.first_divergence[1] }}</li>
+        {%- endif %}
+        {%- for ref in target.changelog.missing_in_target %}
+        <li><span class="mark missing_in_target">-</span>
+          <span class="path">{{ ref[0] }}</span> <span class="muted">by {{ ref[1] }}</span></li>
+        {%- endfor %}
+        {%- for ref in target.changelog.extra_in_target %}
+        <li><span class="mark extra_in_target">+</span>
+          <span class="path">{{ ref[0] }}</span> <span class="muted">by {{ ref[1] }}</span></li>
+        {%- endfor %}
+        {%- for mismatch in target.changelog.checksum_mismatches %}
+        <li><span class="mark differs">~</span>
+          <span class="path">{{ mismatch.ref[0] }}</span>
+          <span class="muted">checksum differs — a deployed changeset was edited</span></li>
+        {%- endfor %}
+        {%- for difference in target.changelog.exectype_differences %}
+        <li><span class="mark differs">~</span>
+          <span class="path">{{ difference.ref[0] }}</span>
+          <span class="muted">{{ difference.master_exec_type }} vs {{ difference.target_exec_type }}</span></li>
+        {%- endfor %}
+        {%- for note in target.changelog.notes %}
+        <li class="muted">{{ note }}</li>
+        {%- endfor %}
+      </ul>
+    </details>
+    {%- endif %}
+
+    {%- for group in grouped(target) %}
+    <details class="kind" open>
+      <summary>{{ group.label }} <span class="muted">— {{ group.summary }}</span></summary>
+      <ul class="findings">
+        {%- for finding in group.findings %}
+        <li data-severity="{{ finding.severity.label }}" data-path="{{ finding.key.path }}">
+          <span class="mark {{ finding.status.value }}">{{ mark(finding.status) }}</span>
+          <span class="path">{{ finding.key.path }}</span>
+          <span class="badge {{ finding.severity.label }}">{{ finding.severity.label }}</span>
+          {%- if finding.paired_with %}
+          <span class="muted">matches {{ finding.paired_with.name }}</span>
+          {%- endif %}
+          {%- if finding.ignored_by %}
+          <span class="muted">downgraded by {{ finding.ignored_by }}</span>
+          {%- endif %}
+          {%- if finding.deltas %}
+          <dl class="deltas">
+            {%- for delta in finding.deltas %}
+            <dt>{{ delta.attribute }}</dt>
+            <dd>
+              <span class="from">{{ delta.master_value if delta.master_value is not none else '—' }}</span>
+              <span class="arrow">→</span>
+              <span class="to">{{ delta.target_value if delta.target_value is not none else '—' }}</span>
+              {%- if delta.note %}<span class="why">{{ delta.note }}</span>{% endif %}
+            </dd>
+            {%- endfor %}
+          </dl>
+          {%- endif %}
+        </li>
+        {%- endfor %}
+      </ul>
+    </details>
+    {%- endfor %}
+
+    {%- if not target.findings and not target.skipped %}
+    <p class="muted">No schema differences.</p>
+    {%- endif %}
+
+    {%- if target.ignored %}
+    <details class="kind">
+      <summary>Suppressed <span class="muted">— {{ target.ignored | length }} finding{{ '' if target.ignored | length == 1 else 's' }} set aside by ignore rules</span></summary>
+      <ul class="findings">
+        {%- for finding in target.ignored %}
+        <li>
+          <span class="mark {{ finding.status.value }}">{{ mark(finding.status) }}</span>
+          <span class="path">{{ finding.key.path }}</span>
+          <span class="muted">rule {{ finding.ignored_by }}</span>
+        </li>
+        {%- endfor %}
+      </ul>
+    </details>
+    {%- endif %}
+    {%- endif %}
+  </div>
+</details>
+{%- endfor %}
+
+{#-
+  The same payload the JSON reporter writes, embedded so the file is self-describing and the two
+  outputs cannot drift apart. Every `<` in it is escaped as \u003c, so no HTML-sensitive sequence
+  can form inside the element — see _payload() for why `</` alone is not enough.
+-#}
+<script type="application/json" id="report-data">{{ payload }}</script>
+
+<script>
+// Filtering only. Everything above is already in the DOM, so the report is complete with scripting
+// off; this just hides what the reader is not looking at.
+(function () {
+  "use strict";
+  var findings = Array.prototype.slice.call(document.querySelectorAll("li[data-path]"));
+  var filter = document.getElementById("filter");
+  var hits = document.getElementById("hits");
+  var boxes = Array.prototype.slice.call(document.querySelectorAll("input.sev"));
+
+  function matches(li, needle, severities) {
+    if (severities.indexOf(li.getAttribute("data-severity")) === -1) { return false; }
+    if (!needle) { return true; }
+    return li.getAttribute("data-path").toLowerCase().indexOf(needle) !== -1;
+  }
+
+  function apply() {
+    var needle = filter.value.trim().toLowerCase();
+    var severities = boxes.filter(function (b) { return b.checked; })
+                          .map(function (b) { return b.value; });
+    var shown = 0;
+    findings.forEach(function (li) {
+      var ok = matches(li, needle, severities);
+      li.hidden = !ok;
+      if (ok) { shown += 1; }
+    });
+    // Hide a section whose every finding is filtered out, so the page does not fill with empty
+    // headings.
+    Array.prototype.forEach.call(document.querySelectorAll("details.kind"), function (section) {
+      var own = section.querySelectorAll("li[data-path]");
+      if (!own.length) { return; }
+      var visible = Array.prototype.filter.call(own, function (li) { return !li.hidden; });
+      section.hidden = visible.length === 0;
+    });
+    hits.textContent = shown === findings.length
+      ? findings.length + " finding" + (findings.length === 1 ? "" : "s")
+      : shown + " of " + findings.length + " shown";
+  }
+
+  filter.addEventListener("input", apply);
+  boxes.forEach(function (box) { box.addEventListener("change", apply); });
+  apply();
+})();
+</script>
+
+</main>
+</body>
+</html>

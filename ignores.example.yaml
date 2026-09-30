@@ -1,0 +1,56 @@
+# Example ignore ruleset. Point at it with --ignores, or name it from a config's ignores_file.
+#
+# These rules are layered *over* the bundled defaults, which already cover Quartz runtime state,
+# Liquibase's own tables and conventionally-named scratch objects. Run with --no-default-ignores to
+# start from nothing, and see what the defaults cover with --show-ignored.
+#
+# Nothing here makes a finding disappear without trace. A suppressed finding still appears in the
+# JSON report and as a skipped case in JUnit, tagged with the rule id below, and the console says
+# how many were suppressed. That is deliberate: an ignore rule nobody can audit is indistinguishable
+# from a bug in this tool.
+
+version: 1
+
+options:
+  # Match name globs regardless of case. A rule's author should not have to know whether Liquibase
+  # created QRTZ_LOCKS or qrtz_locks on this particular database.
+  case_insensitive_globs: true
+
+rules:
+  # A rule must restrict at least one of kinds, names, attributes or statuses. One that restricts
+  # nothing would suppress the whole report, and is refused.
+
+  - id: audit-archive
+    reason: >
+      Archive tables are created by a nightly job in production only. They are not part of any
+      deployment, so their absence from qa and dev is expected.
+    names:
+      - "audit_archive.*"
+
+  - id: dev-experiments
+    reason: >
+      Developers create and drop indexes in dev while investigating slow queries.
+    # Scoped to extra_in_target, so this cannot excuse a *missing* index — which would be a real
+    # failed deployment. That distinction is what makes the rule safe to keep.
+    targets: [dev, local]
+    kinds: [index]
+    statuses: [extra_in_target]
+
+  - id: tolerate-collation
+    reason: >
+      The container images used locally are initialised with en_US.utf8 while the deployed
+      databases use de_DE.utf8.
+    # An attribute rule: it removes this one difference and leaves everything else about the column
+    # compared, so a missing or retyped column is still reported.
+    attributes:
+      - "column.collation"
+
+  - id: legacy-check-constraints
+    reason: >
+      Tracked in CUMO-1234. Known to differ until the next release; we want to see it without
+      failing the build.
+    names:
+      - "cumo-invoicing.invoice.invoice_legacy_*"
+    # warn keeps the finding visible and stops it failing an --fail-on error gate. Prefer this over
+    # `ignore` while something is still being worked on.
+    action: warn

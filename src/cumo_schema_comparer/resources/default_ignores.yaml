@@ -1,0 +1,50 @@
+# Rules applied unless --no-default-ignores is passed.
+#
+# Each one suppresses a difference that is expected in this platform rather than a sign of a failed
+# deployment. The bar for adding to this file is high: a default that hides real drift is worse than
+# noise, because noise is visible.
+#
+# Every suppressed finding still appears in the JSON report and as a skipped case in JUnit, tagged
+# with the id below, so a reader can always see what was set aside and why.
+
+version: 1
+
+options:
+  # An ignore rule is written by a person who should not have to know whether Liquibase created
+  # QRTZ_LOCKS or qrtz_locks on this particular database.
+  case_insensitive_globs: true
+
+rules:
+  - id: quartz-runtime
+    reason: >
+      Quartz scheduler state. cumo-bpf deploys its QRTZ_* tables and a `quartz` schema, and their
+      contents and indexes diverge between environments by design: they record which node holds
+      which lock, not what the application's schema looks like.
+    kinds: [table, column, index, constraint]
+    names:
+      - "quartz.*"
+      - "*.qrtz_*"
+      - "*.QRTZ_*"
+
+  - id: liquibase-bookkeeping
+    reason: >
+      Liquibase's own tables. Their *contents* are compared separately and far more usefully by the
+      changelog comparison; their DDL is created by Liquibase itself and varies with its version,
+      not with the service's schema.
+    kinds: [table, column, index, constraint]
+    names:
+      - "*.databasechangelog"
+      - "*.databasechangeloglock"
+
+  - id: scratch-objects
+    reason: >
+      Conventional names for temporary work. Somebody investigating an incident leaves these
+      behind, and they are never part of a deployment.
+    names:
+      - "*.tmp_*"
+      - "*.temp_*"
+      - "*_bak"
+      - "*_backup"
+      - "*_old"
+    statuses: [extra_in_target]
+    action: warn
