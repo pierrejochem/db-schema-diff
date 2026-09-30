@@ -1,6 +1,7 @@
 """The credential type must be unable to leak, even through a careless f-string."""
 
 import logging
+from typing import ClassVar
 
 import pytest
 
@@ -155,10 +156,10 @@ def test_safe_summary_leaks_no_password_fragment(monkeypatch, raw):
         assert "zz" not in text
 
 
-def test_safe_summary_marks_an_at_sign_host_unparseable(monkeypatch):
+def test_safe_summary_fails_closed_on_an_at_sign_host(monkeypatch):
     monkeypatch.setenv("AT_DSN", "postgresql://u:zz@secret@h:5432/db")
     summary = resolve_dsn("AT_DSN", role="target 'x'").safe_summary()
-    assert summary["host"] == "(unparseable)"
+    assert summary == {"source": "$AT_DSN", "parsed": "unparseable"}
 
 
 class TestSecretFragments:
@@ -185,3 +186,86 @@ class TestSecretFragments:
         frags = self._frags("postgresql://u:p@ss@h:5432/db")
         assert list(frags) == sorted(set(frags), key=lambda f: (-len(f), f))
         assert "" not in frags
+
+
+class TestFailClosed:
+    HOSTILE: ClassVar[list[str]] = [
+        "p@ss",
+        "pa/ss",
+        "pa?ss",
+        "pa#ss",
+        "pa ss",
+        "p:ss",
+        "pa%2Fss",
+        "a/b@c",
+    ]
+
+    def test_slash_password_fragments(self):
+        frags = Dsn("postgresql://u:pa/ss@nohost.invalid:5432/db", env_name="X").secret_fragments()
+        assert {"pa/ss", "pa", "ss"} <= set(frags)
+
+    def test_slash_and_at_password_fragments(self):
+        frags = Dsn("postgresql://u:a/b@c@h:5432/db", env_name="X").secret_fragments()
+        assert {"a/b@c", "a/b", "c"} <= set(frags)
+
+    def test_question_and_hash_password_fragments(self):
+        frags = Dsn("postgresql://u:a?b#c@h:5432/db", env_name="X").secret_fragments()
+        assert "a?b#c" in frags
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "postgresql://u:pa/ss@nohost.invalid:5432/db",  # port not digits
+            "postgresql://u:p@ss@nohost.invalid:5432/db",  # host contains @
+            "postgresql://u:x/y@h/db",  # host contains /
+            "host=a:b user=u",  # host contains :
+            "host=a\\ b user=u",  # host contains whitespace
+            "postgresql://h/d@b:z",  # dbname-ish
+        ],
+    )
+    def test_misparse_fails_closed(self, raw):
+        assert Dsn(raw, env_name="X").safe_summary() == {"source": "$X", "parsed": "unparseable"}
+
+    def test_dbname_with_slash_at_or_colon_fails_closed(self):
+        from cumo_schema_comparer.config import secrets
+
+        for bad in ("a@b", "a/b", "a:b"):
+            assert secrets._looks_misparsed({"dbname": bad})
+
+    @pytest.mark.parametrize("password", HOSTILE)
+    def test_hostile_passwords_never_leak(self, password):
+        from cumo_schema_comparer.db.connect import _failure_message
+
+        dsn = Dsn(f"postgresql://u:{password}@nohost.invalid:5432/db", env_name="X")
+        summary = dsn.safe_summary()
+        reason = RuntimeError(f"failed to resolve host '{password.split('@')[-1]}@nohost.invalid'")
+        texts = [str(summary), str(dsn), _failure_message("t", dsn, reason)]
+        pieces = {
+            p
+            for p in password.replace("%2F", "/")
+            .replace("@", " ")
+            .replace("/", " ")
+            .replace("?", " ")
+            .replace("#", " ")
+            .replace(":", " ")
+            .split()
+            if len(p) > 2
+        }
+        for text in texts:
+            assert password not in text
+            for piece in pieces:
+                assert piece not in text
+
+    def test_a_well_formed_dsn_keeps_the_full_summary(self):
+        dsn = Dsn("postgresql://cumo:pw@db-prod:5433/inv?sslmode=require", env_name="X")
+        assert dsn.safe_summary() == {
+            "host": "db-prod",
+            "port": "5433",
+            "dbname": "inv",
+            "user": "cumo",
+            "sslmode": "require",
+            "source": "$X",
+        }
+
+    def test_ipv6_host_is_still_summarised(self):
+        assert Dsn("host=::1 user=u", env_name="X").safe_summary()["host"] == "::1"

@@ -8,6 +8,7 @@ filter alone is not enough, because any f-string bypasses it before the filter e
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 from typing import Any
@@ -26,9 +27,36 @@ _SUMMARY_KEYS = ("host", "hostaddr", "port", "dbname", "user", "sslmode")
 
 _KEYWORD_PASSWORD = re.compile(r"(?:^|\s)password\s*=\s*('(?:\\.|[^'\\])*'|\S+)")
 
-#: Keys whose value is replaced when it contains ``@``. An unencoded ``@`` in a password makes
-#: libpq parse the tail of the password as the host, so ``@`` there means a password fragment.
-_HOST_KEYS = ("host", "hostaddr")
+
+def _is_ipv6(text: str) -> bool:
+    try:
+        ipaddress.IPv6Address(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _looks_misparsed(parsed: dict[str, Any]) -> bool:
+    """Whether libpq split the string somewhere impossible in a well-formed one.
+
+    An unencoded ``@``, ``/`` or similar in a password relocates password material into any
+    field (host, port, dbname), so a field-name allowlist cannot be trusted. Each test below is a
+    condition a correct connection string cannot produce; the summary then fails closed.
+    """
+
+    def text(key: str) -> str:
+        return str(parsed.get(key) or "")
+
+    port = text("port")
+    if port and not (port.isascii() and port.isdigit()):
+        return True
+    for key in ("host", "hostaddr"):
+        for part in text(key).split(","):  # libpq accepts a comma-separated host list
+            if any(ch in part for ch in "@/") or any(ch.isspace() for ch in part):
+                return True
+            if ":" in part and not _is_ipv6(part):
+                return True
+    return any(ch in text("dbname") for ch in "@/:")
 
 
 class Dsn:
@@ -101,13 +129,17 @@ class Dsn:
             found.append(parsed_password)
         raw = self._value
         if "://" in raw:
-            authority = raw.split("://", 1)[1].split("/", 1)[0]
-            if "@" in authority:
-                userinfo = authority.rsplit("@", 1)[0]
+            # The last "@" is the userinfo delimiter whatever the password contains: a real host
+            # never has one. Do not stop at the first "/" - a password may hold it.
+            head = raw.split("://", 1)[1]
+            if "@" in head:
+                userinfo = head.rsplit("@", 1)[0]
                 if ":" in userinfo:  # no colon means a user name only, no password
                     after = userinfo.split(":", 1)[1]
                     found.extend([userinfo, after, unquote(after)])
                     found.extend(userinfo.split("@"))
+                    found.extend(after.split("@"))
+                    found.extend(re.split(r"[@/?#:]", after))
         else:
             for match in _KEYWORD_PASSWORD.finditer(raw):
                 token = match.group(1)
@@ -127,14 +159,14 @@ class Dsn:
             parsed = conninfo_to_dict(self._value)
         except Exception:
             return {"source": f"${self._env_name}", "parsed": "unparseable"}
+        unparseable = {"source": f"${self._env_name}", "parsed": "unparseable"}
+        if _looks_misparsed(parsed):
+            return unparseable
         summary = {
             key: str(parsed[key])
             for key in _SUMMARY_KEYS
             if key not in _SENSITIVE_KEYS and parsed.get(key) not in (None, "")
         }
-        for key in _HOST_KEYS:
-            if "@" in summary.get(key, ""):
-                summary[key] = "(unparseable)"
         if not summary:
             return {"source": f"${self._env_name}", "parsed": "unparseable"}
         summary["source"] = f"${self._env_name}"

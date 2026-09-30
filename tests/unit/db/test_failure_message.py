@@ -27,3 +27,12 @@ def test_keyword_password_is_scrubbed_from_the_reason():
     dsn = Dsn("host=h user=u password=hunter2", env_name="X")
     message = _failure_message("t", dsn, RuntimeError("auth failed with hunter2"))
     assert "hunter2" not in message
+
+
+def test_slash_password_leaves_no_fragment_anywhere_in_the_message():
+    dsn = Dsn("postgresql://u:pa/ss@nohost.invalid:5432/db", env_name="X")
+    reason = RuntimeError("failed to resolve host 'u': port 'pa' ss@nohost.invalid:5432/db")
+    message = _failure_message("target", dsn, reason)
+    assert "pa/ss" not in message
+    assert "port=pa" not in message
+    assert "ss@" not in message
