@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import tempfile
 
 import pytest
 
-GUI = pathlib.Path("src/cumo_schema_comparer/gui")
+GUI = pathlib.Path(__file__).resolve().parents[3] / "src" / "cumo_schema_comparer" / "gui"
 
 FORBIDDEN = (
     "cumo_schema_comparer.db",
@@ -33,16 +34,50 @@ def imported_names(path: pathlib.Path) -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            names.add(node.module)
-        elif isinstance(node, ast.ImportFrom) and node.level:
-            # A relative import inside gui/ resolves within the package, never outside it.
-            names.add("cumo_schema_comparer.gui")
+        elif isinstance(node, ast.ImportFrom):
+            if node.level == 0 and node.module:
+                # Absolute import: record the module and each imported name.
+                names.add(node.module)
+                for alias in node.names:
+                    names.add(f"{node.module}.{alias.name}")
+            elif node.level > 0:
+                # Relative import: resolve against cumo_schema_comparer.gui.
+                base_parts = ["cumo_schema_comparer", "gui"]
+                # Walk up by node.level - 1 (level 1 is same package, level 2 is parent, etc.)
+                base_parts = base_parts[: -(node.level - 1)] if node.level > 1 else base_parts
+                if node.module:
+                    resolved = ".".join(base_parts) + "." + node.module
+                else:
+                    resolved = ".".join(base_parts)
+                names.add(resolved)
+                # Also record each imported name from the resolved module.
+                for alias in node.names:
+                    names.add(f"{resolved}.{alias.name}")
     return names
 
 
 def test_there_are_gui_modules_to_check():
     assert gui_modules(), "the boundary test would pass vacuously with no modules"
+
+
+def test_the_boundary_checker_catches_forbidden_imports():
+    """Verify the checker can detect forbidden imports, proving it is not broken."""
+    source_code = """
+from .. import db
+from ..db import connect
+from cumo_schema_comparer import normalize
+"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(source_code)
+        temp_path = pathlib.Path(f.name)
+    try:
+        names = imported_names(temp_path)
+        # The checker should have found these forbidden imports.
+        assert "cumo_schema_comparer.db" in names
+        assert "cumo_schema_comparer.db.connect" in names
+        assert "cumo_schema_comparer.normalize" in names
+    finally:
+        temp_path.unlink()
 
 
 @pytest.mark.parametrize("path", gui_modules(), ids=lambda p: p.name)
