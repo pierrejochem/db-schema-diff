@@ -59,6 +59,21 @@ equal:
 Python warns ``coroutine ... was never awaited`` for such a dropped coroutine. That is left visible
 on purpose: it reports a real caller bug.
 
+Reading a cancelled run
+-----------------------
+Per-source events are truthful history, not a verdict. A run that is cancelled late can have emitted
+``CAPTURED`` for every source and still end in ``CancelledError`` (a cancel that arrived while the
+last work was finishing is honoured, and no report is returned). A caller must render the run-level
+outcome - a report, or ``CancelledError``/an error - and must never infer success from per-source
+states.
+
+Thread affinity
+---------------
+``compare``/``check_all``/``check_connection`` must be *called* on the event-loop thread, because
+the call claims the session. Called elsewhere they raise ``RuntimeError`` and leave the session
+untouched. From another thread, schedule a small coroutine that makes the call on the loop.
+(``cancel()`` is the exception: it is safe from any thread.)
+
 A run begins when ``compare()``/``check_all()``/``check_connection()`` is *called*, not when the
 returned coroutine first runs, so a ``cancel()`` between creating the task and its first turn
 aborts that run. The returned coroutine must therefore be awaited (or closed/dropped, which
@@ -307,6 +322,9 @@ class Session:
         return report
 
     def _claim(self) -> _Claim:
+        # Resolve everything that can fail before touching any state, so a failure (notably being
+        # called off the event-loop thread) leaves the session exactly as it was.
+        loop = asyncio.get_running_loop()
         if self._running:
             held = self._claim_held
             if held is not None and self._never_ran(held):
@@ -316,12 +334,13 @@ class Session:
                 self._abandon(held, held.work)
             else:
                 raise GuiError("a check or comparison is already running")
+        claim = _Claim(self._generation + 1)
         self._running = True
-        self._generation += 1
+        self._generation = claim.generation
         self._cancel_requested.clear()
-        self._loop = asyncio.get_running_loop()
-        self._claim_held = _Claim(self._generation)
-        return self._claim_held
+        self._loop = loop
+        self._claim_held = claim
+        return claim
 
     @staticmethod
     def _never_ran(claim: _Claim) -> bool:

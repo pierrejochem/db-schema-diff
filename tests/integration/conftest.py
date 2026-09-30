@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -57,14 +58,15 @@ def docker_available() -> bool:
 
 
 @pytest.fixture(scope="session")
-def base_dsn() -> str:
+def base_dsn() -> Iterator[str]:
     """A libpq URI for a server we may create databases on.
 
     Either an external server named by ``CUMO_SCHEMA_DIFF_TEST_DSN`` or a throwaway container.
     """
     external = os.environ.get("CUMO_SCHEMA_DIFF_TEST_DSN")
     if external:
-        return external
+        yield external
+        return
 
     if not docker_available():
         pytest.skip("needs Docker, or CUMO_SCHEMA_DIFF_TEST_DSN pointing at a PostgreSQL server")

@@ -15,7 +15,7 @@ import gc
 import logging
 import threading
 from collections import defaultdict
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 import pytest
@@ -797,6 +797,46 @@ class TestCancelNeverYieldsResults:
             with pytest.raises(asyncio.CancelledError):
                 await task
         assert live == ["qa"]
+
+
+class TestOffLoopCalls:
+    """Called on the wrong thread, the entry points raise and leave the session untouched."""
+
+    CALLS: ClassVar[dict[str, Any]] = {
+        "compare": lambda s: s.compare(),
+        "check_all": lambda s: s.check_all(),
+        "check_connection": lambda s: s.check_connection("qa"),
+    }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("which", ["compare", "check_all", "check_connection"])
+    async def test_an_off_loop_call_raises_and_leaves_the_session_usable(self, which):
+        subject, _ = session()
+        generation = subject._generation
+
+        def call_off_loop() -> None:
+            with pytest.raises(RuntimeError):
+                self.CALLS[which](subject)
+
+        await asyncio.to_thread(call_off_loop)
+        assert not subject._running
+        assert subject._generation == generation
+        with mock.patch(CAPTURE, side_effect=succeed):
+            for _ in range(3):
+                assert (await subject.compare()).targets
+
+    @pytest.mark.asyncio
+    async def test_a_failure_part_way_through_claiming_leaves_no_residue(self):
+        subject, _ = session()
+        before = (subject._running, subject._generation, subject._loop, subject._claim_held)
+        with (
+            mock.patch("cumo_schema_comparer.gui.session._Claim", side_effect=ValueError("late")),
+            pytest.raises(ValueError, match="late"),
+        ):
+            subject.compare()
+        assert (subject._running, subject._generation, subject._loop, subject._claim_held) == before
+        with mock.patch(CAPTURE, side_effect=succeed):
+            assert (await subject.compare()).targets
 
 
 class TestDroppedCoroutine:
