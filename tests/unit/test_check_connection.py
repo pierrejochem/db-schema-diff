@@ -48,9 +48,11 @@ def test_a_successful_check_reports_the_server_and_schemas():
         "database": "invoicing",
         "user": "cumo",
         "datcollate": "de_DE.utf8",
+        "encoding": "UTF8",
     }
     introspector.schemas.return_value = ["cumo-invoicing", "public"]
     introspector.locate_changelog.return_value = []
+    introspector.privilege_gaps.return_value = []
 
     with (
         mock.patch("cumo_schema_comparer.runner.open_connection"),
@@ -66,6 +68,8 @@ def test_a_successful_check_reports_the_server_and_schemas():
     assert status.collation == "de_DE.utf8"
     assert status.schemas == ("cumo-invoicing", "public")
     assert status.changelog is None
+    assert status.encoding == "UTF8"
+    assert status.privilege_limited == ()
 
 
 def test_a_located_changelog_is_reported_with_its_count_and_tag():
@@ -79,8 +83,10 @@ def test_a_located_changelog_is_reported_with_its_count_and_tag():
         "database": "invoicing",
         "user": "cumo",
         "datcollate": "C",
+        "encoding": "UTF8",
     }
     introspector.schemas.return_value = ["cumo-invoicing"]
+    introspector.privilege_gaps.return_value = []
     introspector.locate_changelog.return_value = [location]
     introspector.changelog_state.return_value = ChangelogState(
         location=location,
@@ -111,8 +117,10 @@ def test_several_changelog_candidates_are_reported_as_ambiguous():
         "database": "invoicing",
         "user": "cumo",
         "datcollate": "C",
+        "encoding": "UTF8",
     }
     introspector.schemas.return_value = ["public", "cumo-invoicing"]
+    introspector.privilege_gaps.return_value = []
     introspector.locate_changelog.return_value = [
         ChangelogLocation(schema="public", table="DATABASECHANGELOG"),
         ChangelogLocation(schema="cumo-invoicing", table="DATABASECHANGELOG"),
@@ -146,8 +154,10 @@ def test_a_configured_changelog_location_is_used_instead_of_searching():
         "database": "invoicing",
         "user": "cumo",
         "datcollate": "C",
+        "encoding": "UTF8",
     }
     introspector.schemas.return_value = ["cumo-invoicing"]
+    introspector.privilege_gaps.return_value = []
     introspector.changelog_state.return_value = ChangelogState(location=None)
 
     with (
@@ -159,3 +169,29 @@ def test_a_configured_changelog_location_is_used_instead_of_searching():
 
     introspector.locate_changelog.assert_not_called()
     introspector.changelog_state.assert_called_once()
+
+
+def test_objects_with_no_visible_definition_are_reported_by_kind():
+    introspector = mock.MagicMock()
+    introspector.server_info.return_value = {
+        "server_version": "15.19",
+        "database": "invoicing",
+        "user": "cumo",
+        "datcollate": "C",
+        "encoding": "UTF8",
+    }
+    introspector.schemas.return_value = ["cumo-invoicing"]
+    introspector.locate_changelog.return_value = []
+    introspector.privilege_gaps.return_value = [
+        {"kind": "view", "count": 3},
+        {"kind": "routine", "count": 1},
+    ]
+
+    with (
+        mock.patch("cumo_schema_comparer.runner.open_connection"),
+        mock.patch("cumo_schema_comparer.runner.Introspector", return_value=introspector),
+        mock.patch("cumo_schema_comparer.runner.server_features"),
+    ):
+        status = check_connection(SOURCE, DSN)
+
+    assert status.privilege_limited == (("view", 3), ("routine", 1))

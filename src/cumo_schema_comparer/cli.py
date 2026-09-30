@@ -482,9 +482,8 @@ def validate_config_command(
     type=click.Path(path_type=Path),
     help="Config file.",
 )
-@click.option("--sequential", is_flag=True)
 @click.pass_context
-def probe_command(ctx: click.Context, config_path: Path, sequential: bool) -> None:
+def probe_command(ctx: click.Context, config_path: Path) -> None:
     """Connect to every source and report what was found, without comparing anything.
 
     The first thing to run against a new environment. It answers the questions that otherwise turn
@@ -519,11 +518,26 @@ def probe_command(ctx: click.Context, config_path: Path, sequential: bool) -> No
         version = (status.server_version or "").split(" ")[0]
         click.secho(f"{status.label}: PostgreSQL {version}", fg="green")
         click.echo(f"  database  {status.database} as {status.user}")
-        click.echo(f"  collation {status.collation}")
+        click.echo(f"  encoding  {status.encoding}  collation {status.collation}")
         click.echo(f"  schemas   {', '.join(status.schemas) or '(none)'}")
         _echo_changelog_status(status)
+        _echo_privilege_warnings(status)
 
     ctx.exit(ExitCode.PROBE_ERROR if failed else ExitCode.OK)
+
+
+def _echo_privilege_warnings(status: runner.ConnectionStatus) -> None:
+    """Warn when a definition came back empty.
+
+    ``pg_get_viewdef`` and friends return NULL for an object the connecting role cannot see, which
+    later renders as "definition differs" -- drift that is really a permissions problem.
+    """
+    for kind, count in status.privilege_limited:
+        click.secho(
+            f"  privilege {count} {kind}(s) returned no definition — this role may not be able "
+            "to see them, which would later read as drift",
+            fg="yellow",
+        )
 
 
 def _echo_changelog_status(status: runner.ConnectionStatus) -> None:

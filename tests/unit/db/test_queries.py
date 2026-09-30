@@ -28,6 +28,7 @@ QUERY_NAMES = [
     "extensions",
     "changelog_locate",
     "changelog_columns",
+    "privilege_check",
 ]
 
 COMMENT = re.compile(r"--[^\n]*")
