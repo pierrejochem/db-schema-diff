@@ -118,8 +118,12 @@ class TestEditing:
             document.add_rule("audit-archive")
 
     def test_a_new_rule_starts_restricted_enough_to_validate(self, document):
-        # A rule restricting nothing would suppress the whole report and is refused by the model.
+        # The seed satisfies the model, but it is a placeholder and validation says so.
         document.add_rule("new-rule")
+        errors = document.validate()
+        assert [e.field for e in errors] == ["rules.2.names"]
+        assert "cannot match yet" in str(errors[0])
+        document.update_rule("new-rule", "names", ["public.orders"])
         assert document.validate() == []
 
 
@@ -180,7 +184,6 @@ class TestRulesThatCanNeverMatch:
             ("statuses", ["match"]),
             ("statuses", ["secret-value"]),
             ("action", "silence"),
-            ("attributes", ["column.collation"]),  # kinds is [index] on rule 2, below
         ],
     )
     def test_reported_without_echoing_the_value(self, document, field, value):
@@ -246,6 +249,7 @@ class TestSaving:
         with pytest.raises(GuiError):
             document.save()
         document.add_rule("r")
+        document.update_rule("r", "names", ["public.*"])
         document.save(tmp_path / "out.yaml")
         assert (tmp_path / "out.yaml").exists()
 
@@ -304,3 +308,171 @@ class TestPastedConnectionStrings:
             doc.add_rule(DSN)
         assert doc.config.rules == ()
         assert doc.dirty is False
+
+
+def _fields(document):
+    return [e.field for e in document.validate()]
+
+
+class TestEachUnmatchableBranch:
+    """One test per branch, each failing if that branch is removed."""
+
+    def test_attribute_of_an_unknown_kind(self, document):
+        document.update_rule("audit-archive", "attributes", ["widget.foo"])
+        assert _fields(document) == ["rules.0.attributes"]
+        assert "kind that does not exist" in str(document.validate()[0])
+
+    @pytest.mark.parametrize("attribute", ["collation", "column.a.b", "column."])
+    def test_malformed_attribute(self, document, attribute):
+        document.update_rule("audit-archive", "attributes", [attribute])
+        assert _fields(document) == ["rules.0.attributes"]
+        assert "kind.attribute" in str(document.validate()[0])
+
+    def test_attribute_never_compared(self, document):
+        document.update_rule("audit-archive", "attributes", ["column.nonexistent"])
+        assert _fields(document) == ["rules.0.attributes"]
+        assert "never compared" in str(document.validate()[0])
+
+    def test_attribute_on_a_kind_with_no_specs(self, document):
+        document.update_rule("audit-archive", "attributes", ["schema.foo"])
+        assert "never compared" in str(document.validate()[0])
+
+    def test_a_real_attribute_is_accepted(self, document):
+        document.update_rule("audit-archive", "attributes", ["column.collation", "index.name"])
+        assert document.validate() == []
+
+    def test_attribute_kind_excluded_by_kinds(self, document):
+        document.update_rule("dev-experiments", "attributes", ["column.collation"])
+        document.update_rule("dev-experiments", "statuses", ["differs"])
+        errors = document.validate()
+        assert [e.field for e in errors] == ["rules.1.attributes"]
+        assert "exclude" in str(errors[0])
+
+    def test_attribute_rule_excluding_differs(self, document):
+        document.update_rule("audit-archive", "attributes", ["column.collation"])
+        document.update_rule("audit-archive", "statuses", ["missing_in_target"])
+        errors = document.validate()
+        assert [e.field for e in errors] == ["rules.0.statuses"]
+
+    @pytest.mark.parametrize("bad", [["audit_archive"], ["a", "public.x"]])
+    def test_name_without_dot_or_wildcard(self, document, bad):
+        document.update_rule("audit-archive", "names", bad)
+        assert _fields(document) == ["rules.0.names"]
+        assert "no dot and no wildcard" in str(document.validate()[0])
+
+    @pytest.mark.parametrize("ok", ["public.orders", "*", "*.qrtz_*", "audit?", "[a]b"])
+    def test_name_forms_that_can_match(self, document, ok):
+        document.update_rule("audit-archive", "names", [ok])
+        assert document.validate() == []
+
+    def test_empty_name_from_a_loaded_file(self, document):
+        rule = document.config.rules[0].model_copy(update={"names": ("",)})
+        document.config = document.config.model_copy(update={"rules": (rule,)})
+        errors = document.validate()
+        assert any("empty pattern" in str(e) for e in errors)
+
+    def test_empty_target_from_a_loaded_file(self, document):
+        rule = document.config.rules[1].model_copy(update={"targets": ("",)})
+        document.config = document.config.model_copy(update={"rules": (rule,)})
+        assert _fields(document) == ["rules.0.targets"]
+        assert "empty target" in str(document.validate()[0])
+
+    def test_action_outside_the_three(self, document):
+        rule = document.config.rules[0].model_copy(update={"action": "silence"})
+        document.config = document.config.model_copy(update={"rules": (rule,)})
+        errors = document.validate()
+        assert [e.field for e in errors] == ["rules.0.action"]
+        assert "ignore, warn or info" in str(errors[0])
+        assert "silence" not in str(errors[0])
+
+    def test_unknown_kind_and_status_are_each_reported_on_their_own_field(self, document):
+        document.update_rule("dev-experiments", "kinds", ["tabel"])
+        assert _fields(document) == ["rules.1.kinds"]
+        document.update_rule("dev-experiments", "kinds", ["index"])
+        document.update_rule("dev-experiments", "statuses", ["match"])
+        assert _fields(document) == ["rules.1.statuses"]
+
+    def test_duplicate_id_says_the_file_is_invalid(self, document):
+        document.update_rule("dev-experiments", "id", "audit-archive")
+        assert "invalid" in str(document.validate()[0])
+        assert "never be reached" not in str(document.validate()[0])
+
+    def test_a_rule_replacing_a_bundled_default_is_reported(self, document):
+        document.add_rule("scratch-objects")
+        document.update_rule("scratch-objects", "names", ["public.tmp_*"])
+        errors = document.validate()
+        assert [e.field for e in errors] == ["rules.2.id"]
+        assert "bundled default" in str(errors[0])
+
+
+class TestLoading:
+    def test_whitespace_in_a_loaded_file_is_stripped(self, tmp_path):
+        (tmp_path / "ignores.yaml").write_text(
+            "version: 1\nrules:\n- id: r\n  names:\n  - 'a.* '\n  targets:\n  - ' qa'\n"
+        )
+        config_path = tmp_path / "c.yaml"
+        config_path.write_text(
+            "version: 1\nname: c\nmaster:\n  label: p\n  dsn_env: P\n"
+            "targets:\n- label: qa\n  dsn_env: Q\nignores_file: ignores.yaml\n"
+        )
+        document = IgnoresDocument.for_config(ConfigDocument.load(config_path))
+        assert document.config.rules[0].names == ("a.*",)
+        assert document.config.rules[0].targets == ("qa",)
+        assert document.dirty is False
+
+    def test_a_missing_ignores_file_starts_empty_at_that_path(self, tmp_path):
+        config_path = tmp_path / "c.yaml"
+        config_path.write_text(
+            "version: 1\nname: c\nmaster:\n  label: p\n  dsn_env: P\n"
+            "targets:\n- label: qa\n  dsn_env: Q\nignores_file: later.yaml\n"
+        )
+        document = IgnoresDocument.for_config(ConfigDocument.load(config_path))
+        assert document.path == tmp_path / "later.yaml"
+        assert document.config.rules == ()
+        document.add_rule("r")
+        document.update_rule("r", "names", ["public.*"])
+        document.save()
+        assert (tmp_path / "later.yaml").exists()
+
+
+class TestShapeIsCredentialsOnly:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "postgresql://u:s3cret@h/db",
+            "host=h password=s3cret",
+            "postgresql://h/db",
+            "postgres://x",
+            "POSTGRESQL://h",
+            "https://u:p@example.com/x",
+            "sslkey=/k",
+            "passfile = /p",
+            "sslpassword=x",
+        ],
+    )
+    def test_refused(self, text):
+        from cumo_schema_comparer.gui.shape import looks_like_connection_string
+
+        assert looks_like_connection_string(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "see https://jira.example.com/X-1",
+            "ops set user = readonly here",
+            "service=batch creates it",
+            "http://docs.example.com",
+            "see https://x.com/a?b=c#d and mail a@b.c",
+            "host=h dbname=d port=5432 sslmode=require",
+        ],
+    )
+    def test_accepted(self, text):
+        from cumo_schema_comparer.gui.shape import looks_like_connection_string
+
+        assert not looks_like_connection_string(text)
+
+    def test_a_url_in_a_reason_is_allowed(self, document):
+        document.update_rule("audit-archive", "reason", "see https://jira.example.com/X-1")
+        assert document.validate() == []
+        document.save()
+        assert "jira.example.com" in document.path.read_text()

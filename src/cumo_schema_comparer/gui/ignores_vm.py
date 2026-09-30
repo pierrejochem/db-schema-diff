@@ -24,9 +24,10 @@ from pydantic import ValidationError
 
 from ..config.loader import resolve_ignores
 from ..config.model import IgnoreConfig, IgnoreRule
+from ..diff.attributes import SPECS
 from ..diff.ignores import load_default_ignores
 from ..errors import ConfigError
-from ..model.kinds import ObjectKind
+from ..model.kinds import AUTO_NAMED_KINDS, ObjectKind
 from .config_vm import ConfigDocument, _IndentedDumper
 from .errors import GuiError
 from .shape import looks_like_connection_string
@@ -40,6 +41,18 @@ RULE_ACTIONS: tuple[str, ...] = ("ignore", "warn", "info")
 _LIST_FIELDS = ("kinds", "names", "attributes", "targets", "statuses")
 _EDITABLE = ("id", "reason", "action", *_LIST_FIELDS)
 _RULE_KEY_ORDER = ("id", "reason", "kinds", "names", "attributes", "targets", "statuses", "action")
+
+
+#: What `add_rule` seeds so a new rule satisfies the model. It can never match a real object, and
+#: validation says so until it is replaced.
+SEED_NAME = "schema.name"
+
+
+def _known_attributes() -> frozenset[str]:
+    """Every attribute name the engine can ask a rule about, including rename deltas."""
+    names = {spec.name for specs in SPECS.values() for spec in specs}
+    names.update(f"{kind.value}.name" for kind in AUTO_NAMED_KINDS)
+    return frozenset(names)
 
 
 def rule_kinds() -> tuple[str, ...]:
@@ -57,6 +70,12 @@ class IgnoresDocument:
 
     @classmethod
     def for_config(cls, document: ConfigDocument) -> IgnoresDocument:
+        ref = document.config.ignores_file
+        if document.config.ignores is None and ref is not None:
+            base = document.path.parent if document.path is not None else Path()
+            if not (base / ref).exists():
+                # Declared but not yet created: start empty so the tab can write it.
+                return cls(path=base / ref, config=IgnoreConfig())
         try:
             resolved = resolve_ignores(document.config, document.path)
         except ConfigError as exc:
@@ -65,7 +84,7 @@ class IgnoresDocument:
         if resolved is not None and document.config.ignores_file is not None:
             base = document.path.parent if document.path is not None else Path()
             path = base / document.config.ignores_file
-        return cls(path=path, config=resolved if resolved is not None else IgnoreConfig())
+        return cls(path=path, config=_stripped(resolved) if resolved else IgnoreConfig())
 
     # -- Reading --------------------------------------------------------------------------
 
@@ -105,7 +124,7 @@ class IgnoresDocument:
         if any(rule.id == rule_id for rule in self.config.rules):
             raise GuiError(f"a rule with id {rule_id!r} already exists", field="id")
         # A rule restricting nothing would suppress the whole report; seed one that validates.
-        rule = IgnoreRule(id=rule_id, names=("schema.name",))
+        rule = IgnoreRule(id=rule_id, names=(SEED_NAME,))
         self.config = self.config.model_copy(update={"rules": (*self.config.rules, rule)})
         self.dirty = True
 
@@ -181,6 +200,20 @@ class IgnoresDocument:
         self.dirty = False
 
 
+def _stripped(config: IgnoreConfig) -> IgnoreConfig:
+    """``config`` with surrounding whitespace removed from list entries, as editing does."""
+    rules = []
+    for rule in config.rules:
+        update = {}
+        for name in _LIST_FIELDS:
+            old = getattr(rule, name)
+            new = tuple(item.strip() for item in old)
+            if new != old:
+                update[name] = new
+        rules.append(rule.model_copy(update=update) if update else rule)
+    return config.model_copy(update={"rules": tuple(rules)})
+
+
 def _row(rule: IgnoreRule, *, read_only: bool) -> dict[str, Any]:
     return {
         "id": rule.id,
@@ -200,14 +233,22 @@ def _problems(config: IgnoreConfig) -> list[GuiError]:
     errors: list[GuiError] = []
     known_kinds = set(rule_kinds())
     seen: set[str] = set()
+    defaults = {rule.id for rule in load_default_ignores().rules}
 
     def report(index: int, field: str, message: str) -> None:
         errors.append(GuiError(f"rule {index + 1}, {field}: {message}", f"rules.{index}.{field}"))
 
     for index, rule in enumerate(config.rules):
         if rule.id in seen:
-            report(index, "id", "duplicate rule id; the later rule would never be reached")
+            report(index, "id", "duplicate rule id; the file is invalid until every id is unique")
         seen.add(rule.id)
+        if rule.id in defaults:
+            report(
+                index,
+                "id",
+                "replaces a bundled default rule of the same id; the default is not applied "
+                "while this rule exists",
+            )
         if not rule.id.strip():
             report(index, "id", "a rule id must not be empty")
         if any(k not in known_kinds for k in rule.kinds):
@@ -220,6 +261,15 @@ def _problems(config: IgnoreConfig) -> list[GuiError]:
             report(index, "action", "is not one of ignore, warn or info, so the rule does nothing")
         if any(not n.strip() for n in rule.names):
             report(index, "names", "contains an empty pattern, which matches nothing")
+        if any(n.strip() and "." not in n and not set("*?[") & set(n) for n in rule.names):
+            report(
+                index,
+                "names",
+                "contains a pattern with no dot and no wildcard; names are matched as "
+                "schema.name, so it can never match",
+            )
+        if SEED_NAME in rule.names:
+            report(index, "names", "still holds the placeholder pattern, so it cannot match yet")
         if any(not t.strip() for t in rule.targets):
             report(index, "targets", "contains an empty target label, which matches nothing")
         if rule.attributes:
@@ -277,12 +327,14 @@ def _check_attributes(rule: IgnoreRule, known_kinds: set[str], report: Any) -> N
             "attributes only apply to differences, and statuses excludes differs, "
             "so the rule can never match",
         )
-    prefixes = {a.split(".", 1)[0] for a in rule.attributes}
-    if any("." not in a or not a.split(".", 1)[1] for a in rule.attributes):
+    known = _known_attributes()
+    if any(a.count(".") != 1 or not all(a.split(".")) for a in rule.attributes):
         report("attributes", "must be written kind.attribute, so the rule can never match")
-    elif not prefixes <= known_kinds:
+    elif any(a.split(".")[0] not in known_kinds for a in rule.attributes):
         report("attributes", "names a kind that does not exist, so the rule can never match")
-    elif rule.kinds and not prefixes & set(rule.kinds):
+    elif any(a not in known for a in rule.attributes):
+        report("attributes", "names an attribute that is never compared, so it can never match")
+    elif rule.kinds and not {a.split(".")[0] for a in rule.attributes} & set(rule.kinds):
         report(
             "attributes", "names only kinds that the rule's kinds exclude, so it can never match"
         )
