@@ -99,15 +99,17 @@ class ResultsModel:
         """Findings for every target, filtered the way the HTML report filters.
 
         The needle is a case-insensitive substring of the object path; ``severities`` of ``None``
-        means no severity filter, and an empty set means nothing is shown.
+        means no severity filter, and an empty set means nothing is shown. Severity names are
+        matched case-insensitively.
         """
         text = needle.strip().lower()
+        wanted = None if severities is None else {name.lower() for name in severities}
         rows: list[FindingRow] = []
         for target in self._report.targets:
             for finding in (*_ordered(target.findings), *_ordered(target.ignored)):
                 if text and text not in finding.key.path.lower():
                     continue
-                if severities is not None and finding.severity.label not in severities:
+                if wanted is not None and finding.severity.label not in wanted:
                     continue
                 rows.append(_row(target, finding))
         return rows
@@ -123,37 +125,52 @@ class ResultsModel:
         return []
 
     def write_reports(self, directory: Path) -> list[Path]:
-        """Write the JSON, JUnit and HTML reports into ``directory``.
+        """Write the JSON, JUnit and HTML reports into ``directory``, all or none.
 
-        Each file is written beside its final name and moved into place, so a failure part way
-        through never leaves a truncated report that looks like a finished one.
+        Every report is rendered to a ``.partial`` file first and they are moved into place only
+        once all three exist, so a failure while rendering never leaves new files beside old ones
+        that someone would read as one consistent set.
         """
-        targets: list[tuple[Reporter, Path]] = [
+        plan: list[tuple[Reporter, Path]] = [
             (JsonReporter(), directory / JSON_NAME),
             (JUnitReporter(), directory / JUNIT_NAME),
             (HtmlReporter(), directory / HTML_NAME),
         ]
-        written: list[Path] = []
-        for reporter, path in targets:
-            _write_atomically(reporter, self._report, path)
-            written.append(path)
-        return written
+        partials = [(path, path.with_name(path.name + ".partial")) for _, path in plan]
+        try:
+            for (reporter, path), (_, partial) in zip(plan, partials, strict=True):
+                _render(reporter, self._report, path, partial)
+            for path, partial in partials:
+                _publish(partial, path)
+        finally:
+            for _, partial in partials:
+                with contextlib.suppress(OSError):
+                    partial.unlink()
+        return [path for path, _ in partials]
 
     def html_path(self, directory: Path) -> Path:
         return directory / HTML_NAME
 
 
-def _write_atomically(reporter: Reporter, report: ComparisonReport, path: Path) -> None:
-    partial = path.with_name(path.name + ".partial")
+def _publish(partial: Path, final: Path) -> None:
+    try:
+        os.replace(partial, final)
+    except OSError as exc:
+        raise GuiError(f"could not write {final.name}: {exc.strerror or 'write failed'}") from None
+
+
+def _render(reporter: Reporter, report: ComparisonReport, final: Path, partial: Path) -> None:
+    """Render to the partial file. Any failure becomes a GuiError that quotes nothing.
+
+    The exception text can hold report content (a column default, a connection detail), so only
+    the operating system's reason is ever passed on.
+    """
     try:
         render_to_path(reporter, report, partial)
-        os.replace(partial, path)
     except OSError as exc:
-        with contextlib.suppress(OSError):
-            partial.unlink()
-        # The operating system's reason, not the exception text: it is enough to act on.
-        reason = exc.strerror or "write failed"
-        raise GuiError(f"could not write {path.name}: {reason}") from None
+        raise GuiError(f"could not write {final.name}: {exc.strerror or 'write failed'}") from None
+    except Exception:
+        raise GuiError(f"could not write {final.name}: the report could not be rendered") from None
 
 
 def _changelog(target: TargetDiff) -> ChangelogDiff | None:

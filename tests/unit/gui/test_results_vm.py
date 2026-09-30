@@ -124,11 +124,27 @@ class TestWritingReports:
         for pattern in ("http://", "https://", "//cdn"):
             assert pattern not in html
 
-    def test_no_report_contains_a_credential(self, model, tmp_path):
-        for path in model.write_reports(tmp_path):
+    def test_no_report_contains_a_credential(self, tmp_path, monkeypatch):
+        from dataclasses import replace
+
+        from tests.support.builders import source
+        from tests.support.reports import drifted_target
+
+        # Distinctive values, so the assertions can fail: the labels prove the fixture reached the
+        # files, and the DSN in the environment proves nothing is read from there.
+        monkeypatch.setenv("CUMO_SECRET_DSN", "postgresql://svc:hunter2-7731@db.internal/inv")
+        target = replace(
+            drifted_target(),
+            target_label="qa-marker-4471",
+            target_source=source("qa-marker-4471"),
+        )
+        report = full_report()
+        report = replace(report, targets=(target, *report.targets[1:]))
+        for path in ResultsModel(report).write_reports(tmp_path):
             text = path.read_text()
-            assert "password" not in text
-            assert "postgresql://" not in text
+            assert "qa-marker-4471" in text
+            for secret in ("hunter2-7731", "CUMO_SECRET_DSN", "db.internal"):
+                assert secret not in text
 
 
 # -- The verdict must never call a partial comparison clean ---------------------------------
@@ -284,13 +300,14 @@ class TestTargetSummary:
 
 
 class TestWriteFailures:
-    def test_a_failed_write_names_the_file(self, model, tmp_path):
+    def test_a_failed_write_names_the_file_and_leaves_nothing_behind(self, model, tmp_path):
         from cumo_schema_comparer.gui.errors import GuiError
 
         blocker = tmp_path / "file"
         blocker.write_text("x")
         with pytest.raises(GuiError, match=r"report\.json"):
             model.write_reports(blocker / "sub")
+        assert blocker.read_text() == "x"
 
     def test_no_partial_files_remain_after_success(self, model, tmp_path):
         model.write_reports(tmp_path)
@@ -298,3 +315,98 @@ class TestWriteFailures:
 
     def test_html_path_is_where_the_html_report_goes(self, model, tmp_path):
         assert model.html_path(tmp_path) == tmp_path / "report.html"
+
+    def _failing_html(self, monkeypatch, exc):
+        from cumo_schema_comparer.report.html import HtmlReporter
+
+        def boom(self, report, out):
+            out.write("half a report")
+            raise exc
+
+        monkeypatch.setattr(HtmlReporter, "render", boom)
+
+    def test_a_late_failure_keeps_the_previous_set_intact(self, model, tmp_path, monkeypatch):
+        from cumo_schema_comparer.gui.errors import GuiError
+
+        for name in ("report.json", "junit.xml", "report.html"):
+            (tmp_path / name).write_text("OLD")
+        self._failing_html(monkeypatch, OSError(28, "No space left on device"))
+
+        with pytest.raises(GuiError, match="No space left"):
+            model.write_reports(tmp_path)
+
+        # All or nothing: JSON and JUnit rendered fine, yet nothing replaced the old generation.
+        assert {p.read_text() for p in tmp_path.iterdir()} == {"OLD"}
+        assert not list(tmp_path.glob("*.partial"))
+
+    def test_a_non_os_failure_leaks_no_text_and_no_partial(self, model, tmp_path, monkeypatch):
+        from cumo_schema_comparer.gui.errors import GuiError
+
+        self._failing_html(monkeypatch, ValueError("secret-dsn-xyz"))
+        with pytest.raises(GuiError) as caught:
+            model.write_reports(tmp_path)
+        assert "secret-dsn-xyz" not in str(caught.value)
+        assert str(tmp_path) not in str(caught.value)
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_lone_surrogate_becomes_a_gui_error(self, tmp_path):
+        from dataclasses import replace
+
+        from cumo_schema_comparer.gui.errors import GuiError
+
+        report = full_report()
+        drifted = report.targets[0]
+        finding = drifted.findings[1]
+        delta = replace(finding.deltas[0], target_value="x\udc80y")
+        bad = replace(finding, deltas=(delta,))
+        drifted = replace(drifted, findings=(drifted.findings[0], bad, *drifted.findings[2:]))
+        report = replace(report, targets=(drifted, *report.targets[1:]))
+
+        with pytest.raises(GuiError) as caught:
+            ResultsModel(report).write_reports(tmp_path)
+        assert "udc80" not in str(caught.value)
+        assert str(tmp_path) not in str(caught.value)
+        assert list(tmp_path.iterdir()) == []
+
+
+class TestRowDetails:
+    def test_a_skipped_target_row_is_an_error(self, model):
+        rows = model.target_rows()
+        assert [r["severity"] for r in rows] == ["error", "ok", "error"]
+
+    def test_the_finding_count_is_reported(self, model):
+        assert model.target_rows()[0]["findings"] == 5
+        assert model.target_rows()[0]["suppressed"] == 1
+
+    def test_suppressed_findings_are_counted_in_the_summary(self):
+        from dataclasses import replace
+
+        from tests.support.reports import drifted_target, in_sync_target
+
+        target = replace(in_sync_target(), ignored=drifted_target().ignored)
+        summary = ResultsModel(_report(target)).target_rows()[0]["summary"]
+        assert summary == "in sync (1 suppressed)"
+
+    def test_a_delta_note_is_part_of_the_detail(self, model):
+        row = next(r for r in model.finding_rows() if r.path.endswith("invoice.number"))
+        assert "a type change breaks anything relying on the length" in row.detail
+
+    def test_a_renamed_object_says_what_it_matches(self):
+        from dataclasses import replace
+
+        from cumo_schema_comparer.model.keys import table_key
+        from tests.support.reports import drifted_target
+
+        drifted = drifted_target()
+        paired = replace(drifted.findings[0], paired_with=table_key("cumo-invoicing", "Dunning2"))
+        drifted = replace(drifted, findings=(paired,))
+        rows = ResultsModel(_report(drifted)).finding_rows()
+        assert "matches Dunning2" in rows[0].detail
+
+
+class TestSeverityNames:
+    def test_severity_names_are_case_insensitive(self, model):
+        assert model.finding_rows(severities=frozenset({"ERROR"})) == model.finding_rows(
+            severities=frozenset({"error"})
+        )
+        assert model.finding_rows(severities=frozenset({"ERROR"}))
