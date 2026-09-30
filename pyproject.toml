@@ -39,9 +39,16 @@ dev = [
   "types-PyYAML>=6",
   "build>=1.2",
 ]
+gui = [
+  # Every slint Python release is a pre-release; the pin is explicit so an install cannot
+  # silently pick up a different one.
+  "slint>=1.18.1b1,<2",
+  "keyring>=25,<26",
+]
 
 [project.scripts]
 cumo-schema-diff = "cumo_schema_comparer.cli:main"
+cumo-schema-diff-gui = "cumo_schema_comparer.gui.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 # hatchling ships every file inside the package directory, including the .sql query files, the
