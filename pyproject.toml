@@ -91,6 +91,11 @@ module = "tests.*"
 strict = false
 disallow_untyped_defs = false
 
+[[tool.mypy.overrides]]
+module = "keyring"
+# Optional (gui extra); absent from the plain dev environment.
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -m 'not integration'"
