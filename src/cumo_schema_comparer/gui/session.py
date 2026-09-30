@@ -26,17 +26,24 @@ one. ``cancel()`` therefore does the strongest thing available:
 * sources not yet started never start (a flag is checked before each capture, and a source waits on
   a semaphore before it is handed to a thread);
 * sources in flight run until they finish and their result is discarded. The only bound is the
-  library's timeouts, and those are per statement: one capture issues 14 catalog queries plus the
-  changelog queries, so a discarded capture can keep querying for roughly
-  ``connect_timeout + 14 x statement_timeout`` - about 14 minutes at the defaults (10 s and 60 s),
-  and far longer if ``statement_timeout`` is raised (the maximum is 3600 s). The worst case is
-  minutes, not seconds, and the window must not imply otherwise;
+  library's timeouts, and those are per statement: one capture issues 20 queries (measured: 26
+  statements, 6 of them session ``SET``s), so a discarded capture can keep querying for roughly
+  ``connect_timeout + 20 x statement_timeout`` - about 20 minutes at the defaults (10 s and 60 s),
+  and about 20 hours at the maximum ``statement_timeout`` of 3600 s. The worst case is minutes or
+  more, not seconds, and the window must not imply otherwise;
 * every source that has not already finished is reported ``CANCELLED`` immediately, so the window
   updates at once - well before production has necessarily gone quiet;
-* ``compare`` then waits for the in-flight threads to end, however long that takes, before it raises
-  ``CancelledError``, and nothing delivered during that wait (a second ``cancel()``, a task
-  cancellation) cuts it short. The session stays busy until then, so a new run can never overlap an
-  old capture. The wait is on the drain, not on the caller: the UI is already told.
+* the run then waits for the in-flight threads to end, however long that takes, and raises
+  ``CancelledError``. That wait cannot be shortened: a second ``cancel()`` or a task cancellation
+  delivered during it is absorbed (it is not lost - the run still ends in ``CancelledError``, never
+  with results, because the cancel flag is checked after the wait). The session stays busy until
+  then, so a new run can never overlap an old capture. The wait is on the drain, not on the
+  caller: the UI is already told.
+
+A run begins when ``compare()``/``check_all()``/``check_connection()`` is *called*, not when the
+returned coroutine first runs, so a ``cancel()`` between creating the task and its first turn
+aborts that run. The returned coroutine must therefore be awaited (or closed/dropped, which
+releases the session).
 
 No partial report is ever returned. A cancelled session can be used again.
 
@@ -49,15 +56,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import re
 import threading
-from collections.abc import Callable
+import weakref
+from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from .. import runner
 from ..baseline import apply_baseline
@@ -75,6 +84,19 @@ from .errors import GuiError
 log = logging.getLogger(__name__)
 
 _R = TypeVar("_R")
+_T = TypeVar("_T")
+
+
+class _Claim:
+    """One run's hold on the session, taken when the run is requested."""
+
+    __slots__ = ("coro", "generation", "started", "work")
+
+    def __init__(self, generation: int) -> None:
+        self.generation = generation
+        self.started = False
+        self.coro: Coroutine[Any, Any, Any] | None = None
+        self.work: Coroutine[Any, Any, Any] | None = None
 
 
 class SourceState(StrEnum):
@@ -119,45 +141,68 @@ class Session:
         self._generation = 0
         self._task: asyncio.Task[object] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._claim_held: _Claim | None = None
 
     # -- connection checks -------------------------------------------------------------------
 
-    async def check_connection(self, label: str) -> ConnectionStatus:
-        """Check one source. A failure is returned; an unknown label raises ``GuiError``."""
-        source = self._source(label)
-        return await asyncio.to_thread(self._check_blocking, source)
+    def check_connection(self, label: str) -> Coroutine[Any, Any, ConnectionStatus]:
+        """Check one source. A failure is returned; an unknown label raises ``GuiError``.
 
-    async def check_all(self) -> list[ConnectionStatus]:
+        Guarded and cancellable exactly like ``check_all``.
+        """
+        source = self._source(label)
+        claim = self._claim()
+        work = self._check_sources([source])
+
+        async def first() -> ConnectionStatus:
+            return (await self._run(claim, work))[0]
+
+        return self._watched(claim, work, first())
+
+    def check_all(self) -> Coroutine[Any, Any, list[ConnectionStatus]]:
         """Check the master and every target, in configuration order.
 
         Bounded by ``max_workers`` (one at a time when ``parallel`` is off) and stoppable with
         ``cancel()``, exactly like ``compare``; cancelling raises ``CancelledError``.
         """
-        sources = [self._config.master, *self._config.targets]
-        options = self._config.options
-        workers = min(len(sources), options.max_workers) if options.parallel else 1
-        self._begin("a check or comparison is already running")
+        claim = self._claim()
+        work = self._check_sources([self._config.master, *self._config.targets])
+        return self._watched(claim, work, self._run(claim, work))
+
+    def _watched(
+        self, claim: _Claim, work: Coroutine[Any, Any, Any], coro: Coroutine[Any, Any, _T]
+    ) -> Coroutine[Any, Any, _T]:
+        """Release the claim if ``coro`` is dropped or cancelled before it ever ran."""
+        claim.coro, claim.work = coro, work
+        weakref.finalize(coro, self._abandon, claim, work)
+        return coro
+
+    async def _run(self, claim: _Claim, work: Coroutine[Any, Any, _T]) -> _T:
+        claim.started = True
+        self._task = asyncio.current_task()
         try:
-            done = await self._drive(
-                sources,
-                workers,
-                self._check_blocking,
-                lambda source, exc: ConnectionStatus(
-                    label=source.label,
-                    ok=False,
-                    error=f"{source.label}: check failed unexpectedly ({type(exc).__name__})",
-                ),
-                lambda status: (
-                    SourceState.CAPTURED if status.ok else SourceState.FAILED,
-                    None,
-                ),
-                announce=False,
-            )
-            if any(source.label not in done for source in sources):
-                raise asyncio.CancelledError
-            return [done[source.label] for source in sources]
+            return await work
         finally:
             self._end()
+
+    async def _check_sources(self, sources: list[SourceRef]) -> list[ConnectionStatus]:
+        options = self._config.options
+        workers = min(len(sources), options.max_workers) if options.parallel else 1
+        done = await self._drive(
+            sources,
+            workers,
+            self._check_blocking,
+            lambda source, exc: ConnectionStatus(
+                label=source.label,
+                ok=False,
+                error=f"{source.label}: check failed unexpectedly ({type(exc).__name__})",
+            ),
+            lambda status: (SourceState.CAPTURED if status.ok else SourceState.FAILED, None),
+            announce=False,
+        )
+        if any(source.label not in done for source in sources):
+            raise asyncio.CancelledError
+        return [done[source.label] for source in sources]
 
     def _source(self, label: str) -> SourceRef:
         for source in (self._config.master, *self._config.targets):
@@ -197,7 +242,7 @@ class Session:
 
     # -- comparison --------------------------------------------------------------------------
 
-    async def compare(
+    def compare(
         self,
         *,
         ignores: IgnoreRuleSet | None = None,
@@ -205,40 +250,94 @@ class Session:
         skip_liquibase: bool = False,
         sequential: bool = False,
         baseline: ComparisonReport | None = None,
-    ) -> ComparisonReport:
+    ) -> Coroutine[Any, Any, ComparisonReport]:
         """Capture every source and build the report.
 
-        Raises ``asyncio.CancelledError`` if cancelled; never returns a partial report. One
-        source failing does not stop the others: it becomes a skipped target in the report.
+        Raises ``asyncio.CancelledError`` if cancelled, including a cancel that arrives at any
+        point before the report would be returned; never returns a partial or a finished report to
+        a cancelled run. One source failing does not stop the others: it becomes a skipped target.
         """
-        self._begin("a check or comparison is already running")
-        try:
-            captures = await self._capture_sources(sequential, skip_liquibase)
-            report = await asyncio.to_thread(
-                runner.build_report,
-                self._config,
-                captures,
-                ignores=ignores,
-                changelog_options=changelog_options,
-            )
-            if baseline is not None:
-                report = apply_baseline(report, baseline).report
-            return report
-        finally:
-            self._end()
+        claim = self._claim()
+        work = self._compare(ignores, changelog_options, skip_liquibase, sequential, baseline)
+        return self._watched(claim, work, self._run(claim, work))
 
-    def _begin(self, busy_message: str) -> None:
+    async def _compare(
+        self,
+        ignores: IgnoreRuleSet | None,
+        changelog_options: ChangelogOptions | None,
+        skip_liquibase: bool,
+        sequential: bool,
+        baseline: ComparisonReport | None,
+    ) -> ComparisonReport:
+        captures = await self._capture_sources(sequential, skip_liquibase)
+        report = await self._uncancellable(
+            asyncio.ensure_future(
+                asyncio.to_thread(
+                    runner.build_report,
+                    self._config,
+                    captures,
+                    ignores=ignores,
+                    changelog_options=changelog_options,
+                )
+            )
+        )
+        self._raise_if_cancelled()
+        if baseline is not None:
+            report = apply_baseline(report, baseline).report
+        return report
+
+    def _claim(self) -> _Claim:
         if self._running:
-            raise GuiError(busy_message)
+            held = self._claim_held
+            if held is not None and self._never_ran(held):
+                # A task cancelled before its first turn closes the coroutine without running its
+                # body, so nothing would ever release the claim. Detected here rather than left to
+                # garbage collection.
+                self._abandon(held, held.work)
+            else:
+                raise GuiError("a check or comparison is already running")
         self._running = True
         self._generation += 1
         self._cancel_requested.clear()
         self._loop = asyncio.get_running_loop()
-        self._task = asyncio.current_task()
+        self._claim_held = _Claim(self._generation)
+        return self._claim_held
+
+    @staticmethod
+    def _never_ran(claim: _Claim) -> bool:
+        return (
+            not claim.started
+            and claim.coro is not None
+            and inspect.getcoroutinestate(claim.coro) == inspect.CORO_CLOSED
+        )
+
+    def _abandon(self, claim: _Claim, work: Coroutine[Any, Any, Any] | None) -> None:
+        """Release a claim whose coroutine was dropped or cancelled before it ever ran."""
+        if not claim.started and self._running and claim.generation == self._generation:
+            self._end()
+        if work is not None:
+            work.close()
 
     def _end(self) -> None:
         self._task = None
         self._running = False
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_requested.is_set():
+            raise asyncio.CancelledError
+
+    async def _uncancellable(self, future: asyncio.Future[_T]) -> _T:
+        """Wait for ``future`` whatever is delivered meanwhile; a cancellation becomes the flag.
+
+        Abandoning the wait would free the session while a thread still runs. The absorbed
+        cancellation is not lost: the flag makes the run end in ``CancelledError`` afterwards.
+        """
+        while not future.done():
+            try:
+                await asyncio.shield(future)
+            except asyncio.CancelledError:
+                self._cancel_requested.set()
+        return future.result()
 
     async def _capture_sources(
         self, sequential: bool, skip_liquibase: bool
@@ -334,12 +433,10 @@ class Session:
             # Nothing is left running when this returns: queued work is dropped, in-flight work is
             # waited for. The wait cannot be cut short: a cancellation delivered meanwhile is
             # absorbed, because abandoning it would free the session while a capture still queries.
-            drain = asyncio.ensure_future(
-                asyncio.to_thread(pool.shutdown, True, cancel_futures=True)
+            await self._uncancellable(
+                asyncio.ensure_future(asyncio.to_thread(pool.shutdown, True, cancel_futures=True))
             )
-            while not drain.done():
-                with contextlib.suppress(asyncio.CancelledError):
-                    await asyncio.shield(drain)
+        self._raise_if_cancelled()
         return finished
 
     def _capture_blocking(self, source: SourceRef, skip_liquibase: bool) -> CaptureResult | None:
@@ -381,10 +478,10 @@ class Session:
             return
         try:
             self._on_progress(event)
-        except asyncio.CancelledError:
-            raise
         except BaseException as exc:
-            # Whatever the consumer does, the run must still settle every source.
+            # A consumer raising CancelledError is a consumer fault, not cancellation: real
+            # cancellation arrives at an await point. Whatever the consumer does, the run must
+            # still settle every source.
             log.warning("progress consumer raised (%s)", type(exc).__name__)
 
     # -- baseline and cancellation -----------------------------------------------------------

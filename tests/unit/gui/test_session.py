@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gc
 import logging
 import threading
 from collections import defaultdict
@@ -657,6 +658,181 @@ class TestCancellation:
         # And the session is usable afterwards.
         with mock.patch(CAPTURE, side_effect=succeed):
             assert (await subject.compare()).targets
+
+
+class TestCancelNeverYieldsResults:
+    """A Cancel pressed while a run is live must not be answered with a finished report."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("twice", [False, True])
+    async def test_compare_cancel_sweep(self, twice):
+        outcomes = {}
+        for k in range(0, 60):
+            subject, _ = session()
+            with mock.patch(CAPTURE, side_effect=succeed):
+                task = asyncio.create_task(subject.compare())
+                for _ in range(k):
+                    await asyncio.sleep(0)
+                live = not task.done()
+                subject.cancel()
+                if twice:
+                    subject.cancel()
+                try:
+                    await task
+                    outcomes[k] = (live, "report")
+                except asyncio.CancelledError:
+                    outcomes[k] = (live, "cancelled")
+        silent = [k for k, (live, what) in outcomes.items() if live and what == "report"]
+        assert silent == [], f"cancel answered with a full report at loop turns {silent}"
+        assert any(what == "cancelled" for _, what in outcomes.values())
+
+    @pytest.mark.asyncio
+    async def test_check_all_cancel_sweep(self):
+        silent = []
+        for k in range(0, 60):
+            subject, _ = session()
+            with mock.patch(
+                CHECK, side_effect=lambda s, *a, **kw: ConnectionStatus(label=s.label, ok=True)
+            ):
+                task = asyncio.create_task(subject.check_all())
+                for _ in range(k):
+                    await asyncio.sleep(0)
+                live = not task.done()
+                subject.cancel()
+                subject.cancel()
+                try:
+                    await task
+                    if live:
+                        silent.append(k)
+                except asyncio.CancelledError:
+                    pass
+        assert silent == []
+
+    @pytest.mark.asyncio
+    async def test_a_cancel_before_the_coroutine_first_runs_aborts_that_run(self):
+        subject, events = session()
+        calls: list[str] = []
+
+        def capture(source, *args, **kwargs):
+            calls.append(source.label)
+            return ok_capture(source.label)
+
+        with mock.patch(CAPTURE, side_effect=capture):
+            task = asyncio.create_task(subject.compare())
+            subject.cancel()  # the task has not had its first turn
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert calls == []
+            assert_every_source_ended_exactly_once(events)
+            assert all(s[-1] is SourceState.CANCELLED for s in by_label(events).values())
+            # and the session is usable afterwards
+            assert (await subject.compare()).targets
+
+    @pytest.mark.asyncio
+    async def test_a_task_cancelled_before_it_ever_ran_does_not_wedge_the_session(self):
+        subject, _ = session()
+        with mock.patch(CAPTURE, side_effect=succeed):
+            task = asyncio.create_task(subject.compare())
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            del task
+            gc.collect()
+            assert (await subject.compare()).targets
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_build_report_keeps_the_session_busy_until_it_ends(self):
+        entered = threading.Event()
+        release = threading.Event()
+        running: list[int] = []
+
+        def slow_build(*args, **kwargs):
+            running.append(1)
+            entered.set()
+            assert release.wait(10)
+            running.append(0)
+            raise AssertionError("unreachable result must be discarded")
+
+        subject, _ = session()
+        with (
+            mock.patch(CAPTURE, side_effect=succeed),
+            mock.patch("cumo_schema_comparer.gui.session.runner.build_report", slow_build),
+        ):
+            task = asyncio.create_task(subject.compare())
+            assert await asyncio.to_thread(entered.wait, 10)
+            subject.cancel()
+            for _ in range(10):
+                await asyncio.sleep(0)
+            assert not task.done()
+            with pytest.raises(GuiError, match="already running"):
+                await subject.compare()
+            release.set()
+            with pytest.raises((asyncio.CancelledError, AssertionError)):
+                await task
+        assert running == [1, 0]
+
+    @pytest.mark.asyncio
+    async def test_a_single_source_check_is_guarded_and_cancellable(self):
+        gate = threading.Event()
+        entered = threading.Semaphore(0)
+        live: list[str] = []
+
+        def check(source, *args, **kwargs):
+            live.append(source.label)
+            entered.release()
+            assert gate.wait(10)
+            return ConnectionStatus(label=source.label, ok=True)
+
+        subject, _ = session()
+        with mock.patch(CHECK, side_effect=check):
+            task = asyncio.create_task(subject.check_connection("qa"))
+            assert await asyncio.to_thread(entered.acquire, True, 10)
+            subject.cancel()
+            for _ in range(10):
+                await asyncio.sleep(0)
+            assert not task.done()
+            with pytest.raises(GuiError, match="already running"):
+                await subject.check_connection("dev")
+            gate.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert live == ["qa"]
+
+
+class TestConsumerCancelledError:
+    @pytest.mark.asyncio
+    async def test_a_consumer_raising_cancelled_error_strands_no_source(self):
+        seen: list[ProgressEvent] = []
+
+        def consumer(event: ProgressEvent) -> None:
+            seen.append(event)
+            raise asyncio.CancelledError
+
+        subject = Session(CONFIG, store(), on_progress=consumer)
+        with mock.patch(CAPTURE, side_effect=succeed):
+            report = await subject.compare()
+        assert_every_source_ended_exactly_once(seen)
+        assert report.probe_failed is False
+
+    @pytest.mark.asyncio
+    async def test_a_consumer_raising_cancelled_error_during_a_real_cancel_strands_none(self):
+        gate = Gate(expected=3)
+        seen: list[ProgressEvent] = []
+
+        def consumer(event: ProgressEvent) -> None:
+            seen.append(event)
+            raise asyncio.CancelledError
+
+        subject = Session(CONFIG, store(), on_progress=consumer)
+        with mock.patch(CAPTURE, side_effect=gate.capture):
+            task = asyncio.create_task(subject.compare())
+            await gate.all_entered()
+            subject.cancel()
+            await until(lambda: len([e for e in seen if e.state is SourceState.CANCELLED]) == 3)
+            gate.release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        assert_every_source_ended_exactly_once(seen)
 
 
 class TestNoCredentialLeaks:
