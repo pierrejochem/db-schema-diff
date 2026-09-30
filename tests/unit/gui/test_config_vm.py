@@ -291,3 +291,69 @@ class TestFurtherEditing:
         assert (second / reloaded.config.ignores_file).resolve() == (
             first / "ignores.yaml"
         ).resolve()
+
+
+class TestPastedConnectionStrings:
+    @pytest.mark.parametrize(
+        ("edit", "expected_field"),
+        [
+            (lambda d: d.add_target(SECRET), "targets.2.label"),
+            (lambda d: d.update_source("qa", "host", SECRET), "targets.0.host"),
+            (lambda d: d.update_source("qa", "database", SECRET), "targets.0.database"),
+            (lambda d: d.update_source("prod", "schemas", ["ok", SECRET]), "master.schemas.1"),
+            (
+                lambda d: d.update_source("qa", "host", "host=h password=s3cret"),
+                "targets.0.host",
+            ),
+            (
+                lambda d: d.update_source("qa", "schema_map", {"a": SECRET}),
+                "targets.0.schema_map",
+            ),
+            (
+                lambda d: d.update_source("qa", "schema_map", {SECRET: "a"}),
+                "targets.0.schema_map",
+            ),
+        ],
+    )
+    def test_refused_by_shape_without_echoing(self, document, tmp_path, edit, expected_field):
+        edit(document)
+        errors = document.validate()
+        assert [e.field for e in errors] == [expected_field]
+        assert "does not belong" in str(errors[0])
+        for text in (str(errors[0]),):
+            assert "s3cret" not in text
+            assert "postgresql" not in text
+        out = tmp_path / "o.yaml"
+        for action in (document.to_yaml, lambda: document.save(out)):
+            with pytest.raises(GuiError) as exc:
+                action()
+            assert "s3cret" not in str(exc.value)
+        assert not out.exists()
+
+    def test_ordinary_values_are_not_mistaken_for_connection_strings(self, document):
+        document.update_source("qa", "host", "db-qa.internal")
+        document.update_source("qa", "database", "user_data")
+        assert document.validate() == []
+
+    def test_a_trailing_newline_does_not_make_an_env_name_valid(self, document):
+        document.config = document.config.model_copy(
+            update={"targets": (document.config.targets[0].model_copy(update={"dsn_env": "X\n"}),)}
+        )
+        assert any(e.field == "targets.0.dsn_env" for e in document.validate())
+
+    def test_save_as_adopts_the_rewritten_ignores_file_and_is_idempotent(self, tmp_path):
+        first = tmp_path / "a"
+        second = tmp_path / "b" / "deeper"
+        first.mkdir()
+        second.mkdir(parents=True)
+        (first / "c.yaml").write_text(FULL + "ignores_file: ignores.yaml\n")
+        document = ConfigDocument.load(first / "c.yaml")
+        out = second / "c.yaml"
+        document.save(out)
+        written = out.read_text()
+        assert "ignores_file: ../../a/ignores.yaml\n" in written
+        assert document.config.ignores_file == "../../a/ignores.yaml"
+        document.save(out)
+        assert out.read_text() == written
+        document.save()
+        assert out.read_text() == written

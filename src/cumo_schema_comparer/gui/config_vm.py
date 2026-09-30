@@ -3,6 +3,13 @@
 A saved file must stay hand-editable, so only the fields the file actually set are written back.
 Loading an untouched file and saving it again produces the same bytes; comments are the one thing
 that cannot survive a YAML round trip, which is what :meth:`ConfigDocument.had_comments` is for.
+
+The file is non-secret and committed to git, so a document refuses to be written when a value
+looks like a pasted connection string (a URL, or ``keyword=value`` pairs) or when ``dsn_env`` is
+not an environment variable name. That is a guard against one specific mistake, a DSN pasted into
+the wrong box, and nothing more: it is not a promise that no secret can reach the file, since a
+password typed into a free-text field is indistinguishable from any other text. Errors name the
+field by position and never quote the value.
 """
 
 from __future__ import annotations
@@ -28,7 +35,13 @@ _SOURCE_KEY_ORDER = ("label", "host", "database", "dsn_env", "schemas", "schema_
 _OPTIONAL_TEXT_FIELDS = ("host", "database")
 #: POSIX environment variable name. The config holds names, never DSNs, and this is what keeps a
 #: pasted connection string from being written into a file that is committed to git.
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+#: A libpq keyword/value pair. Detection is by shape only; `secrets.py` scrubs known secrets from
+#: output, which is a different job.
+_KEYWORD_PAIR = re.compile(
+    r"(?<![\w-])(?:host|hostaddr|port|dbname|user|password|passfile|sslmode|service)\s*=",
+    re.IGNORECASE,
+)
 
 
 class _IndentedDumper(yaml.SafeDumper):
@@ -253,6 +266,32 @@ def _follow(data: Any, reference: Any) -> Any:
     return data
 
 
+def _looks_like_connection_string(value: str) -> bool:
+    return "://" in value or _KEYWORD_PAIR.search(value) is not None
+
+
+def _string_fields(node: Any, path: str = "") -> list[tuple[str, str]]:
+    """Every string that would be written, with the path of the field that holds it.
+
+    Mapping keys of user data are strings too; they are reported against their mapping, never by
+    their own text, because the text is what must not be quoted.
+    """
+    found: list[tuple[str, str]] = []
+    if isinstance(node, str):
+        found.append((path, node))
+    elif isinstance(node, dict):
+        for key, child in node.items():
+            in_map = path.endswith("schema_map")
+            if in_map:
+                found.append((path, key))
+            child_path = path if in_map else f"{path}.{key}".lstrip(".")
+            found.extend(_string_fields(child, child_path))
+    elif isinstance(node, list | tuple):
+        for index, child in enumerate(node):
+            found.extend(_string_fields(child, f"{path}.{index}"))
+    return found
+
+
 def _problems(config: ComparerConfig) -> list[GuiError]:
     """Everything wrong with ``config``, never quoting a value: it may be a credential."""
     errors: list[GuiError] = []
@@ -264,18 +303,38 @@ def _problems(config: ComparerConfig) -> list[GuiError]:
             for e in exc.errors()
         ]
     reported = {e.field for e in errors}
+    for location, text in _string_fields(config.model_dump(mode="json", by_alias=True)):
+        if location not in reported and _looks_like_connection_string(text):
+            reported.add(location)
+            errors.append(
+                GuiError(
+                    f"{_describe(location)}: a connection string does not belong here; "
+                    "the configuration holds names only",
+                    field=location,
+                )
+            )
     named = [
         ("master", config.master),
         *((f"targets.{i}", t) for i, t in enumerate(config.targets)),
     ]
     for prefix, source in named:
         location = f"{prefix}.dsn_env"
-        if location not in reported and not _ENV_NAME.match(source.dsn_env):
+        if location not in reported and not _ENV_NAME.fullmatch(source.dsn_env):
             errors.append(
                 GuiError(
-                    f"dsn_env of source {source.label!r} must be an environment variable name "
+                    f"{_describe(location)}: must be an environment variable name "
                     "(letters, digits and underscores), not a connection string",
                     field=location,
                 )
             )
     return errors
+
+
+def _describe(location: str) -> str:
+    """``targets.2.host`` as ``target 3, host``: positions, because labels may hold the secret."""
+    parts = location.split(".")
+    if parts[0] == "targets" and len(parts) > 1 and parts[1].isdigit():
+        return f"target {int(parts[1]) + 1}, {'.'.join(parts[2:]) or 'entry'}"
+    if parts[0] == "master":
+        return f"master, {'.'.join(parts[1:]) or 'entry'}"
+    return location
