@@ -127,7 +127,7 @@ class TestChecksums:
         result = changelog_of(databases, "drift_changelog_algorithm")
         assert result.checksum_algorithm_skew is True
         assert result.checksum_mismatches == ()
-        assert result.status is ChangelogStatus.IN_SYNC
+        assert result.status is ChangelogStatus.HISTORY_DIFFERS
         assert result.severity is Severity.WARNING
 
     def test_the_algorithm_note_explains_itself(self, databases):
@@ -138,7 +138,7 @@ class TestChecksums:
 class TestExecType:
     def test_mark_ran_is_a_warning_not_a_failure(self, databases):
         result = changelog_of(databases, "drift_changelog_markran")
-        assert result.status is ChangelogStatus.IN_SYNC
+        assert result.status is ChangelogStatus.HISTORY_DIFFERS
         assert result.severity is Severity.WARNING
         assert [d.ref for d in result.exectype_differences] == [("add-dunning", "kolowae")]
 

@@ -201,10 +201,16 @@ class TargetDiff:
         """
         severities = [f.severity for f in self.findings] + [n.severity for n in self.notes]
         changelog = self.changelog
+        # Any severity above INFO counts whatever the status says: a severity that exists must reach
+        # the exit code, so a future status bug cannot silently discard it. A clean verdict carries
+        # INFO, which is why INFO alone still needs a status other than IN_SYNC.
         if (
             changelog is not None
             and changelog.applicable
-            and changelog.status is not ChangelogStatus.IN_SYNC
+            and (
+                changelog.status is not ChangelogStatus.IN_SYNC
+                or changelog.severity > Severity.INFO
+            )
         ):
             severities.append(changelog.severity)
         return max(severities) if severities else None

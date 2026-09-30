@@ -62,6 +62,12 @@ class ChangelogStatus(StrEnum):
     """Neither database is Liquibase-managed. Not an error; the section is simply not applicable."""
     AMBIGUOUS = "ambiguous"
     """Several changelog tables were found and none was configured."""
+    FAILED_CHANGESETS = "failed_changesets"
+    """The histories match by presence, but a changeset is recorded as FAILED: a migration broke."""
+    LOCK_HELD = "lock_held"
+    """The histories match, but a deployment lock is held, so a migration may be in progress."""
+    HISTORY_DIFFERS = "history_differs"
+    """The same changesets are present, but their order, execution type or filename differ."""
 
     @property
     def label(self) -> str:
@@ -204,6 +210,19 @@ class ChangelogDiff:
                 + "); set liquibase.schema in the config to choose one"
             )
 
+        if self.status is ChangelogStatus.FAILED_CHANGESETS:
+            return (
+                f"{len(self.failed_changesets)} changeset(s) recorded as FAILED; "
+                "the migration did not complete"
+            )
+        if self.status is ChangelogStatus.LOCK_HELD:
+            return "a deployment lock is held, so a migration may be in progress"
+        if self.status is ChangelogStatus.HISTORY_DIFFERS:
+            return (
+                f"{target_label} and {master_label} have the same changesets, but their order, "
+                "execution type, filename or checksum algorithm differ"
+            )
+
         parts: list[str] = []
         if self.behind_count:
             first = self.missing_in_target[0]
@@ -334,6 +353,16 @@ def diff_changelog(
         skew=skew,
         lock_held=bool(target.lock_held),
     )
+
+    # A verdict that carries a severity above INFO is never "in sync". Reporting it so would let the
+    # severity be discarded by anything that only looks at the status.
+    if status is ChangelogStatus.IN_SYNC and severity > Severity.INFO:
+        if failed:
+            status = ChangelogStatus.FAILED_CHANGESETS
+        elif target.lock_held:
+            status = ChangelogStatus.LOCK_HELD
+        else:
+            status = ChangelogStatus.HISTORY_DIFFERS
 
     return ChangelogDiff(
         status=status,
