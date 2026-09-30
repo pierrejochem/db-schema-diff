@@ -29,6 +29,7 @@ from ..errors import ConfigError
 from ..model.kinds import ObjectKind
 from .config_vm import ConfigDocument, _IndentedDumper
 from .errors import GuiError
+from .shape import looks_like_connection_string
 
 #: The statuses `IgnoreRule` accepts. Deliberately not `ObjectStatus`, which also has `match`.
 RULE_STATUSES: tuple[str, ...] = ("missing_in_target", "extra_in_target", "differs")
@@ -98,6 +99,9 @@ class IgnoresDocument:
     def add_rule(self, rule_id: str) -> None:
         if not rule_id or not rule_id.strip():
             raise GuiError("a rule id must not be empty", field="id")
+        # Shape first: the duplicate message names the id, which must never be a pasted DSN.
+        if looks_like_connection_string(rule_id):
+            raise GuiError(_SHAPE_MESSAGE, field="id")
         if any(rule.id == rule_id for rule in self.config.rules):
             raise GuiError(f"a rule with id {rule_id!r} already exists", field="id")
         # A rule restricting nothing would suppress the whole report; seed one that validates.
@@ -221,6 +225,16 @@ def _problems(config: IgnoreConfig) -> list[GuiError]:
         if rule.attributes:
             _check_attributes(rule, known_kinds, lambda f, m, i=index: report(i, f, m))
 
+    for index, rule in enumerate(config.rules):
+        for field, text in _strings(rule):
+            if looks_like_connection_string(text):
+                errors.append(
+                    GuiError(
+                        f"rule {index + 1}, {field.split('.')[0]}: {_SHAPE_MESSAGE}",
+                        f"rules.{index}.{field}",
+                    )
+                )
+
     try:
         IgnoreConfig.model_validate(config.model_dump())
     except ValidationError as exc:
@@ -238,6 +252,21 @@ def _problems(config: IgnoreConfig) -> list[GuiError]:
             else:
                 report(int(loc[1]), str(loc[-1]), "is not valid")
     return errors
+
+
+_SHAPE_MESSAGE = (
+    "a connection string does not belong here; the ignore rules hold names and labels only"
+)
+
+
+def _strings(rule: IgnoreRule) -> list[tuple[str, str]]:
+    """Every string the rule would write, with the path of the field that holds it."""
+    found: list[tuple[str, str]] = [("id", rule.id), ("action", str(rule.action))]
+    if rule.reason:
+        found.append(("reason", rule.reason))
+    for name in _LIST_FIELDS:
+        found.extend((f"{name}.{i}", str(v)) for i, v in enumerate(getattr(rule, name)))
+    return found
 
 
 def _check_attributes(rule: IgnoreRule, known_kinds: set[str], report: Any) -> None:

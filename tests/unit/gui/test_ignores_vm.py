@@ -248,3 +248,59 @@ class TestSaving:
         document.add_rule("r")
         document.save(tmp_path / "out.yaml")
         assert (tmp_path / "out.yaml").exists()
+
+
+DSN = "postgresql://u:s3cret@h/db"
+PAIRS = "host=h password=s3cret"
+
+
+_LISTS = ("names", "targets", "attributes", "kinds", "statuses")
+
+
+class TestPastedConnectionStrings:
+    """The ignores file is committed and hand-editable, like the config."""
+
+    @pytest.mark.parametrize("secret", [DSN, PAIRS])
+    @pytest.mark.parametrize(
+        ("field", "value", "error_field"),
+        [
+            ("names", None, "rules.1.names.0"),
+            ("targets", None, "rules.1.targets.0"),
+            ("attributes", None, "rules.1.attributes.0"),
+            ("kinds", None, "rules.1.kinds.0"),
+            ("statuses", None, "rules.1.statuses.0"),
+            ("action", None, "rules.1.action"),
+            ("reason", None, "rules.1.reason"),
+            ("id", None, "rules.1.id"),
+        ],
+    )
+    def test_refused_everywhere_by_position(self, document, field, value, error_field, secret):
+        before = document.path.read_text()
+        document.update_rule("dev-experiments", field, [secret] if field in _LISTS else secret)
+        errors = document.validate()
+        assert error_field in [e.field for e in errors]
+        assert all("s3cret" not in str(e) and "s3cret" not in (e.field or "") for e in errors)
+        assert any("rule 2" in str(e) for e in errors)
+        with pytest.raises(GuiError) as exc:
+            document.to_yaml()
+        assert "s3cret" not in str(exc.value)
+        with pytest.raises(GuiError) as exc:
+            document.save()
+        assert "s3cret" not in str(exc.value)
+        assert document.path.read_text() == before
+
+    def test_a_dsn_shaped_id_is_refused_before_the_duplicate_check_can_echo_it(self, document):
+        # Make it a duplicate as well: were the duplicate check first, it would echo the id.
+        document.update_rule("audit-archive", "id", DSN)
+        with pytest.raises(GuiError) as exc:
+            document.add_rule(DSN)
+        assert "s3cret" not in str(exc.value)
+        assert exc.value.field == "id"
+        assert "does not belong" in str(exc.value)
+
+    def test_a_dsn_shaped_new_rule_is_never_added(self):
+        doc = IgnoresDocument.for_config(ConfigDocument.blank("x"))
+        with pytest.raises(GuiError):
+            doc.add_rule(DSN)
+        assert doc.config.rules == ()
+        assert doc.dirty is False

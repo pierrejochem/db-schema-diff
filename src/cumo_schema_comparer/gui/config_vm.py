@@ -29,6 +29,7 @@ from ..config.loader import load_config_files
 from ..config.model import ComparerConfig, SourceRef
 from ..errors import ConfigError
 from .errors import GuiError
+from .shape import looks_like_connection_string
 
 #: Keys of a source, in the order a person writes them: identity, then connection, then scope.
 _SOURCE_KEY_ORDER = ("label", "host", "database", "dsn_env", "schemas", "schema_map", "liquibase")
@@ -36,12 +37,6 @@ _OPTIONAL_TEXT_FIELDS = ("host", "database")
 #: POSIX environment variable name. The config holds names, never DSNs, and this is what keeps a
 #: pasted connection string from being written into a file that is committed to git.
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-#: A libpq keyword/value pair. Detection is by shape only; `secrets.py` scrubs known secrets from
-#: output, which is a different job.
-_KEYWORD_PAIR = re.compile(
-    r"(?<![\w-])(?:host|hostaddr|port|dbname|user|password|passfile|sslmode|service)\s*=",
-    re.IGNORECASE,
-)
 
 
 class _IndentedDumper(yaml.SafeDumper):
@@ -266,10 +261,6 @@ def _follow(data: Any, reference: Any) -> Any:
     return data
 
 
-def _looks_like_connection_string(value: str) -> bool:
-    return "://" in value or _KEYWORD_PAIR.search(value) is not None
-
-
 def _string_fields(node: Any, path: str = "") -> list[tuple[str, str]]:
     """Every string that would be written, with the path of the field that holds it.
 
@@ -304,7 +295,7 @@ def _problems(config: ComparerConfig) -> list[GuiError]:
         ]
     reported = {e.field for e in errors}
     for location, text in _string_fields(config.model_dump(mode="json", by_alias=True)):
-        if location not in reported and _looks_like_connection_string(text):
+        if location not in reported and looks_like_connection_string(text):
             reported.add(location)
             errors.append(
                 GuiError(
