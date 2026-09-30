@@ -112,8 +112,6 @@ class ConnectionStatus:
     changelog_tag: str | None = None
     changelog_candidates: tuple[str, ...] = ()
     changelog_locked: bool | None = None
-    privilege_limited: tuple[tuple[str, int], ...] = ()
-    """(kind, count) of objects whose definition came back NULL: a role that cannot see them."""
     error: str | None = None
     """Already redacted. Never contains a connection string."""
 
@@ -139,7 +137,6 @@ def check_connection(
             info = introspector.server_info()
             schemas = introspector.schemas(exclude=exclude_schemas, only=source.schemas)
             changelog = _changelog_summary(introspector, source)
-            gaps = introspector.privilege_gaps(list(schemas)) if schemas else []
     except ComparerError as exc:
         return ConnectionStatus(label=source.label, ok=False, error=str(exc))
 
@@ -152,7 +149,6 @@ def check_connection(
         encoding=str(info["encoding"]),
         collation=str(info["datcollate"]),
         schemas=tuple(schemas),
-        privilege_limited=tuple((str(g["kind"]), int(g["count"])) for g in gaps),
         **changelog,
     )
 

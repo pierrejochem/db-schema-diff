@@ -118,10 +118,6 @@ class Introspector:
         """Functions and procedures, with bodies from ``prosrc``."""
         return self._run("routines", {"schemas": schemas})
 
-    def privilege_gaps(self, schemas: list[str]) -> list[dict[str, Any]]:
-        """Per kind, how many objects returned a NULL definition (rows with a count above zero)."""
-        return self._run("privilege_check", {"schemas": schemas})
-
     def triggers(self, schemas: list[str]) -> list[dict[str, Any]]:
         """User triggers only; the internal ones enforcing foreign keys are excluded."""
         return self._run("triggers", {"schemas": schemas})
