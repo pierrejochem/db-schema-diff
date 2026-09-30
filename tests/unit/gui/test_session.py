@@ -799,6 +799,73 @@ class TestCancelNeverYieldsResults:
         assert live == ["qa"]
 
 
+class TestDroppedCoroutine:
+    """A coroutine created and never awaited must not strand the session."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("which", ["compare", "check_all", "check_connection"])
+    async def test_dropped_then_collected_frees_the_session(self, which):
+        subject, _ = session()
+        call = {
+            "compare": subject.compare,
+            "check_all": subject.check_all,
+            "check_connection": lambda: subject.check_connection("qa"),
+        }[which]
+        with pytest.warns(RuntimeWarning, match="never awaited"):
+            call()  # dropped immediately
+            gc.collect()
+        with mock.patch(CAPTURE, side_effect=succeed):
+            assert [t.target_label for t in (await subject.compare()).targets] == ["qa", "dev"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("which", ["compare", "check_all", "check_connection"])
+    async def test_next_call_frees_it_with_the_finalizer_and_collection_disabled(self, which):
+        # The next-call path alone has to carry the guarantee.
+        subject, _ = session()
+        call = {
+            "compare": subject.compare,
+            "check_all": subject.check_all,
+            "check_connection": lambda: subject.check_connection("qa"),
+        }[which]
+        gc.disable()
+        try:
+            with (
+                mock.patch(
+                    "cumo_schema_comparer.gui.session.weakref.finalize", new=lambda *a, **k: None
+                ),
+                pytest.warns(RuntimeWarning, match="never awaited"),
+            ):
+                call()
+                assert subject._running, "the finalizer is off; only the next call can free it"
+                with mock.patch(CAPTURE, side_effect=succeed):
+                    report = await subject.compare()
+        finally:
+            gc.enable()
+        assert report.probe_failed is False
+        assert not subject._running
+
+    @pytest.mark.asyncio
+    async def test_a_dropped_coroutine_does_not_make_later_runs_fail_forever(self):
+        subject, _ = session()
+        with pytest.warns(RuntimeWarning, match="never awaited"):
+            subject.compare()
+            gc.collect()
+        with mock.patch(CAPTURE, side_effect=succeed):
+            for _ in range(3):
+                assert (await subject.compare()).targets
+
+    @pytest.mark.asyncio
+    async def test_a_coroutine_that_is_still_held_keeps_the_session_busy(self):
+        # Alive and unawaited is indistinguishable from about-to-be-awaited: that is the limit.
+        subject, _ = session()
+        held = subject.compare()
+        with pytest.raises(GuiError, match="already running"):
+            subject.compare()
+        with mock.patch(CAPTURE, side_effect=succeed):
+            assert (await held).targets
+            assert (await subject.compare()).targets
+
+
 class TestConsumerCancelledError:
     @pytest.mark.asyncio
     async def test_a_consumer_raising_cancelled_error_strands_no_source(self):

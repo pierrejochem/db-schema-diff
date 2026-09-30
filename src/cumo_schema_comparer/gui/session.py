@@ -40,6 +40,25 @@ one. ``cancel()`` therefore does the strongest thing available:
   then, so a new run can never overlap an old capture. The wait is on the drain, not on the
   caller: the UI is already told.
 
+Releasing an abandoned run
+--------------------------
+If the coroutine is created and then dropped without being awaited, or its task is cancelled before
+its first turn, the session must not stay "running". Two mechanisms cover it, and they are not
+equal:
+
+* **The guarantee** is the check made by the *next* ``compare``/``check_all``/``check_connection``
+  call: a claim whose coroutine is gone (weak reference dead) or closed without ever having run is
+  released there. It depends on nothing but the coroutine having been freed, which reference
+  counting does at once on CPython.
+* **An optimisation** is a ``weakref.finalize`` on the coroutine that releases the claim as soon as
+  it is freed, so ``cancel()`` and busy checks see the truth without waiting for a next call. Do not
+  rely on it: it is garbage-collection-timing dependent. A coroutine that is still referenced
+  somewhere (a debugger, a cycle not yet collected) is indistinguishable from one about to be
+  awaited, and keeps the session busy until it is freed.
+
+Python warns ``coroutine ... was never awaited`` for such a dropped coroutine. That is left visible
+on purpose: it reports a real caller bug.
+
 A run begins when ``compare()``/``check_all()``/``check_connection()`` is *called*, not when the
 returned coroutine first runs, so a ``cancel()`` between creating the task and its first turn
 aborts that run. The returned coroutine must therefore be awaited (or closed/dropped, which
@@ -95,7 +114,7 @@ class _Claim:
     def __init__(self, generation: int) -> None:
         self.generation = generation
         self.started = False
-        self.coro: Coroutine[Any, Any, Any] | None = None
+        self.coro: weakref.ref[Coroutine[Any, Any, Any]] | None = None
         self.work: Coroutine[Any, Any, Any] | None = None
 
 
@@ -173,7 +192,8 @@ class Session:
         self, claim: _Claim, work: Coroutine[Any, Any, Any], coro: Coroutine[Any, Any, _T]
     ) -> Coroutine[Any, Any, _T]:
         """Release the claim if ``coro`` is dropped or cancelled before it ever ran."""
-        claim.coro, claim.work = coro, work
+        # Weak: a strong reference here would keep an abandoned coroutine alive forever.
+        claim.coro, claim.work = weakref.ref(coro), work
         weakref.finalize(coro, self._abandon, claim, work)
         return coro
 
@@ -305,11 +325,11 @@ class Session:
 
     @staticmethod
     def _never_ran(claim: _Claim) -> bool:
-        return (
-            not claim.started
-            and claim.coro is not None
-            and inspect.getcoroutinestate(claim.coro) == inspect.CORO_CLOSED
-        )
+        """Whether the run's coroutine can no longer run its body: dropped, or closed unstarted."""
+        if claim.started or claim.coro is None:
+            return False
+        coro = claim.coro()
+        return coro is None or inspect.getcoroutinestate(coro) == inspect.CORO_CLOSED
 
     def _abandon(self, claim: _Claim, work: Coroutine[Any, Any, Any] | None) -> None:
         """Release a claim whose coroutine was dropped or cancelled before it ever ran."""
