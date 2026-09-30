@@ -269,3 +269,55 @@ class TestFailClosed:
 
     def test_ipv6_host_is_still_summarised(self):
         assert Dsn("host=::1 user=u", env_name="X").safe_summary()["host"] == "::1"
+
+    def test_unix_socket_directory_keyword_form(self, monkeypatch):
+        """Unix-socket directory (starts with /) is a legitimate host."""
+        monkeypatch.setenv("SOCK_DSN", "host=/var/run/postgresql user=u dbname=d")
+        summary = resolve_dsn("SOCK_DSN", role="target 'x'").safe_summary()
+        assert summary["host"] == "/var/run/postgresql"
+        assert summary["dbname"] == "d"
+        assert summary["user"] == "u"
+
+    def test_unix_socket_directory_url_encoded(self, monkeypatch):
+        """Unix-socket directory encoded in URI form."""
+        monkeypatch.setenv("SOCK_URI_DSN", "postgresql://u:pw@%2Fvar%2Frun%2Fpostgresql/db")
+        summary = resolve_dsn("SOCK_URI_DSN", role="target 'x'").safe_summary()
+        assert summary["host"] == "/var/run/postgresql"
+        assert summary["dbname"] == "db"
+        assert summary["user"] == "u"
+
+    def test_comma_separated_hosts_and_ports(self, monkeypatch):
+        """libpq accepts comma-separated host and port lists."""
+        monkeypatch.setenv("MULTI_HOST_DSN", "host=h1,h2 port=5432,5433 user=u dbname=d")
+        summary = resolve_dsn("MULTI_HOST_DSN", role="target 'x'").safe_summary()
+        assert summary["host"] == "h1,h2"
+        assert summary["port"] == "5432,5433"
+        assert summary["dbname"] == "d"
+        assert summary["user"] == "u"
+
+    def test_comma_separated_hosts_and_ports_in_uri(self, monkeypatch):
+        """libpq accepts comma-separated host:port pairs in URI form."""
+        monkeypatch.setenv("MULTI_URI_DSN", "postgresql://u:pw@h1:5432,h2:5433/db")
+        summary = resolve_dsn("MULTI_URI_DSN", role="target 'x'").safe_summary()
+        assert summary["host"] == "h1,h2"
+        assert summary["port"] == "5432,5433"
+        assert summary["dbname"] == "db"
+        assert summary["user"] == "u"
+
+    def test_slash_in_host_without_leading_slash_fails_closed(self, monkeypatch):
+        """A / in a host that doesn't start with / is a misparsed credential."""
+        monkeypatch.setenv("BAD_SLASH_HOST_DSN", "postgresql://u:pa/ss@h/db")
+        summary = resolve_dsn("BAD_SLASH_HOST_DSN", role="target 'x'").safe_summary()
+        assert summary == {"source": "$BAD_SLASH_HOST_DSN", "parsed": "unparseable"}
+
+    def test_non_digit_port_fails_closed(self, monkeypatch):
+        """A port with non-digits is a misparsed credential."""
+        monkeypatch.setenv("BAD_PORT_DSN", "postgresql://u:pw@h:abcd/db")
+        summary = resolve_dsn("BAD_PORT_DSN", role="target 'x'").safe_summary()
+        assert summary == {"source": "$BAD_PORT_DSN", "parsed": "unparseable"}
+
+    def test_comma_port_list_with_non_digit_fails_closed(self, monkeypatch):
+        """A comma-separated port list with a non-digit part fails closed."""
+        monkeypatch.setenv("BAD_COMMA_PORT_DSN", "host=h1,h2 port=5432,abcd user=u dbname=d")
+        summary = resolve_dsn("BAD_COMMA_PORT_DSN", role="target 'x'").safe_summary()
+        assert summary == {"source": "$BAD_COMMA_PORT_DSN", "parsed": "unparseable"}

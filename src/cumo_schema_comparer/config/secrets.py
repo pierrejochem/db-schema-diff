@@ -42,18 +42,32 @@ def _looks_misparsed(parsed: dict[str, Any]) -> bool:
     An unencoded ``@``, ``/`` or similar in a password relocates password material into any
     field (host, port, dbname), so a field-name allowlist cannot be trusted. Each test below is a
     condition a correct connection string cannot produce; the summary then fails closed.
+
+    A host/hostaddr part that starts with ``/`` is a Unix-socket directory; such parts may
+    contain interior ``/``. This exemption prevents misparsed URIs (where a ``/`` in the password
+    appears in the host field) from leaking through.
     """
 
     def text(key: str) -> str:
         return str(parsed.get(key) or "")
 
     port = text("port")
-    if port and not (port.isascii() and port.isdigit()):
-        return True
+    if port:
+        # libpq accepts comma-separated ports to match comma-separated hosts
+        for port_part in port.split(","):
+            if port_part and not (port_part.isascii() and port_part.isdigit()):
+                return True
     for key in ("host", "hostaddr"):
         for part in text(key).split(","):  # libpq accepts a comma-separated host list
-            if any(ch in part for ch in "@/") or any(ch.isspace() for ch in part):
-                return True
+            # Unix-socket directory (starts with /) may contain interior /
+            if part.startswith("/"):
+                if any(ch in part for ch in "@") or any(ch.isspace() for ch in part):
+                    return True
+            else:
+                # Non-socket hosts must not contain @, /, or whitespace
+                if any(ch in part for ch in "@/") or any(ch.isspace() for ch in part):
+                    return True
+            # IPv6 literals are the only valid use of : in a host
             if ":" in part and not _is_ipv6(part):
                 return True
     return any(ch in text("dbname") for ch in "@/:")
