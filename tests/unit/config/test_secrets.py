@@ -129,3 +129,33 @@ def test_redacting_filter_add_keeps_earlier_secrets(monkeypatch):
     flt.filter(record)
     assert "first_secret" not in record.getMessage()
     assert "second_secret" not in record.getMessage()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "postgresql://u:zz@secret@h:5432/db",
+        "postgresql://u:zz%secret@h:5432/db",
+        "postgresql://u:zz secret@h:5432/db",
+        "postgresql://u:zz'secret@h:5432/db",
+        'postgresql://u:zz"secret@h:5432/db',
+        "host=h user=u password='zz@secret'",
+        "host=h user=u password='zz secret'",
+        'host=h user=u password="zz\'secret"',
+        "host=h dbname=d user=u options='-c password=zzsecret'",
+        "hostaddr=zz@secret host=h",
+    ],
+)
+def test_safe_summary_leaks_no_password_fragment(monkeypatch, raw):
+    monkeypatch.setenv("LEAK_DSN", raw)
+    dsn = resolve_dsn("LEAK_DSN", role="target 'x'")
+    summary = dsn.safe_summary()
+    for text in (str(summary), repr(summary), str(dsn)):
+        assert "secret" not in text
+        assert "zz" not in text
+
+
+def test_safe_summary_marks_an_at_sign_host_unparseable(monkeypatch):
+    monkeypatch.setenv("AT_DSN", "postgresql://u:zz@secret@h:5432/db")
+    summary = resolve_dsn("AT_DSN", role="target 'x'").safe_summary()
+    assert summary["host"] == "(unparseable)"

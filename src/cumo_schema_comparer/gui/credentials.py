@@ -120,15 +120,26 @@ class CredentialStore:
         """Put a credential in the keychain. Never writes to a config file."""
         if not dsn.strip():
             raise ValueError("refusing to store an empty credential")
-        if self._backend is None:
-            raise RuntimeError(self._problem or "no keychain available")
-        self._backend.set_password(KEYCHAIN_SERVICE, env_name, dsn.strip())
+        backend = self._require_storage()
+        try:
+            backend.set_password(KEYCHAIN_SERVICE, env_name, dsn.strip())
+        except Exception as exc:
+            self._problem = f"keychain unavailable: {exc}"
+            raise RuntimeError(self._problem) from exc
 
     def forget(self, env_name: str) -> None:
         """Remove a credential from the keychain, leaving the environment untouched."""
-        if self._backend is None:
+        backend = self._require_storage()
+        try:
+            backend.delete_password(KEYCHAIN_SERVICE, env_name)
+        except Exception as exc:
+            self._problem = f"keychain unavailable: {exc}"
+            raise RuntimeError(self._problem) from exc
+
+    def _require_storage(self) -> Any:
+        if not self.storage_available or self._backend is None:
             raise RuntimeError(self._problem or "no keychain available")
-        self._backend.delete_password(KEYCHAIN_SERVICE, env_name)
+        return self._backend
 
     def _lookup(self, env_name: str) -> tuple[str | None, CredentialSource]:
         stored = self._from_keychain(env_name)
@@ -152,4 +163,9 @@ class CredentialStore:
         except Exception as exc:
             self._problem = f"keychain unavailable: {exc}"
             return None
-        return value.strip() if value and value.strip() else None
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            self._problem = f"keychain returned an unexpected type ({type(value).__name__})"
+            return None
+        return value.strip() or None

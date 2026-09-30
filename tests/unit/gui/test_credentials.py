@@ -148,3 +148,51 @@ class TestUnavailableBackend:
         subject = CredentialStore(backend=None, environ={"PROD_DSN": SECRET}, _import_keyring=False)
         assert subject.storage_available is False
         assert subject.resolve("PROD_DSN").value == SECRET
+
+
+class OddBackend:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def get_password(self, service: str, username: str) -> object:
+        return self.value
+
+
+class TestFixRound:
+    def test_a_blank_keychain_entry_falls_through_to_the_environment(self):
+        backend = FakeKeyring()
+        backend.values[(KEYCHAIN_SERVICE, "PROD_DSN")] = "   "
+        subject = store(backend, PROD_DSN=SECRET)
+        assert subject.describe("PROD_DSN").source is CredentialSource.ENVIRONMENT
+
+    def test_a_keychain_entry_wins_over_a_blank_environment_variable(self):
+        backend = FakeKeyring()
+        backend.values[(KEYCHAIN_SERVICE, "PROD_DSN")] = SECRET
+        subject = store(backend, PROD_DSN="  ")
+        assert subject.describe("PROD_DSN").source is CredentialSource.KEYCHAIN
+
+    def test_describe_on_a_healthy_keychain_reports_storage_available(self):
+        assert store(PROD_DSN=SECRET).describe("PROD_DSN").storage_available is True
+
+    @pytest.mark.parametrize("value", [42, b"postgresql://u:p@h/d", ["x"]])
+    def test_a_non_string_from_the_backend_is_treated_as_absent(self, value):
+        subject = store(OddBackend(value), PROD_DSN=OTHER)
+        assert subject.describe("PROD_DSN").source is CredentialSource.ENVIRONMENT
+        assert subject.resolve("PROD_DSN").value == OTHER
+        assert "unexpected type" in (subject.storage_problem or "")
+        assert subject.storage_available is False
+
+    def test_a_denial_at_write_time_is_reported_and_marks_storage_unavailable(self):
+        backend = FakeKeyring()
+        subject = store(backend)
+        assert subject.storage_available is True
+        backend.fail_with = RuntimeError("User denied access")
+        with pytest.raises(RuntimeError, match="denied"):
+            subject.store("PROD_DSN", SECRET)
+        assert subject.storage_available is False
+        assert "denied" in (subject.storage_problem or "")
+
+    def test_forget_refuses_when_storage_is_unavailable(self):
+        subject = store(FakeKeyring(fail_with=RuntimeError("locked")))
+        with pytest.raises(RuntimeError, match="locked"):
+            subject.forget("PROD_DSN")

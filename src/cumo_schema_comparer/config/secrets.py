@@ -18,8 +18,13 @@ from ..errors import MissingCredentialsError
 #: Conninfo keys that must never appear in a summary, a log line or a report.
 _SENSITIVE_KEYS = frozenset({"password", "passfile", "sslpassword", "sslkey"})
 
-#: Conninfo keys worth showing when a connection fails.
-_SUMMARY_KEYS = ("host", "hostaddr", "port", "dbname", "user", "sslmode", "options")
+#: Conninfo keys worth showing when a connection fails. ``options`` is deliberately absent: libpq
+#: passes it to the server as ``-c name=value`` and it can carry ``-c password=...``.
+_SUMMARY_KEYS = ("host", "hostaddr", "port", "dbname", "user", "sslmode")
+
+#: Keys whose value is replaced when it contains ``@``. An unencoded ``@`` in a password makes
+#: libpq parse the tail of the password as the host, so ``@`` there means a password fragment.
+_HOST_KEYS = ("host", "hostaddr")
 
 
 class Dsn:
@@ -93,6 +98,9 @@ class Dsn:
             for key in _SUMMARY_KEYS
             if key not in _SENSITIVE_KEYS and parsed.get(key) not in (None, "")
         }
+        for key in _HOST_KEYS:
+            if "@" in summary.get(key, ""):
+                summary[key] = "(unparseable)"
         if not summary:
             return {"source": f"${self._env_name}", "parsed": "unparseable"}
         summary["source"] = f"${self._env_name}"
