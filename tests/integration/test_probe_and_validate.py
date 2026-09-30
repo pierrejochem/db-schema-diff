@@ -111,7 +111,17 @@ class TestProbe:
         assert "prod: PostgreSQL" in result.stdout
         assert "qa: PostgreSQL" in result.stdout
         assert "cumo-invoicing" in result.stdout
-        assert "tables" in result.stdout
+        assert "schemas" in result.stdout
+
+    def test_probe_does_not_capture_an_inventory(self, cli):
+        """It answers in about a second, which is the point of a connection check.
+
+        Capturing would make it as slow as a comparison and defeat its purpose.
+        """
+        cli.databases.setup("base")
+        result = cli("probe", "-c", str(cli.config))
+        assert result.returncode == ExitCode.OK
+        assert "cumo-invoicing" in result.stdout
 
     def test_it_says_where_the_changelog_lives(self, cli):
         """The question that otherwise turns into a confusing comparison.

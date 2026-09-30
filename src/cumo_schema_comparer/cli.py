@@ -500,75 +500,48 @@ def probe_command(ctx: click.Context, config_path: Path, sequential: bool) -> No
         dsns=credentials.values(),
     )
 
-    captures = runner.capture_all(config, credentials, sequential=sequential)
+    statuses = [
+        runner.check_connection(
+            source,
+            credentials[source.label],
+            options=runner.connection_options(config),
+            exclude_schemas=config.exclude_schemas,
+        )
+        for source in config.sources
+    ]
     failed = False
-
-    for source in config.sources:
-        result = captures[source.label]
-        if not result.ok or result.inventory is None:
+    for status in statuses:
+        if not status.ok:
             failed = True
-            click.secho(f"{source.label}: UNREACHABLE", fg="red")
-            click.echo(f"  {result.error}")
+            click.secho(f"{status.label}: UNREACHABLE", fg="red")
+            click.echo(f"  {status.error}")
             continue
-
-        inventory = result.inventory
-        info = inventory.source
-        click.secho(f"{source.label}: PostgreSQL {info.server_version.split(' ')[0]}", fg="green")
-        click.echo(f"  database  {info.database} as {info.user}")
-        click.echo(f"  encoding  {info.encoding}  collation {info.datcollate}")
-        click.echo(f"  schemas   {', '.join(inventory.schemas) or '(none)'}")
-        counts = ", ".join(f"{count} {kind.plural}" for kind, count in inventory.counts().items())
-        click.echo(f"  objects   {counts or '(none)'}")
-        _echo_changelog(inventory)
-        _echo_privilege_warnings(inventory)
+        version = (status.server_version or "").split(" ")[0]
+        click.secho(f"{status.label}: PostgreSQL {version}", fg="green")
+        click.echo(f"  database  {status.database} as {status.user}")
+        click.echo(f"  collation {status.collation}")
+        click.echo(f"  schemas   {', '.join(status.schemas) or '(none)'}")
+        _echo_changelog_status(status)
 
     ctx.exit(ExitCode.PROBE_ERROR if failed else ExitCode.OK)
 
 
-def _echo_changelog(inventory: Inventory) -> None:
-    changelog = inventory.changelog
-    if changelog is None:
-        click.echo("  liquibase not read")
-        return
-    if changelog.ambiguous:
+def _echo_changelog_status(status: runner.ConnectionStatus) -> None:
+    if status.changelog_candidates:
         click.secho(
             "  liquibase AMBIGUOUS: "
-            + ", ".join(c.qualified for c in changelog.candidates)
+            + ", ".join(status.changelog_candidates)
             + " — set liquibase.schema in the config",
             fg="yellow",
         )
         return
-    if changelog.location is None:
+    if status.changelog is None:
         click.echo("  liquibase no changelog table found")
         return
-    tag = f", last tag {changelog.last_tag}" if changelog.last_tag else ""
-    click.echo(f"  liquibase {changelog.location.qualified}: {changelog.count} changeset(s){tag}")
-    if changelog.lock_held:
+    tag = f", last tag {status.changelog_tag}" if status.changelog_tag else ""
+    click.echo(f"  liquibase {status.changelog}: {status.changelog_count} changeset(s){tag}")
+    if status.changelog_locked:
         click.secho("  liquibase lock is HELD — a deployment may be in progress", fg="yellow")
-
-
-def _echo_privilege_warnings(inventory: Inventory) -> None:
-    """Warn when a definition came back empty.
-
-    ``pg_get_viewdef`` and friends return NULL for an object the connecting role cannot see, which
-    later renders as "definition differs" — drift that is really a permissions problem. Saying so
-    here costs nothing and saves a long investigation.
-    """
-    from .model.kinds import ObjectKind
-
-    blind: dict[str, int] = {}
-    for key, obj in inventory.objects.items():
-        if key.kind in (ObjectKind.VIEW, ObjectKind.MATVIEW) and not obj.definition:
-            blind[key.kind.label] = blind.get(key.kind.label, 0) + 1
-        elif key.kind is ObjectKind.ROUTINE and obj.body_hash is None and obj.prokind in "fp":
-            blind["routine"] = blind.get("routine", 0) + 1
-
-    for kind, count in sorted(blind.items()):
-        click.secho(
-            f"  privilege {count} {kind}(s) returned no definition — this role may not be able "
-            "to see them, which would later read as drift",
-            fg="yellow",
-        )
 
 
 def _load_inventory(path: Path) -> Inventory:
