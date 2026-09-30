@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from cumo_schema_comparer.config.secrets import resolve_dsn
+from cumo_schema_comparer.config.secrets import Dsn, resolve_dsn
 from cumo_schema_comparer.errors import MissingCredentialsError
 from cumo_schema_comparer.logging_setup import RedactingFilter
 
@@ -159,3 +159,29 @@ def test_safe_summary_marks_an_at_sign_host_unparseable(monkeypatch):
     monkeypatch.setenv("AT_DSN", "postgresql://u:zz@secret@h:5432/db")
     summary = resolve_dsn("AT_DSN", role="target 'x'").safe_summary()
     assert summary["host"] == "(unparseable)"
+
+
+class TestSecretFragments:
+    def _frags(self, raw):
+        return Dsn(raw, env_name="X").secret_fragments()
+
+    def test_uri_with_an_unencoded_at(self):
+        frags = self._frags("postgresql://u:p@ss@h:5432/db")
+        assert "ss" in frags and "u:p@ss" in frags and "p@ss" in frags
+
+    def test_uri_with_two_unencoded_ats(self):
+        frags = self._frags("postgresql://u:a@b@c@h:5432/db")
+        assert {"a@b@c", "u:a@b@c", "b", "c"} <= set(frags)
+
+    def test_keyword_form_with_a_quoted_password(self):
+        frags = self._frags("host=h user=u password='zz sec\\'ret' dbname=d")
+        assert "zz sec'ret" in frags
+
+    def test_no_password_yields_an_empty_tuple(self):
+        assert self._frags("host=h user=u dbname=d") == ()
+        assert self._frags("postgresql://u@h/db") == ()
+
+    def test_longest_first_and_deduplicated(self):
+        frags = self._frags("postgresql://u:p@ss@h:5432/db")
+        assert list(frags) == sorted(set(frags), key=lambda f: (-len(f), f))
+        assert "" not in frags

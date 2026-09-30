@@ -24,6 +24,7 @@ Timeouts
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -163,14 +164,22 @@ def server_features(connection: psycopg.Connection[dict[str, object]]) -> Server
 def _failure_message(label: str, dsn: Dsn, exc: Exception) -> str:
     """Connection-failure text: enough to diagnose, with no credential in it."""
     summary = ", ".join(f"{key}={value}" for key, value in sorted(dsn.safe_summary().items()))
-    reason = _scrub(str(exc), dsn)
+    reason = _redact_address_tokens(_scrub(str(exc), dsn))
     return f"{label}: cannot connect ({summary})\n  {reason}"
 
 
 def _scrub(text: str, dsn: Dsn) -> str:
     """Remove anything secret that libpq may have put in its own message."""
     cleaned = text.strip().replace(dsn.value, "***")
-    password = dsn.password()
-    if password:
-        cleaned = cleaned.replace(password, "***")
+    for fragment in dsn.secret_fragments():
+        cleaned = cleaned.replace(fragment, "***")
     return cleaned or NO_DETAIL
+
+
+def _redact_address_tokens(text: str) -> str:
+    """Second layer: libpq never needs to echo a token containing ``@``.
+
+    Catches a password fragment that travelled inside a mis-parsed host and that no fragment
+    list anticipated. Whitespace is preserved.
+    """
+    return re.sub(r"\S*@\S*", "***", text)

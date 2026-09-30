@@ -9,7 +9,9 @@ filter alone is not enough, because any f-string bypasses it before the filter e
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
+from urllib.parse import unquote
 
 from psycopg.conninfo import conninfo_to_dict
 
@@ -21,6 +23,8 @@ _SENSITIVE_KEYS = frozenset({"password", "passfile", "sslpassword", "sslkey"})
 #: Conninfo keys worth showing when a connection fails. ``options`` is deliberately absent: libpq
 #: passes it to the server as ``-c name=value`` and it can carry ``-c password=...``.
 _SUMMARY_KEYS = ("host", "hostaddr", "port", "dbname", "user", "sslmode")
+
+_KEYWORD_PASSWORD = re.compile(r"(?:^|\s)password\s*=\s*('(?:\\.|[^'\\])*'|\S+)")
 
 #: Keys whose value is replaced when it contains ``@``. An unencoded ``@`` in a password makes
 #: libpq parse the tail of the password as the host, so ``@`` there means a password fragment.
@@ -82,6 +86,36 @@ class Dsn:
             return None
         password = parsed.get("password")
         return password if isinstance(password, str) and password else None
+
+    def secret_fragments(self) -> tuple[str, ...]:
+        """Every substring that might be part of a credential, for scrubbing output.
+
+        Derived from the raw string rather than the parsed password, because the case that leaks is
+        exactly the case libpq parses wrongly: an unencoded `@` in a password makes libpq read the
+        tail as the host, so the parsed password is only the part before the `@` and the rest
+        travels inside the host, where libpq then echoes it back in its own error text.
+        """
+        found: list[str] = []
+        parsed_password = self.password()
+        if parsed_password:
+            found.append(parsed_password)
+        raw = self._value
+        if "://" in raw:
+            authority = raw.split("://", 1)[1].split("/", 1)[0]
+            if "@" in authority:
+                userinfo = authority.rsplit("@", 1)[0]
+                if ":" in userinfo:  # no colon means a user name only, no password
+                    after = userinfo.split(":", 1)[1]
+                    found.extend([userinfo, after, unquote(after)])
+                    found.extend(userinfo.split("@"))
+        else:
+            for match in _KEYWORD_PASSWORD.finditer(raw):
+                token = match.group(1)
+                if token.startswith("'") and token.endswith("'") and len(token) >= 2:
+                    found.append(re.sub(r"\\(.)", r"\1", token[1:-1]))
+                found.append(token)
+        unique = {fragment for fragment in found if fragment}
+        return tuple(sorted(unique, key=lambda fragment: (-len(fragment), fragment)))
 
     def safe_summary(self) -> dict[str, str]:
         """Host, port, database and user, with every secret component removed.
