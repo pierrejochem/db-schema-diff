@@ -96,10 +96,22 @@ CANCELLED_STATUS = (
 )
 
 _MAX_MESSAGE = 240
+#: A libpq keyword's value, which is **not** simply "up to the next space". libpq lets a value be
+#: single-quoted, and lets a backslash escape the next character inside or outside the quotes, so
+#: ``password='a b'`` and ``password=a\ b`` both carry a space. Matching ``\S*`` redacted only the
+#: first token of those and left the rest of the password in the message. Double quotes are
+#: accepted too: libpq does not treat them specially, but a backend echoing a value may.
+#: The alternatives are disjoint (no branch can match what another can), so there is nothing to
+#: backtrack over. An unterminated quote is redacted to the end of the line, because a truncated
+#: echo must not be the one shape that gets through.
+_SECRET_VALUE = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|['"][^\n]*|(?:\\.|[^\s\\])*)"""  # noqa: S105 - a regex for a password, not a password
 #: Credential-bearing shapes in free text from a keyring backend, a driver or the OS. Anything
 #: carrying ``://``, userinfo or a libpq secret keyword is replaced whole rather than trimmed.
+#: This is the only layer protecting a message with no ``Dsn`` in scope to scrub against —
+#: everywhere else, ``Dsn.secret_fragments()`` handles both quoting forms.
 _CREDENTIAL_SHAPE = re.compile(
-    r"\S*(?:://|@)\S*|(?:password|passfile|sslpassword|sslkey)\s*=\s*\S*", re.IGNORECASE
+    rf"\S*(?:://|@)\S*|(?:password|passfile|sslpassword|sslkey)\s*=\s*{_SECRET_VALUE}",
+    re.IGNORECASE,
 )
 
 

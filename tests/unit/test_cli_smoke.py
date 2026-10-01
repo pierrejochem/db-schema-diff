@@ -87,7 +87,7 @@ class TestExitCodePropagation:
         )
         path = tmp_path / "report.json"
         render_to_path(JsonReporter(), report, path)
-        assert report.has_drift(Severity.ERROR), "the fixture has to drift for this to mean anything"
+        assert report.has_drift(Severity.ERROR), "the fixture must drift for this to mean anything"
 
         arguments = ["render", "--from", str(path), "--no-console"]
         script = Path(sys.executable).parent / "cumo-schema-diff"

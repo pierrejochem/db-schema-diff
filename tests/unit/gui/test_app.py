@@ -114,6 +114,37 @@ class BrokenKeychain:
         raise RuntimeError("no")
 
 
+class EchoingKeychain:
+    """A backend that quotes back the keyword string it refused.
+
+    Not hypothetical: this is the one surface with no ``Dsn`` in scope to scrub against, so
+    ``_sanitise`` is the only layer standing between a backend's complaint and two properties.
+    """
+
+    def __init__(self, keywords: str) -> None:
+        self.keywords = keywords
+
+    def get_password(self, service: str, name: str) -> str | None:
+        raise RuntimeError(f"denied: could not open {self.keywords} for {name}")
+
+    def set_password(self, service: str, name: str, value: str) -> None:
+        raise RuntimeError(f"denied: refused to store {self.keywords}")
+
+    def delete_password(self, service: str, name: str) -> None:
+        raise RuntimeError(f"denied: refused to drop {self.keywords}")
+
+
+#: The four libpq spellings of one password. ``\S*`` matched only the first token of the first
+#: three, leaving the tail of the secret in the message.
+SECRET_SHAPES = [
+    "password='Zq7x PLUMBUS9'",
+    "password=Zq7x\\ PLUMBUS9",
+    'password="Zq7x PLUMBUS9"',
+    "password=Zq7xPLUMBUS9",
+    "password='Zq7x PLUMBUS9",
+]
+
+
 def write_config(tmp_path, text: str = CONFIG):
     path = tmp_path / "invoicing.yaml"
     path.write_text(text)
@@ -443,6 +474,31 @@ class TestCredentials:
         assert by_env(app)["QA_DSN"]["source"] == "keychain"
         app.window.forget_credential("QA_DSN")
         assert by_env(app)["QA_DSN"]["source"] == "unset"
+
+    @pytest.mark.parametrize("shape", SECRET_SHAPES, ids=lambda s: s.split("=", 1)[1][:14])
+    def test_a_quoted_or_escaped_password_is_redacted_whole(self, tmp_path, shape):
+        """Not merely its first token: a space in the value must not end the redaction."""
+        app = application(tmp_path, keychain=EchoingKeychain(shape))
+
+        assert app.window.keychain_available is False
+        app.window.store_credential("QA_DSN", "postgresql://u:p@h/db")
+        app.window.forget_credential("QA_DSN")
+
+        for where, text in (
+            ("keychain_problem", app.window.keychain_problem),
+            ("status_message", app.window.status_message),
+            ("everything", everything_rendered(app)),
+        ):
+            assert text != "" or where == "status_message"
+            assert "PLUMBUS9" not in text, f"{where}: {text}"
+            assert "Zq7x" not in text, f"{where}: {text}"
+
+    def test_sanitising_leaves_the_non_secret_context_alone(self):
+        """Over-redaction would make an unreachable host unexplainable."""
+        kept = app_module._sanitise("qa: cannot connect (host=db-qa, port=5432, user=cumo)")
+        assert kept == "qa: cannot connect (host=db-qa, port=5432, user=cumo)"
+        assert app_module._sanitise("refused postgresql://u:p@h/db") == "refused ***"
+        assert app_module._sanitise("sslkey='a b' host=db") == "*** host=db"
 
     def test_a_credential_only_in_the_keychain_is_usable_without_the_environment(self, tmp_path):
         app = application(tmp_path, environ={}, keychain=FakeKeychain(QA_DSN=QA_DSN))
