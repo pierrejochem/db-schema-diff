@@ -20,16 +20,18 @@ _POSTGRES_URL = re.compile(r"postgres(?:ql)?://", re.IGNORECASE)
 _USERINFO_URL = re.compile(
     r"(?<![a-z0-9+.-])[0-9+.-]*[a-z][a-z0-9+.-]*://[^/?#\s]*@", re.IGNORECASE
 )
-_SECRET_KEYWORD = re.compile(
-    r"(?<![\w-])(?:password|passfile|sslpassword|sslkey)\s*=", re.IGNORECASE
-)
+#: The libpq keywords that carry a secret. The single source: the regex below is built from it and
+#: ``normalize.redact`` masks the literal that follows any of them.
+SECRET_KEYWORDS = ("password", "passfile", "sslpassword", "sslkey")
+_SECRET_KEYWORD = re.compile(r"(?<![\w-])(?:" + "|".join(SECRET_KEYWORDS) + r")\s*=", re.IGNORECASE)
+
+
+def looks_like_credential_url(value: str) -> bool:
+    """Whether ``value`` holds a PostgreSQL URL or a URL with userinfo (no keyword forms)."""
+    return bool(_POSTGRES_URL.search(value) or ("://" in value and _USERINFO_URL.search(value)))
 
 
 def looks_like_connection_string(value: str) -> bool:
     # ``in`` is one linear scan and false for nearly every input, including any long unbroken blob;
     # the scheme regex only runs when a ``://`` is actually there.
-    return bool(
-        _POSTGRES_URL.search(value)
-        or ("://" in value and _USERINFO_URL.search(value))
-        or _SECRET_KEYWORD.search(value)
-    )
+    return looks_like_credential_url(value) or bool(_SECRET_KEYWORD.search(value))

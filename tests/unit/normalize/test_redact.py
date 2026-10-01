@@ -189,3 +189,113 @@ def test_a_200kb_body_masks_in_well_under_a_second(body):
     start = time.perf_counter()
     mask_literals(body)
     assert time.perf_counter() - start < 1.0
+
+
+KEYWORDS = ["password", "passfile", "sslpassword", "sslkey"]
+
+
+class TestPerLiteralDecisions:
+    """The decision is made per literal and per comment, never per routine body."""
+
+    def test_a_secret_in_a_comment_is_masked_and_the_rest_is_identical(self):
+        out = mask_literals("-- sync from postgresql://u:s3cret@h/db\nSELECT 1")
+        assert "s3cret" not in out
+        assert out.startswith("-- ***:") and out.endswith("\nSELECT 1")
+
+    def test_a_body_with_no_literals_and_a_column_called_password_is_untouched(self):
+        sql = "$$ BEGIN UPDATE t SET password = other_col; END $$"
+        assert mask_literals(sql) == sql
+
+    def test_a_password_literal_in_a_body_with_other_literals_is_masked(self):
+        sql = "$$ BEGIN x('a'); UPDATE t SET password = 'hunter2' WHERE n = 'b'; END $$"
+        out = mask_literals(sql)
+        assert "hunter2" not in out
+        assert out.startswith("$$ BEGIN x('a'); UPDATE t SET password = '***:")
+        assert out.endswith("' WHERE n = 'b'; END $$")
+
+    @pytest.mark.parametrize("keyword", KEYWORDS)
+    @pytest.mark.parametrize("spacing", ["{k}='x'", "{k} ='x'", "{k} = 'x'", "{k}= 'x'"])
+    def test_the_literal_after_a_secret_keyword_is_masked(self, keyword, spacing):
+        out = mask_literals("f(" + spacing.format(k=keyword) + ")")
+        assert out.startswith(f"f({keyword}")  # the keyword itself stays readable
+        assert "'x'" not in out
+        assert MASK_PREFIX in out
+
+    def test_the_keyword_match_is_case_insensitive(self):
+        assert "'x'" not in mask_literals("PassWord = 'x'")
+
+    def test_an_escape_string_after_a_keyword_is_masked(self):
+        out = mask_literals("password = E'a\\'b'")
+        assert "a\\'b" not in out and out.startswith("password = E'")
+
+    def test_a_dollar_quoted_value_after_a_keyword_is_masked(self):
+        out = mask_literals("password = $$hunter2$$")
+        assert "hunter2" not in out and out.startswith("password = $$")
+
+    def test_a_literal_after_another_operator_is_left_alone(self):
+        sql = "WHERE password <> 'x' AND note = 'y'"
+        assert mask_literals(sql) == sql
+
+    def test_a_different_password_masks_differently(self):
+        assert mask_literals("password = 'a'") != mask_literals("password = 'b'")
+
+    def test_a_dollar_quoted_url_value_is_masked_without_a_literal_inside(self):
+        assert "s3cret" not in mask_literals("SELECT $q$postgresql://u:s3cret@h/db$q$")
+
+
+class TestComments:
+    @pytest.mark.parametrize(
+        ("sql", "kept"),
+        [
+            ("-- see postgresql://u:s3cret@h/db\nSELECT 1", "\nSELECT 1"),
+            ("/* see postgresql://u:s3cret@h/db */ SELECT 1", " */ SELECT 1"),
+            ("SELECT 1 -- password=s3cret", ""),
+            ("/* password=s3cret", ""),
+            (
+                "$$ BEGIN -- see postgresql://u:s3cret@h/db\n x('a'); END $$",
+                "\n x('a'); END $$",
+            ),
+            ("$$ BEGIN /* password=s3cret */ x('a'); END $$", " */ x('a'); END $$"),
+        ],
+    )
+    def test_a_credential_in_a_comment_is_masked(self, sql, kept):
+        out = mask_literals(sql)
+        assert "s3cret" not in out
+        assert MASK_PREFIX in out
+        assert out.endswith(kept)
+
+    def test_the_comment_delimiters_survive(self):
+        assert mask_literals("/* password=s3cret */").startswith("/* ***:")
+        assert mask_literals("/* password=s3cret */").endswith(" */")
+
+    def test_a_comment_that_merely_mentions_the_word_is_untouched(self):
+        for sql in (
+            "-- the password is rotated nightly\nSELECT 1",
+            "/* never log the password, see ticket */ SELECT 1",
+            "$$ BEGIN -- password handling below\n x(1); END $$",
+        ):
+            assert mask_literals(sql) == sql
+
+    def test_a_changed_secret_in_a_comment_still_reads_as_changed(self):
+        one = mask_literals("-- password=aaa")
+        two = mask_literals("-- password=bbb")
+        assert one != two
+
+    def test_masking_comments_is_idempotent(self):
+        once = mask_literals("-- password=s3cret\n/* postgresql://u:p@h/d */")
+        assert mask_literals(once) == once
+
+
+def test_idempotence_and_distinctness_across_all_forms():
+    sql = "$$ -- password=aaa\n x('postgresql://u:aaa@h/d'); password = 'aaa' $$"
+    once = mask_literals(sql)
+    assert mask_literals(once) == once
+    assert mask_literals(sql.replace("aaa", "bbb")) != once
+
+
+def test_a_200kb_body_with_every_kind_of_secret_is_fast():
+    unit = "-- password=s3cret\nx('postgresql://u:s@h/d'); password = 'p'; /* it's */\n"
+    body = "$$ " + unit * (200_000 // len(unit)) + "$$"
+    start = time.perf_counter()
+    mask_literals(body)
+    assert time.perf_counter() - start < 1.0

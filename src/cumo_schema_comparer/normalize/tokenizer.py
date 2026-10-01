@@ -59,7 +59,7 @@ _OPERATORS = (
 
 _NUMBER = re.compile(r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?")
 _WORD = re.compile(r"[A-Za-z_\u0080-￿][A-Za-z0-9_$\u0080-￿]*")
-_DOLLAR_TAG = re.compile(r"\$[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*\$|\$\$")
+DOLLAR_TAG = re.compile(r"\$[A-Za-z_\u0080-￿][A-Za-z0-9_\u0080-￿]*\$|\$\$")
 
 
 class TokenType(Enum):
@@ -75,6 +75,9 @@ class TokenType(Enum):
     PUNCTUATION = auto()
     """``(``, ``)``, ``,``, ``.``, ``;``, ``[``, ``]``."""
     OPERATOR = auto()
+    COMMENT = auto()
+    """A ``--`` or ``/* */`` comment, delimiters included. Only :func:`tokenize_with_comments`
+    emits it; :func:`tokenize` still drops comments."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +108,19 @@ def tokenize(sql: str) -> list[Token]:
     servers print the same definition with different spacing, and a comment inside a function
     body is not part of what the body does.
     """
+    return _tokenize(sql, keep_comments=False)
+
+
+def tokenize_with_comments(sql: str) -> list[Token]:
+    """Like :func:`tokenize`, but comments come through as ``COMMENT`` tokens.
+
+    For code that must see every byte of text a report could carry (redaction), not for
+    canonicalisation.
+    """
+    return _tokenize(sql, keep_comments=True)
+
+
+def _tokenize(sql: str, *, keep_comments: bool) -> list[Token]:
     tokens: list[Token] = []
     position = 0
     length = len(sql)
@@ -118,15 +134,21 @@ def tokenize(sql: str) -> list[Token]:
 
         if sql.startswith("--", position):
             newline = sql.find("\n", position)
-            position = length if newline == -1 else newline + 1
+            end = length if newline == -1 else newline + 1
+            if keep_comments:
+                tokens.append(Token(TokenType.COMMENT, sql[position:end], position))
+            position = end
             continue
 
         if sql.startswith("/*", position):
-            position = _skip_block_comment(sql, position)
+            end = _skip_block_comment(sql, position)
+            if keep_comments:
+                tokens.append(Token(TokenType.COMMENT, sql[position:end], position))
+            position = end
             continue
 
         if char == "'":
-            end = _scan_single_quoted(sql, position)
+            end = scan_single_quoted(sql, position)
             tokens.append(Token(TokenType.STRING, sql[position:end], position))
             position = end
             continue
@@ -134,7 +156,7 @@ def tokenize(sql: str) -> list[Token]:
         # E'...' and U&'...' are string literals with their own escape rules.
         if char in "eEuUnNbBxX" and _starts_prefixed_literal(sql, position):
             prefix_end = sql.index("'", position)
-            end = _scan_single_quoted(sql, prefix_end, backslash_escapes=char in "eE")
+            end = scan_single_quoted(sql, prefix_end, backslash_escapes=char in "eE")
             tokens.append(Token(TokenType.STRING, sql[position:end], position))
             position = end
             continue
@@ -146,7 +168,7 @@ def tokenize(sql: str) -> list[Token]:
             continue
 
         if char == "$":
-            tag_match = _DOLLAR_TAG.match(sql, position)
+            tag_match = DOLLAR_TAG.match(sql, position)
             if tag_match:
                 end = _scan_dollar_quoted(sql, position, tag_match.group(0))
                 tokens.append(Token(TokenType.STRING, sql[position:end], position))
@@ -192,7 +214,7 @@ def _starts_prefixed_literal(sql: str, position: int) -> bool:
     return sql.startswith("'", position + 1)
 
 
-def _scan_single_quoted(sql: str, start: int, *, backslash_escapes: bool = False) -> int:
+def scan_single_quoted(sql: str, start: int, *, backslash_escapes: bool = False) -> int:
     """Index just past a ``'...'`` literal, honouring ``''`` (and optionally ``\\'``)."""
     position = start + 1
     length = len(sql)
