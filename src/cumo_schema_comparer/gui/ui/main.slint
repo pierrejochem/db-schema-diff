@@ -4,8 +4,10 @@
 import { TabWidget, Button } from "std-widgets.slint";
 import { StatusLine } from "widgets.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
+import { IgnoresTab, RuleRow } from "ignores_tab.slint";
+import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
 
-export { SourceRow }
+export { SourceRow, RuleRow, CredentialRow }
 
 export component MainWindow inherits Window {
     title: "cumo-schema-diff";
@@ -32,6 +34,21 @@ export component MainWindow inherits Window {
     in-out property <bool> include-owners;
     in-out property <bool> include-comments;
     in-out property <bool> include-grants;
+
+    in property <[RuleRow]> rules;
+    in property <[RuleRow]> default-rules;
+    in-out property <bool> case-insensitive-globs;
+
+    in property <[CredentialRow]> credentials;
+    in property <bool> keychain-available;
+    in property <string> keychain-problem;
+
+    callback rule-changed(string, string, string);
+    callback add-rule();
+    callback remove-rule(string);
+    callback save-ignores();
+    callback store-credential(string, string);
+    callback forget-credential(string);
 
     callback source-changed(string, string, string);
     callback add-target();
@@ -82,6 +99,32 @@ export component MainWindow inherits Window {
                     check-all => { root.check-all(); }
                     validate-config => { root.validate-config(); }
                     save-config => { root.save-config(); }
+                }
+            }
+
+            Tab {
+                title: "Ignores";
+                IgnoresTab {
+                    rules: root.rules;
+                    default-rules: root.default-rules;
+                    case-insensitive-globs <=> root.case-insensitive-globs;
+
+                    rule-changed(i, f, v) => { root.rule-changed(i, f, v); }
+                    add-rule => { root.add-rule(); }
+                    remove-rule(i) => { root.remove-rule(i); }
+                    save-ignores => { root.save-ignores(); }
+                }
+            }
+
+            Tab {
+                title: "Credentials";
+                CredentialsTab {
+                    credentials: root.credentials;
+                    keychain-available: root.keychain-available;
+                    keychain-problem: root.keychain-problem;
+
+                    store-credential(e, s) => { root.store-credential(e, s); }
+                    forget-credential(e) => { root.forget-credential(e); }
                 }
             }
         }

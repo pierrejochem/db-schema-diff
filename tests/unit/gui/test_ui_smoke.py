@@ -56,6 +56,12 @@ CALLBACKS = {
     "validate_config": (),
     "save_config": (),
     "load_config": (),
+    "rule_changed": ("quartz-runtime", "action", "warn"),
+    "add_rule": (),
+    "remove_rule": ("quartz-runtime",),
+    "save_ignores": (),
+    "store_credential": ("PROD_DSN", "a-secret"),
+    "forget_credential": ("PROD_DSN",),
 }
 
 SOURCE_ROW_FIELDS = [
@@ -97,7 +103,13 @@ def make_row(**overrides):
 
 def test_there_are_slint_files_to_check():
     assert slint_files(), "the smoke test would pass vacuously with no .slint files"
-    assert {p.name for p in slint_files()} >= {"main.slint", "config_tab.slint", "widgets.slint"}
+    assert {p.name for p in slint_files()} >= {
+        "main.slint",
+        "config_tab.slint",
+        "widgets.slint",
+        "ignores_tab.slint",
+        "credentials_tab.slint",
+    }
 
 
 @pytest.mark.parametrize("path", slint_files(), ids=lambda p: p.name)
@@ -192,3 +204,141 @@ def test_a_row_missing_a_field_is_not_defaulted_or_rejected(window):
     del row["checked"]
     window.sources = slint.ListModel([row])
     assert "checked" not in window.sources[0]
+
+
+RULE_ROW_FIELDS = [
+    "id",
+    "reason",
+    "kinds",
+    "names",
+    "attributes",
+    "targets",
+    "statuses",
+    "action",
+    "read_only",
+]
+CREDENTIAL_ROW_FIELDS = ["env_name", "used_by", "source", "summary", "can_store"]
+
+
+def make_rule(**overrides):
+    row = {
+        "id": "quartz-runtime",
+        "reason": "runtime state",
+        "kinds": "table, index",
+        "names": "quartz.*, *.qrtz_*",
+        "attributes": "",
+        "targets": "",
+        "statuses": "extra_in_target",
+        "action": "ignore",
+        "read_only": False,
+    }
+    row.update(overrides)
+    return row
+
+
+def make_credential(**overrides):
+    row = {
+        "env_name": "PROD_DSN",
+        "used_by": "prod",
+        "source": "keychain",
+        "summary": "dbname=invoicing, host=db-prod, port=5432, user=cumo",
+        "can_store": True,
+    }
+    row.update(overrides)
+    return row
+
+
+# (python name, a value of the declared type different from the default)
+TAB_PROPERTIES = [
+    ("case_insensitive_globs", True),
+    ("keychain_available", True),
+    ("keychain_problem", "no keyring backend"),
+]
+TAB_LISTS = ["rules", "default_rules", "credentials"]
+
+
+@pytest.mark.parametrize(("name", "value"), TAB_PROPERTIES, ids=[p[0] for p in TAB_PROPERTIES])
+def test_every_tab_scalar_property_exists_and_round_trips(window, name, value):
+    before = getattr(window, name)  # read first: raises AttributeError if undeclared
+    assert before != value
+    setattr(window, name, value)
+    assert getattr(window, name) == value
+
+
+@pytest.mark.parametrize("name", TAB_LISTS)
+def test_every_tab_list_property_exists_and_starts_empty(window, name):
+    assert list(getattr(window, name)) == []
+
+
+def declared_fields(struct_name):
+    loaded = slint.load_file(str(UI / "main.slint"))
+    return {k.replace("-", "_") for k in dict(getattr(loaded, struct_name)())}
+
+
+def test_rule_row_declares_exactly_the_expected_fields():
+    assert declared_fields("RuleRow") == set(RULE_ROW_FIELDS)
+
+
+def test_credential_row_declares_exactly_the_expected_fields():
+    # By construction there is no field that could hold a connection string or a secret.
+    assert declared_fields("CredentialRow") == set(CREDENTIAL_ROW_FIELDS)
+
+
+def test_a_rule_row_round_trips_every_field(window):
+    sent = make_rule(read_only=True)
+    assert set(sent) == set(RULE_ROW_FIELDS)
+    window.rules = slint.ListModel([sent])
+    window.default_rules = slint.ListModel([sent])
+    for model in (window.rules, window.default_rules):
+        row = model[0]
+        assert {k: row[k] for k in RULE_ROW_FIELDS} == sent
+
+
+def test_a_credential_row_round_trips_every_field(window):
+    sent = make_credential()
+    assert set(sent) == set(CREDENTIAL_ROW_FIELDS)
+    window.credentials = slint.ListModel([sent])
+    row = window.credentials[0]
+    assert {k: row[k] for k in CREDENTIAL_ROW_FIELDS} == sent
+    assert "password" not in str(row)
+
+
+def test_a_credential_row_updates_by_assignment(window):
+    model = slint.ListModel([make_credential(source="unset", summary="")])
+    window.credentials = model
+    model[0] = make_credential(source="environment")
+    assert window.credentials[0]["source"] == "environment"
+
+
+def test_a_stored_secret_reaches_no_property_on_the_window(window):
+    """store_credential carries a secret inbound; nothing on the window may keep it."""
+    secret = "postgresql://cumo:S3cr3t-Distinct-Pw@db-prod:5432/invoicing"
+    window.credentials = slint.ListModel([make_credential()])
+    window.rules = slint.ListModel([make_rule()])
+    seen = []
+    window.store_credential = lambda env, value: seen.append((env, value))
+    window.store_credential("PROD_DSN", secret)
+    assert seen == [("PROD_DSN", secret)], "the callback must be the live, declared one"
+
+    names = [
+        n
+        for n in dir(window)
+        if not n.startswith("_") and n not in {"run", "show", "hide"} and n not in CALLBACKS
+    ]
+    # The scan must cover the properties that could plausibly leak, or it proves nothing.
+    assert {"credentials", "status_message", "keychain_problem", "config_name"} <= set(names)
+    for name in names:
+        value = getattr(window, name)
+        rendered = (
+            repr(list(value))
+            if hasattr(value, "__iter__") and not isinstance(value, str)
+            else repr(value)
+        )
+        assert "S3cr3t" not in rendered, name
+
+
+def test_credentials_tab_masks_the_password_field_and_never_logs():
+    text = (UI / "credentials_tab.slint").read_text()
+    assert "input-type: password" in text
+    for path in slint_files():
+        assert "debug(" not in path.read_text(), path.name

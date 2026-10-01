@@ -1,0 +1,142 @@
+// Ignore rules: the user's own rules are editable, the bundled defaults are shown read-only.
+
+import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
+import { LabelledCheck } from "widgets.slint";
+
+// kinds, names, attributes, targets and statuses are comma-separated; the view model splits them.
+export struct RuleRow {
+    id: string,
+    reason: string,
+    kinds: string,
+    names: string,
+    attributes: string,
+    targets: string,
+    statuses: string,
+    action: string,
+    read_only: bool,
+}
+
+component RuleLine inherits Rectangle {
+    in property <RuleRow> data;
+    callback changed(string, string);   // field, value
+    callback remove();
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                text: root.data.id;
+                placeholder-text: "id";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("id", v); }
+            }
+            LineEdit {
+                text: root.data.reason;
+                placeholder-text: "reason";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("reason", v); }
+            }
+            ComboBox {
+                model: ["ignore", "warn", "info"];
+                current-value: root.data.action;
+                enabled: !root.data.read_only;
+                selected(v) => { root.changed("action", v); }
+            }
+            Button {
+                text: "Remove";
+                enabled: !root.data.read_only;
+                clicked => { root.remove(); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                text: root.data.kinds;
+                placeholder-text: "kinds, comma separated";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("kinds", v); }
+            }
+            LineEdit {
+                text: root.data.names;
+                placeholder-text: "names (globs), comma separated";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("names", v); }
+            }
+            LineEdit {
+                text: root.data.attributes;
+                placeholder-text: "attributes, comma separated";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("attributes", v); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            LineEdit {
+                text: root.data.targets;
+                placeholder-text: "targets, comma separated";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("targets", v); }
+            }
+            LineEdit {
+                text: root.data.statuses;
+                placeholder-text: "statuses, comma separated";
+                read-only: root.data.read_only;
+                edited(v) => { root.changed("statuses", v); }
+            }
+        }
+    }
+}
+
+export component IgnoresTab inherits ScrollView {
+    in property <[RuleRow]> rules;
+    in property <[RuleRow]> default-rules;
+    in-out property <bool> case-insensitive-globs;
+
+    callback rule-changed(string, string, string);   // rule id, field, value
+    callback add-rule();
+    callback remove-rule(string);
+    callback save-ignores();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 12px;
+
+        GroupBox {
+            title: "Ignore rules";
+            VerticalLayout {
+                spacing: 6px;
+                for row[i] in root.rules: RuleLine {
+                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    data: row;
+                    changed(f, v) => { root.rule-changed(row.id, f, v); }
+                    remove => { root.remove-rule(row.id); }
+                }
+                LabelledCheck {
+                    label: "case_insensitive_globs";
+                    value <=> root.case-insensitive-globs;
+                    toggled(v) => {
+                        root.rule-changed("", "case_insensitive_globs", v ? "true" : "false");
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: "Add rule"; clicked => { root.add-rule(); } }
+                    Button { text: "Save"; primary: true; clicked => { root.save-ignores(); } }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "bundled defaults";
+            VerticalLayout {
+                spacing: 6px;
+                for row[i] in root.default-rules: RuleLine {
+                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    data: row;
+                }
+            }
+        }
+    }
+}
