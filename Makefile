@@ -1,7 +1,7 @@
 # Development entry points. Mirrors cumo-local-qa-env/RMV's Makefile conventions.
 PY := .venv/bin/python
 
-.PHONY: help venv venv-gui test test-integration test-all test-gui lint fmt typecheck build \
+.PHONY: help venv venv-gui test test-integration test-all test-gui test-gui-cov lint fmt typecheck build \
 	gui clean
 
 # The GUI needs 3.12+ (the Slint binding's floor); the CLI still supports 3.11, so the two
@@ -32,6 +32,10 @@ test-all: ## Every test.
 
 test-gui: ## GUI tests. Needs the gui extra on Python 3.12+.
 	$(PY_GUI) -m pytest tests/unit/gui -v
+
+test-gui-cov: ## GUI tests with the floor the `gui` CI job applies.
+	$(PY_GUI) -m pytest tests/unit/gui --cov --cov-config=.coveragerc-gui \
+		--cov-report=term-missing --cov-fail-under=90
 
 gui: ## Run the desktop application from the current checkout.
 	$(PY_GUI) -m cumo_schema_comparer.gui

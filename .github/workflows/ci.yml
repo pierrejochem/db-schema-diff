@@ -155,7 +155,14 @@ jobs:
       - run: pip install --pre -e '.[dev,gui]'
 
       # Headless: slint.load_file instantiates without a display, so no xvfb is needed.
-      - run: pytest tests/unit/gui -v
+      #
+      # The GUI carries its own coverage floor, because the default configuration omits it: the
+      # `unit` matrix includes 3.11, where slint cannot be installed and every GUI test skips.
+      # Measured at 93.32% when the floor was set.
+      - run: >-
+          pytest tests/unit/gui -v
+          --cov --cov-config=.coveragerc-gui
+          --cov-report=term-missing --cov-fail-under=90
 
   build:
     name: build

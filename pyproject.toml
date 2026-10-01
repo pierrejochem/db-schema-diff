@@ -108,3 +108,8 @@ markers = [
 [tool.coverage.run]
 source = ["cumo_schema_comparer"]
 branch = true
+# The GUI is an optional extra. slint cannot be installed on 3.11, which the `unit` matrix
+# includes, so there every GUI test skips and ~1600 statements would count as uncovered and fail
+# the gate. The GUI has its own floor in the `gui` job, which measures it with .coveragerc-gui
+# (same settings, without this omit) on an interpreter that can actually import slint.
+omit = ["*/cumo_schema_comparer/gui/*"]
