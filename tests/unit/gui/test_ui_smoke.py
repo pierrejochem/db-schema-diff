@@ -311,30 +311,70 @@ def test_a_credential_row_updates_by_assignment(window):
 
 
 def test_a_stored_secret_reaches_no_property_on_the_window(window):
-    """store_credential carries a secret inbound; nothing on the window may keep it."""
+    """Drive the real chain: row handler -> tab -> main.slint forwarding -> window callback.
+
+    The probe goes on the window's outward callback, which has no .slint handler to replace. A
+    Python-assigned handler on a forwarding callback would replace the code under test.
+    """
     secret = "postgresql://cumo:S3cr3t-Distinct-Pw@db-prod:5432/invoicing"
     window.credentials = slint.ListModel([make_credential()])
     window.rules = slint.ListModel([make_rule()])
     seen = []
     window.store_credential = lambda env, value: seen.append((env, value))
-    window.store_credential("PROD_DSN", secret)
-    assert seen == [("PROD_DSN", secret)], "the callback must be the live, declared one"
+    window.drive_store_credential("PROD_DSN", secret)
+    assert seen == [("PROD_DSN", secret)], "the secret must reach the outward callback intact"
 
     names = [
         n
         for n in dir(window)
         if not n.startswith("_") and n not in {"run", "show", "hide"} and n not in CALLBACKS
     ]
-    # The scan must cover the properties that could plausibly leak, or it proves nothing.
     assert {"credentials", "status_message", "keychain_problem", "config_name"} <= set(names)
     for name in names:
         value = getattr(window, name)
-        rendered = (
-            repr(list(value))
-            if hasattr(value, "__iter__") and not isinstance(value, str)
-            else repr(value)
-        )
+        if callable(value):
+            continue  # public functions: probes and the driver
+        iterable = hasattr(value, "__iter__") and not isinstance(value, str)
+        rendered = repr(list(value)) if iterable else repr(value)
         assert "S3cr3t" not in rendered, name
+
+
+def test_the_window_wires_the_models_into_the_tabs(window):
+    # Read the tabs' own row counts, not the window's properties: `rules: []` in main.slint
+    # leaves window.rules full and the tab empty.
+    assert window.ignores_rule_count() == 0
+    assert window.ignores_default_rule_count() == 0
+    assert window.credential_row_count() == 0
+    window.rules = slint.ListModel([make_rule(), make_rule(id="b")])
+    window.default_rules = slint.ListModel([make_rule(id="d", read_only=True)])
+    window.credentials = slint.ListModel([make_credential()])
+    assert window.ignores_rule_count() == 2
+    assert window.ignores_default_rule_count() == 1
+    assert window.credential_row_count() == 1
+
+
+@pytest.fixture
+def rule_line():
+    harness = pathlib.Path(__file__).resolve().parent / "harness" / "rule_line.slint"
+    return slint.load_file(str(harness)).RuleLineHarness()
+
+
+def test_an_editable_rule_accepts_input_everywhere(rule_line):
+    rule_line.data = make_rule(read_only=False)
+    assert rule_line.editable_count == 9
+
+
+def test_a_bundled_default_accepts_input_nowhere(rule_line):
+    """The only thing stopping a user editing rules they do not own."""
+    rule_line.data = make_rule(read_only=True)
+    assert rule_line.editable_count == 0
+
+
+def test_the_action_box_offers_exactly_what_the_view_model_accepts(rule_line):
+    from cumo_schema_comparer.gui.ignores_vm import RULE_ACTIONS
+
+    assert list(rule_line.action_choices) == ["ignore", "warn", "info"]
+    assert set(rule_line.action_choices) == set(RULE_ACTIONS)
 
 
 def test_credentials_tab_masks_the_password_field_and_never_logs():

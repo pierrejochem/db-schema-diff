@@ -261,6 +261,13 @@ def _problems(config: IgnoreConfig) -> list[GuiError]:
             report(index, "action", "is not one of ignore, warn or info, so the rule does nothing")
         if any(not n.strip() for n in rule.names):
             report(index, "names", "contains an empty pattern, which matches nothing")
+        if any(_unbalanced_brackets(n) for n in rule.names):
+            report(
+                index,
+                "names",
+                "has an unbalanced bracket; names are comma separated, so a comma inside a "
+                "character class splits the pattern in two",
+            )
         if any(n.strip() and "." not in n and not set("*?[") & set(n) for n in rule.names):
             report(
                 index,
@@ -302,6 +309,19 @@ def _problems(config: IgnoreConfig) -> list[GuiError]:
             else:
                 report(int(loc[1]), str(loc[-1]), "is not valid")
     return errors
+
+
+def _unbalanced_brackets(pattern: str) -> bool:
+    """A glob split on a comma inside ``[...]`` leaves one fragment with each half."""
+    depth = 0
+    for char in pattern:
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth < 0:
+                return True
+    return depth != 0
 
 
 _SHAPE_MESSAGE = (

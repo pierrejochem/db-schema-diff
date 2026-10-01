@@ -59,6 +59,15 @@ export component MainWindow inherits Window {
     callback save-config();
     callback load-config();
 
+    // Read-backs and a driver for tests. Python cannot click, and a callback it assigns replaces
+    // the handler it would be testing, so these run the real forwarding chain instead.
+    public function ignores-rule-count() -> int { return ignores-tab.rule-count; }
+    public function ignores-default-rule-count() -> int { return ignores-tab.default-rule-count; }
+    public function credential-row-count() -> int { return credentials-tab.row-count; }
+    public function drive-store-credential(env-name: string, secret: string) {
+        credentials-tab.submit(env-name, secret);
+    }
+
     VerticalLayout {
         HorizontalLayout {
             padding: 8px;
@@ -104,7 +113,7 @@ export component MainWindow inherits Window {
 
             Tab {
                 title: "Ignores";
-                IgnoresTab {
+                ignores-tab := IgnoresTab {
                     rules: root.rules;
                     default-rules: root.default-rules;
                     case-insensitive-globs <=> root.case-insensitive-globs;
@@ -118,7 +127,7 @@ export component MainWindow inherits Window {
 
             Tab {
                 title: "Credentials";
-                CredentialsTab {
+                credentials-tab := CredentialsTab {
                     credentials: root.credentials;
                     keychain-available: root.keychain-available;
                     keychain-problem: root.keychain-problem;

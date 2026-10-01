@@ -16,35 +16,46 @@ export struct RuleRow {
     read_only: bool,
 }
 
-component RuleLine inherits Rectangle {
+export component RuleLine inherits Rectangle {
     in property <RuleRow> data;
     callback changed(string, string);   // field, value
     callback remove();
+
+    // How many of this row's controls accept input: 9 for an editable rule, 0 for a bundled
+    // default. Reads the controls themselves, so a dropped read-only binding shows here.
+    out property <int> editable-count:
+        (id-edit.read-only ? 0 : 1) + (reason-edit.read-only ? 0 : 1)
+        + (kinds-edit.read-only ? 0 : 1) + (names-edit.read-only ? 0 : 1)
+        + (attributes-edit.read-only ? 0 : 1) + (targets-edit.read-only ? 0 : 1)
+        + (statuses-edit.read-only ? 0 : 1) + (action-box.enabled ? 1 : 0)
+        + (remove-button.enabled ? 1 : 0);
+    // What the action ComboBox actually offers.
+    out property <[string]> action-choices: action-box.model;
 
     VerticalLayout {
         padding: 6px;
         spacing: 4px;
         HorizontalLayout {
             spacing: 8px;
-            LineEdit {
+            id-edit := LineEdit {
                 text: root.data.id;
                 placeholder-text: "id";
                 read-only: root.data.read_only;
                 edited(v) => { root.changed("id", v); }
             }
-            LineEdit {
+            reason-edit := LineEdit {
                 text: root.data.reason;
                 placeholder-text: "reason";
                 read-only: root.data.read_only;
                 edited(v) => { root.changed("reason", v); }
             }
-            ComboBox {
+            action-box := ComboBox {
                 model: ["ignore", "warn", "info"];
                 current-value: root.data.action;
                 enabled: !root.data.read_only;
                 selected(v) => { root.changed("action", v); }
             }
-            Button {
+            remove-button := Button {
                 text: "Remove";
                 enabled: !root.data.read_only;
                 clicked => { root.remove(); }
@@ -52,19 +63,19 @@ component RuleLine inherits Rectangle {
         }
         HorizontalLayout {
             spacing: 8px;
-            LineEdit {
+            kinds-edit := LineEdit {
                 text: root.data.kinds;
                 placeholder-text: "kinds, comma separated";
                 read-only: root.data.read_only;
                 edited(v) => { root.changed("kinds", v); }
             }
-            LineEdit {
+            names-edit := LineEdit {
                 text: root.data.names;
                 placeholder-text: "names (globs), comma separated";
                 read-only: root.data.read_only;
                 edited(v) => { root.changed("names", v); }
             }
-            LineEdit {
+            attributes-edit := LineEdit {
                 text: root.data.attributes;
                 placeholder-text: "attributes, comma separated";
                 read-only: root.data.read_only;
@@ -73,13 +84,13 @@ component RuleLine inherits Rectangle {
         }
         HorizontalLayout {
             spacing: 8px;
-            LineEdit {
+            targets-edit := LineEdit {
                 text: root.data.targets;
                 placeholder-text: "targets, comma separated";
                 read-only: root.data.read_only;
                 edited(v) => { root.changed("targets", v); }
             }
-            LineEdit {
+            statuses-edit := LineEdit {
                 text: root.data.statuses;
                 placeholder-text: "statuses, comma separated";
                 read-only: root.data.read_only;
@@ -98,6 +109,10 @@ export component IgnoresTab inherits ScrollView {
     callback add-rule();
     callback remove-rule(string);
     callback save-ignores();
+
+    // Rows actually handed to this tab; lets a test see that the window wired the models in.
+    out property <int> rule-count: root.rules.length;
+    out property <int> default-rule-count: root.default-rules.length;
 
     VerticalLayout {
         padding: 12px;

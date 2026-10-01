@@ -365,6 +365,19 @@ class TestEachUnmatchableBranch:
         document.update_rule("audit-archive", "names", [ok])
         assert document.validate() == []
 
+    def test_a_comma_inside_a_character_class_is_reported_not_swallowed(self, document):
+        # The comma-separated field splits "x.[a,b]" into "x.[a" and "b]".
+        document.update_rule("audit-archive", "names", "x.[a,b]")
+        assert document.config.rules[0].names == ("x.[a", "b]")
+        errors = [e for e in document.validate() if "unbalanced" in str(e)]
+        assert [e.field for e in errors] == ["rules.0.names"]
+        assert "x.[a" not in str(errors[0])  # reported by position, no value echoed
+
+    @pytest.mark.parametrize("ok", ["x.[ab]", "public.*"])
+    def test_balanced_globs_raise_no_bracket_error(self, document, ok):
+        document.update_rule("audit-archive", "names", ok)
+        assert not [e for e in document.validate() if "unbalanced" in str(e)]
+
     def test_empty_name_from_a_loaded_file(self, document):
         rule = document.config.rules[0].model_copy(update={"names": ("",)})
         document.config = document.config.model_copy(update={"rules": (rule,)})
