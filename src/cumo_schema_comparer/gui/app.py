@@ -776,7 +776,10 @@ class Application:
             # end here, so progress is never read to decide this.
             self.results = None
             self._verdict = ("cancelled", CANCELLED_VERDICT)
-            self._ok(CANCELLED_STATUS)
+            # Not _ok: StatusLine has exactly two colours, and green is the one that means "that
+            # worked". A cancelled run produced no report, so the always-on widget has to agree
+            # with the banner instead of contradicting it in green.
+            self._fail(CANCELLED_STATUS)
         except (GuiError, ComparerError) as exc:
             self._run_failed(str(exc))
         except Exception as exc:
@@ -816,7 +819,9 @@ class Application:
             self._ok("Nothing is running.")
             return
         session.cancel()
-        self._ok(
+        # Not _ok either: this says production may still be under load for minutes. StatusLine's
+        # green is the colour that means "that worked", and this needs attention, not reassurance.
+        self._fail(
             "Cancelling. Sources not yet started will not start; those already connected are "
             "abandoned and can keep querying until their statement timeout expires."
         )
@@ -844,7 +849,8 @@ class Application:
         try:
             statuses = await work
         except asyncio.CancelledError:
-            self._ok("The connection check was cancelled.")
+            # Red for the same reason a cancelled comparison is: no result was produced.
+            self._fail("The connection check was cancelled.")
         except (GuiError, ComparerError) as exc:
             self._fail(exc)
         except Exception as exc:

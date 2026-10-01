@@ -733,6 +733,10 @@ class TestRunning:
         assert window.results_reports_enabled() is False
         assert app.results is None
         assert rows(window.findings) == []
+        # StatusLine is always on screen and has two colours. Green is the one that means "that
+        # worked", so it must not contradict the banner.
+        assert window.status_is_error is True, window.status_message
+        assert window.status_message != ""
 
     @pytest.mark.asyncio
     async def test_a_cancelled_run_can_be_followed_by_a_successful_one(self, app):
@@ -920,6 +924,51 @@ class TestChecking:
         assert all(row["checked"] for row in rows(app.window.sources))
         assert app.window.status_is_error is False
 
+    @pytest.mark.asyncio
+    async def test_a_cancelled_check_is_not_reported_in_green(self, app):
+        """Defensive: Cancel is gated on `running`, which only a comparison sets, so the UI
+        cannot reach this today. Driven through the session the way a host could."""
+        gate = threading.Event()
+        entered = threading.Semaphore(0)
+
+        def blocking(source, *args, **kwargs):
+            entered.release()
+            assert gate.wait(10)
+            return ConnectionStatus(label=source.label, ok=True)
+
+        with mock.patch(CHECK, blocking):
+            app.window.check_all()
+            await asyncio.to_thread(entered.acquire, True, 10)
+            app._session.cancel()
+            gate.set()
+            await app.wait_for_idle()
+
+        assert app.window.status_is_error is True, app.window.status_message
+        assert "cancelled" in app.window.status_message.lower()
+        assert not any(row["checked"] for row in rows(app.window.sources))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("raises", "expected"),
+        [(ProbeError("qa: server refused the connection"), "refused"), (RuntimeError("boom"), "")],
+        ids=["library-error", "unexpected"],
+    )
+    async def test_a_check_that_fails_is_reported_in_red(self, app, raises, expected):
+        """Defensive today — the session turns every per-source failure into a status value — but
+        this is the "an error shown in green" class, so the polarity is pinned."""
+
+        async def explode() -> list[ConnectionStatus]:
+            raise raises
+
+        with mock.patch.object(Session, "check_all", lambda self: explode()):
+            app.window.check_all()
+            await app.wait_for_idle()
+
+        assert app.window.status_is_error is True, app.window.status_message
+        assert expected in app.window.status_message
+        assert "Traceback" not in app.window.status_message
+        assert "boom" not in app.window.status_message
+
     def test_an_unknown_label_becomes_a_status_message(self, app):
         app.window.check_connection("nowhere")
         assert app.window.status_is_error is True
@@ -934,6 +983,91 @@ class TestChecking:
             await app.wait_for_idle()
         assert app.window.verdict_level == "ok"
         assert app.window.results_reports_enabled() is True
+
+
+class TestStatusPolarity:
+    """StatusLine has two colours and is always on screen, so every message picks one.
+
+    A flip in either direction is invisible to a test that only checks the text, and the Task 10
+    banner defect was exactly that. These assert the colour, not the words.
+    """
+
+    def test_every_routine_notice_is_green(self, app, tmp_path):
+        app.choose_path = lambda purpose, current: str(tmp_path)
+
+        def green(what: str) -> None:
+            assert app.window.status_is_error is False, f"{what}: {app.window.status_message}"
+            assert app.window.status_message != "", f"{what}: no message at all"
+
+        green("loading a config")
+        app.window.add_target()
+        green("adding a target")
+        app.window.remove_target("target")
+        green("removing a target")
+        app.window.add_rule()
+        green("adding a rule")
+        app.window.remove_rule(rows(app.window.rules)[0]["id"])
+        green("removing a rule")
+        app.window.store_credential("QA_DSN", QA_DSN)
+        green("storing a credential")
+        app.window.forget_credential("QA_DSN")
+        green("forgetting a credential")
+        app.window.drive_choose_baseline()
+        green("choosing a baseline")
+        app.window.drive_choose_output_directory()
+        green("choosing an output directory")
+        # Not drive_cancel_run: the markup gates Cancel on `running`, so the handler's
+        # nothing-to-do branch is only reachable the way a stale click would reach it.
+        app.window.cancel_run()
+        green("cancelling when nothing runs")
+        assert app.window.running is False, "and the gate must not be left latched"
+
+    @pytest.mark.asyncio
+    async def test_a_finished_run_and_a_check_in_progress_are_green(self, app):
+        with mock.patch(CHECK, return_value=ConnectionStatus(label="qa", ok=True)):
+            app.window.check_connection("qa")
+            assert app.window.status_is_error is False, "while the check is in flight"
+            assert "Checking" in app.window.status_message
+            await app.wait_for_idle()
+        assert app.window.status_is_error is False, "a reachable source"
+
+        with mock.patch(CAPTURE, ok_capture):
+            await run_to_completion(app)
+        assert app.window.status_is_error is False, app.window.status_message
+
+    @pytest.mark.asyncio
+    async def test_cancelling_explains_itself_in_red_while_it_drains(self, app):
+        gate = threading.Event()
+        entered = threading.Semaphore(0)
+
+        def blocking(source, *args, **kwargs):
+            entered.release()
+            assert gate.wait(10)
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, blocking):
+            app.window.drive_start_run()
+            await asyncio.to_thread(entered.acquire, True, 10)
+            app.window.drive_cancel_run()
+            assert app.window.status_is_error is True, "the in-flight warning is not good news"
+            assert "statement timeout" in app.window.status_message
+            gate.set()
+            await app.wait_for_idle()
+        assert app.window.status_is_error is True
+
+    def test_opening_the_written_report_is_green(self, app, tmp_path):
+        async def go() -> None:
+            with mock.patch(CAPTURE, drifted_capture):
+                await run_to_completion(app)
+
+        asyncio.run(go())
+        app.open_url = lambda url: True
+        app.window.output_directory = str(tmp_path)
+        app.window.drive_write_reports()
+        assert app.window.status_is_error is False
+        app.window.drive_open_html()
+        assert app.window.status_is_error is False, app.window.status_message
+        assert "Opened" in app.window.status_message
 
 
 class TestResults:
