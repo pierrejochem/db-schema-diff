@@ -1,12 +1,21 @@
 """Phase 0 smoke tests: the package imports, the entry point runs, exit codes are stable."""
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 
 from cumo_schema_comparer import __version__
 from cumo_schema_comparer.cli import cli
+from cumo_schema_comparer.diff.model import ComparisonReport
+from cumo_schema_comparer.diff.severity import Severity
 from cumo_schema_comparer.errors import ComparerError, ConfigError, ProbeError
 from cumo_schema_comparer.exit_codes import ExitCode
+from cumo_schema_comparer.report.base import render_to_path
+from cumo_schema_comparer.report.json_report import JsonReporter
+from tests.support.reports import drifted_target
 
 
 def test_version_flag_reports_the_package_version():
@@ -60,6 +69,39 @@ class TestExitCodePropagation:
         monkeypatch.setattr(cli_module, "cli", boom)
         monkeypatch.setattr("sys.argv", ["cumo-schema-diff"])
         assert cli_module.main() == 1
+
+    def test_the_module_and_the_console_script_agree_on_a_drifting_comparison(self, tmp_path):
+        """Both entry points, run for real, because the exit code *is* the contract.
+
+        ``python -m cumo_schema_comparer`` discarded main()'s return value and exited 0 on drift
+        while the console script exited 1. Nothing in-process could see it: it is the ``if
+        __name__`` block itself that is wrong, so it only shows in a subprocess.
+        """
+        report = ComparisonReport(
+            name="invoicing",
+            master_label="prod",
+            targets=(drifted_target(),),
+            generated_at="2026-01-15T09:30:00+00:00",
+            tool_version=__version__,
+            fail_on="error",
+        )
+        path = tmp_path / "report.json"
+        render_to_path(JsonReporter(), report, path)
+        assert report.has_drift(Severity.ERROR), "the fixture has to drift for this to mean anything"
+
+        arguments = ["render", "--from", str(path), "--no-console"]
+        script = Path(sys.executable).parent / "cumo-schema-diff"
+        if not script.exists():  # pragma: no cover - an editable install always has it
+            pytest.skip("the console script is not installed in this environment")
+
+        def exit_code(*argv: str) -> int:
+            return subprocess.run(  # noqa: S603 - fixed argv, no shell
+                [*argv, *arguments], capture_output=True, text=True, timeout=120, check=False
+            ).returncode
+
+        module = exit_code(sys.executable, "-m", "cumo_schema_comparer")
+        console = exit_code(str(script))
+        assert (module, console) == (ExitCode.DRIFT, ExitCode.DRIFT)
 
     def test_main_returns_zero_when_a_command_succeeds(self, monkeypatch):
         import click
