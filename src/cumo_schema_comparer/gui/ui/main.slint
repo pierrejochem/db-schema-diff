@@ -61,6 +61,7 @@ export component MainWindow inherits Window {
     in-out property <string> verdict: "";
     in-out property <string> verdict-level: "";
     in property <[FindingRow]> findings;
+    in property <int> total-findings;
     in-out property <string> filter-text: "";
     in-out property <bool> show-error: true;
     in-out property <bool> show-warning: true;
@@ -106,6 +107,27 @@ export component MainWindow inherits Window {
     public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
     public function results-banner-kind() -> string { return results-tab.banner-kind; }
     public function results-banner-is-success() -> bool { return results-tab.banner-is-success; }
+    public function run-fail-on-choices() -> string {
+        return run-tab.fail-on-choices[0] + "," + run-tab.fail-on-choices[1] + ","
+            + run-tab.fail-on-choices[2] + "," + run-tab.fail-on-choices[3];
+    }
+    public function run-banner-background() -> color { return results-tab.banner-background; }
+    public function run-banner-text-color() -> color { return results-tab.banner-text-color; }
+    public function results-summary() -> string { return results-tab.findings-summary; }
+    public function results-filter-hides-rows() -> bool { return results-tab.filter-hides-rows; }
+    public function results-reports-enabled() -> bool { return results-tab.reports-enabled; }
+    public function results-baseline-shown() -> string { return run-tab.baseline-shown; }
+    public function results-output-directory-shown() -> string { return results-tab.output-directory-shown; }
+    public function results-filter-shown() -> string { return results-tab.filter-shown; }
+    public function results-show-error-shown() -> bool { return results-tab.error-shown; }
+    public function results-show-warning-shown() -> bool { return results-tab.warning-shown; }
+    public function results-show-info-shown() -> bool { return results-tab.info-shown; }
+    public function drive-type-baseline(v: string) { run-tab.type-baseline(v); }
+    public function drive-type-filter(v: string) { results-tab.type-filter(v); }
+    public function drive-type-output-directory(v: string) { results-tab.type-output-directory(v); }
+    public function drive-toggle-error(v: bool) { results-tab.toggle-error(v); }
+    public function drive-toggle-warning(v: bool) { results-tab.toggle-warning(v); }
+    public function drive-toggle-info(v: bool) { results-tab.toggle-info(v); }
     public function drive-start-run() { run-tab.request-start(); }
     public function drive-cancel-run() { run-tab.request-cancel(); }
     public function drive-choose-baseline() { run-tab.request-choose-baseline(); }
@@ -160,7 +182,7 @@ export component MainWindow inherits Window {
             Tab {
                 title: "Run";
                 run-tab := RunTab {
-                    running: root.running;
+                    running <=> root.running;
                     progress: root.progress;
                     run-fail-on <=> root.run-fail-on;
                     baseline-path <=> root.baseline-path;
@@ -184,6 +206,7 @@ export component MainWindow inherits Window {
                     verdict: root.verdict;
                     verdict-level: root.verdict-level;
                     findings: root.findings;
+                    total-findings: root.total-findings;
                     filter-text <=> root.filter-text;
                     show-error <=> root.show-error;
                     show-warning <=> root.show-warning;

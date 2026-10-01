@@ -32,7 +32,7 @@ export component ProgressLine inherits Rectangle {
 }
 
 export component RunTab inherits ScrollView {
-    in property <bool> running;
+    in-out property <bool> running;
     in property <[ProgressRow]> progress;
     in-out property <string> run-fail-on;
     in-out property <string> baseline-path;
@@ -50,11 +50,19 @@ export component RunTab inherits ScrollView {
     // What the controls actually offer; read by tests so a dropped binding shows.
     out property <bool> start-enabled: !root.running;
     out property <bool> cancel-enabled: root.running;
+    out property <[string]> fail-on-choices: ["error", "warning", "any", "never"];
+    out property <string> baseline-shown: baseline-edit.text;
+    public function type-baseline(value: string) { baseline-edit.text = value; }
     out property <int> progress-count: root.progress.length;
 
     // Every click goes through these, so a test exercises the real gate and forwarding.
+    // Start claims the run itself, so the gate holds whatever the Python handler does. Whoever
+    // handles start-run must clear `running` on every exit path, including an exception.
     public function request-start() {
-        if (root.start-enabled) { root.start-run(); }
+        if (root.start-enabled) {
+            root.running = true;
+            root.start-run();
+        }
     }
     public function request-cancel() {
         if (root.cancel-enabled) { root.cancel-run(); }
@@ -75,14 +83,14 @@ export component RunTab inherits ScrollView {
                     spacing: 8px;
                     Text { text: "fail on"; width: 140px; vertical-alignment: center; }
                     ComboBox {
-                        model: ["error", "warning", "any", "never"];
+                        model: root.fail-on-choices;
                         current-value <=> root.run-fail-on;
                     }
                 }
                 HorizontalLayout {
                     spacing: 8px;
                     Text { text: "baseline"; width: 140px; vertical-alignment: center; }
-                    LineEdit {
+                    baseline-edit := LineEdit {
                         text <=> root.baseline-path;
                         placeholder-text: "(none)";
                     }

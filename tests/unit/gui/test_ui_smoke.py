@@ -7,6 +7,7 @@ the whole module skips, so the 3.11 CLI suite stays green.
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 
 import pytest
@@ -526,6 +527,7 @@ def test_the_other_buttons_forward_to_the_window_callbacks(window):
     for name in ("choose_baseline", "choose_output_directory", "write_reports", "open_html",
                  "filter_changed"):  # fmt: skip
         setattr(window, name, lambda n=name: seen.append(n))
+    window.verdict_level = "ok"  # reports exist only for a finished run
     window.drive_choose_baseline()
     window.drive_choose_output_directory()
     window.drive_write_reports()
@@ -539,6 +541,7 @@ def test_reports_cannot_be_written_while_a_run_is_in_flight(window):
     seen = []
     window.write_reports = lambda: seen.append("w")
     window.open_html = lambda: seen.append("o")
+    window.verdict_level = "ok"
     window.running = True
     window.drive_write_reports()
     window.drive_open_html()
@@ -590,3 +593,166 @@ def test_the_run_and_results_tabs_never_log_or_hold_a_connection_string():
         text = (UI / name).read_text()
         assert "debug(" not in text
         assert "dsn" not in text.lower()
+
+
+def test_a_double_click_fires_one_run_even_if_the_handler_never_touches_running(window):
+    """The gate must not depend on Python: this handler is the one that forgets to set running."""
+    starts = []
+    window.start_run = lambda: starts.append(1)
+    window.drive_start_run()
+    assert window.running is True, "request-start must claim the run itself"
+    window.drive_start_run()
+    assert starts == [1]
+    assert (window.run_start_enabled(), window.run_cancel_enabled()) == (False, True)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_a_synchronous_handler_failure_leaves_running_set_for_the_handler_to_clear(window):
+    """Documents the hazard: nothing in the markup can know the handler raised."""
+
+    def boom():
+        raise RuntimeError("start failed")
+
+    window.start_run = boom
+    with contextlib.suppress(Exception):  # slint swallows it today; either is fine
+        window.drive_start_run()
+    assert window.running is True  # only the Python side's finally can release it
+    window.running = False
+    assert window.run_start_enabled() is True
+
+
+# Banner colours: one ladder, derived from banner-kind, and the markup consumes only the result.
+def banner_colours(window, level, running=False):
+    window.verdict_level = level
+    window.running = running
+    return window.run_banner_background(), window.run_banner_text_color()
+
+
+def test_only_the_ok_level_gets_the_success_colours(window):
+    green = banner_colours(window, "ok")
+    for level in ("error", "warning", "info", "cancelled", "", "OK", "success"):
+        assert banner_colours(window, level)[0] != green[0], level
+        assert banner_colours(window, level)[1] != green[1], level
+    assert banner_colours(window, "ok", running=True)[0] != green[0]
+
+
+def test_error_and_cancelled_share_the_failure_colours_and_differ_from_warning(window):
+    error = banner_colours(window, "error")
+    assert banner_colours(window, "cancelled") == error
+    assert banner_colours(window, "warning") != error
+    assert banner_colours(window, "") != error  # neutral, not alarming and not green
+
+
+def test_the_banner_markup_consumes_the_derived_colours_only():
+    text = (UI / "results_tab.slint").read_text()
+    assert "background: root.banner-background;" in text
+    assert "color: root.banner-text-color;" in text
+    assert text.count("#d1fadf") == 1
+    assert text.count("#027a48") == 1
+
+
+# Shown-of-total and the hidden-rows indicator.
+def test_the_summary_counts_shown_of_total(window):
+    window.total_findings = 3
+    window.findings = slint.ListModel(
+        [make_finding(), make_finding(path="b"), make_finding(path="c")]
+    )
+    assert window.results_summary() == "Showing 3 of 3 findings."
+    assert window.results_filter_hides_rows() is False
+
+
+def test_a_filter_hiding_every_row_says_so_and_names_the_count(window):
+    window.verdict_level = "error"
+    window.total_findings = 5
+    window.findings = slint.ListModel([])
+    window.show_error = False
+    assert window.results_filter_hides_rows() is True
+    summary = window.results_summary()
+    assert "Showing 0 of 5" in summary
+    assert "5 hidden by the active filter" in summary
+
+
+def test_partially_filtered_rows_report_how_many_are_hidden(window):
+    window.total_findings = 5
+    window.findings = slint.ListModel([make_finding(), make_finding(path="b")])
+    assert "3 hidden" in window.results_summary()
+
+
+def test_a_clean_run_with_no_rows_is_not_a_hidden_filter(window):
+    window.total_findings = 0
+    window.findings = slint.ListModel([])
+    assert window.results_summary() == "No findings."
+    assert window.results_filter_hides_rows() is False
+
+
+def test_no_summary_while_a_run_is_in_flight(window):
+    window.total_findings = 4
+    window.running = True
+    assert window.results_summary() == ""
+
+
+# Reports need a report.
+@pytest.mark.parametrize(
+    ("level", "running", "enabled"),
+    [("", False, False), ("cancelled", False, False), ("ok", True, False),
+     ("ok", False, True), ("error", False, True), ("warning", False, True),
+     ("info", False, True), ("bogus", False, False)],
+)  # fmt: skip
+def test_reports_are_available_only_when_a_report_exists(window, level, running, enabled):
+    seen = []
+    window.write_reports = lambda: seen.append("w")
+    window.open_html = lambda: seen.append("o")
+    window.verdict_level = level
+    window.running = running
+    assert window.results_reports_enabled() is enabled
+    window.drive_write_reports()
+    window.drive_open_html()
+    assert seen == (["w", "o"] if enabled else [])
+
+
+# Filter and field wiring, through the real LineEdit / CheckBox handlers and both directions.
+def test_typing_in_the_filter_reaches_the_window_and_fires_filter_changed(window):
+    seen = []
+    window.filter_changed = lambda: seen.append(window.filter_text)
+    window.drive_type_filter("invoice")
+    assert window.filter_text == "invoice"  # LineEdit -> tab -> window (two-way binding)
+    assert seen == ["invoice"]  # the LineEdit's edited handler is wired
+    window.filter_text = "dunning"
+    assert window.results_filter_shown() == "dunning"  # window -> tab
+
+
+@pytest.mark.parametrize("which", ["error", "warning", "info"])
+def test_each_severity_toggle_binds_both_ways_and_fires_filter_changed(window, which):
+    seen = []
+    window.filter_changed = lambda: seen.append(which)
+    getattr(window, f"drive_toggle_{which}")(False)
+    assert getattr(window, f"show_{which}") is False
+    assert seen == [which]
+    getattr(window, f"drive_toggle_{which}")(True)
+    assert getattr(window, f"show_{which}") is True
+    setattr(window, f"show_{which}", False)
+    assert getattr(window, f"results_show_{which}_shown")() is False
+    setattr(window, f"show_{which}", True)
+    assert getattr(window, f"results_show_{which}_shown")() is True
+
+
+def test_baseline_path_binds_both_ways(window):
+    window.drive_type_baseline("/work/baseline.json")
+    assert window.baseline_path == "/work/baseline.json"
+    window.baseline_path = "/other.json"
+    assert window.results_baseline_shown() == "/other.json"
+
+
+def test_output_directory_binds_both_ways(window):
+    window.drive_type_output_directory("/out")
+    assert window.output_directory == "/out"
+    window.output_directory = "/elsewhere"
+    assert window.results_output_directory_shown() == "/elsewhere"
+
+
+def test_the_run_fail_on_choices_are_the_clis(window):
+    import typing
+
+    from cumo_schema_comparer.config.model import FailOn
+
+    assert tuple(window.run_fail_on_choices().split(",")) == typing.get_args(FailOn)
