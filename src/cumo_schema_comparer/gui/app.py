@@ -234,6 +234,9 @@ class Application:
         self._verdict = ("", "")
         self._checks.clear()
         self._described.clear()
+        # A new configuration brings its own gate, so re-arm the seeding: a per-run override
+        # belongs to the configuration it was chosen for, not to the window.
+        self._seeded_gate = str(self.window.run_fail_on)
         message = f"Loaded {path}."
         if document.had_comments():
             message += " It has comments, which a save from here cannot preserve."
@@ -299,10 +302,16 @@ class Application:
         # The Run tab's gate is a per-run override of this one, and it defaults to "error" in the
         # markup. Left unseeded it silently replaced a configured `never` or `any` -- two visible
         # widgets disagreeing, with the untouched one winning, and the wrong fail_on written into
-        # every report. Seeded while the user has not chosen one themselves; their choice wins.
+        # every report.
+        #
+        # `_seeded_gate` is what *this module* last wrote there, and only that. Re-reading the
+        # window into it (`= str(window.run_fail_on)` unconditionally) adopted the user's own
+        # choice as "ours", so the choice survived one refresh and was reverted on the next --
+        # towards the config's gate, which fails open. Every finished run refreshes, so an
+        # operator who chose `any` got `any`, `any`, then `never`. Now a value that differs from
+        # what we wrote is a deliberate override: it is left alone, for good.
         if str(window.run_fail_on) == self._seeded_gate:
-            window.run_fail_on = options.fail_on
-        self._seeded_gate = str(window.run_fail_on)
+            window.run_fail_on = self._seeded_gate = options.fail_on
         window.ignore_column_order = options.ignore_column_order
         window.include_owners = options.include_owners
         window.include_comments = options.include_comments

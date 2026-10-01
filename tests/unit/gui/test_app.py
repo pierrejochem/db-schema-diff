@@ -878,6 +878,45 @@ class TestRunning:
         assert app._effective_config().options.fail_on == "warning"
         assert app.config.config.options.fail_on == "never", "the file's own gate is untouched"
 
+    def test_an_explicit_gate_survives_every_later_refresh(self, tmp_path):
+        """It used to survive exactly one.
+
+        `_seeded_gate` was re-read from the window after seeding, which adopted the operator's own
+        choice as "ours", so the next refresh reverted it — towards the config's gate, which fails
+        open. Every finished run refreshes, so `any`, `any`, then `never`.
+        """
+        app = application(tmp_path, text=CONFIG + "options:\n  fail_on: never\n")
+        app.window.run_fail_on = "any"
+        seen = []
+        for index in range(5):
+            app.window.source_changed("qa", "host", f"db-qa-{index}")  # any edit refreshes
+            seen.append((app.window.run_fail_on, app._effective_config().options.fail_on))
+        assert seen == [("any", "any")] * 5, seen
+        assert app.config.config.options.fail_on == "never", "the file's own gate is untouched"
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_gate_still_holds_after_two_completed_runs(self, tmp_path):
+        app = application(tmp_path, text=CONFIG + "options:\n  fail_on: never\n")
+        app.window.run_fail_on = "any"
+        with mock.patch(CAPTURE, drifted_capture):
+            await run_to_completion(app)
+            assert app.window.run_fail_on == "any", "after one run"
+            await run_to_completion(app)
+            assert app.window.run_fail_on == "any", "after two runs"
+            await run_to_completion(app)
+        assert app.window.run_fail_on == "any", "the third run is still the operator's"
+        assert app._effective_config().options.fail_on == "any"
+        assert "--fail-on any" in app.window.verdict
+
+    def test_loading_another_config_brings_its_own_gate(self, tmp_path):
+        app = application(tmp_path, text=CONFIG + "options:\n  fail_on: never\n")
+        app.window.run_fail_on = "any"
+        other = tmp_path / "other.yaml"
+        other.write_text(CONFIG + "options:\n  fail_on: warning\n")
+        app.open_config(other)
+        assert app.window.run_fail_on == "warning"
+        assert app._effective_config().options.fail_on == "warning"
+
     def test_editing_the_configs_gate_carries_the_run_tab_with_it(self, tmp_path):
         app = application(tmp_path)
         app.window.source_changed("", "fail_on", "any")
