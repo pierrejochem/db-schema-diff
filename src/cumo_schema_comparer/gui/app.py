@@ -100,27 +100,42 @@ _MAX_MESSAGE = 240
 #: single-quoted, and lets a backslash escape the next character inside or outside the quotes, so
 #: ``password='a b'`` and ``password=a\ b`` both carry a space. Matching ``\S*`` redacted only the
 #: first token of those and left the rest of the password in the message. Double quotes are
-#: accepted too: libpq does not treat them specially, but a backend echoing a value may.
-#: The alternatives are disjoint (no branch can match what another can), so there is nothing to
-#: backtrack over. An unterminated quote is redacted to the end of the line, because a truncated
-#: echo must not be the one shape that gets through.
-_SECRET_VALUE = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|['"][^\n]*|(?:\\.|[^\s\\])*)"""  # noqa: S105 - a regex for a password, not a password
-#: Credential-bearing shapes in free text from a keyring backend, a driver or the OS. Anything
-#: carrying ``://``, userinfo or a libpq secret keyword is replaced whole rather than trimmed.
-#: This is the only layer protecting a message with no ``Dsn`` in scope to scrub against —
-#: everywhere else, ``Dsn.secret_fragments()`` handles both quoting forms.
-_CREDENTIAL_SHAPE = re.compile(
-    rf"\S*(?:://|@)\S*|(?:password|passfile|sslpassword|sslkey)\s*=\s*{_SECRET_VALUE}",
-    re.IGNORECASE,
+#: accepted too: libpq does not treat them specially, but a backend echoing a value may. An
+#: unterminated quote is redacted to the end of the line, because a truncated echo must not be the
+#: one shape that gets through — and so is an *unquoted* value carrying ``://`` or ``@``, for the
+#: same reason: in free text there is no telling whether what follows the space is the rest of a
+#: URL-shaped secret, and ``sslpassword=p://x rest-of-it`` left that tail behind when the value was
+#: taken to end at the space. That branch's prefix is lazy and bounded, so the work stays linear in
+#: the length of the token rather than backtracking over it.
+_KEYWORD_VALUE = (
+    r"(?:'(?:\\.|[^'\\])*'"  # 'single quoted', backslash escapes honoured
+    r'|"(?:\\.|[^"\\])*"'  # "double quoted": libpq does not, but an echo may
+    r"|['\"][^\n]*"  # an unterminated quote: to the end of the line
+    r"|(?:\\.|[^\s\\]){0,256}?(?:://|@)[^\n]*"  # URL-shaped: to the end of the line
+    r"|(?:\\.|[^\s\\])*)"  # plain, with backslash-escaped whitespace
 )
+#: A libpq secret keyword and its value. Only the keyword is matched by a regex, because only a
+#: keyword's value can legitimately span a space and therefore needs a grammar.
+_SECRET_KEYWORD = re.compile(
+    rf"(?:password|passfile|sslpassword|sslkey)\s*=\s*{_KEYWORD_VALUE}", re.IGNORECASE
+)
+
+#: What makes a whitespace-delimited token credential-bearing on its own: a scheme, or userinfo.
+_TOKEN_MARKERS = ("://", "@")
+
+
+def _collapse(text: str) -> str:
+    """``text`` as one line of single-spaced printable characters."""
+    return " ".join("".join(c if c.isprintable() else " " for c in text).split())
+
+
+def _bounded(text: str, limit: int = _MAX_MESSAGE) -> str:
+    """``text`` cut to ``limit``: a Slint ``Text`` is not a scrollback."""
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _one_line(text: str, limit: int = _MAX_MESSAGE) -> str:
-    """``text`` as one bounded line: a Slint ``Text`` is not a scrollback."""
-    cleaned = " ".join("".join(c if c.isprintable() else " " for c in text).split())
-    if len(cleaned) > limit:
-        cleaned = cleaned[: limit - 1].rstrip() + "…"
-    return cleaned
+    return _bounded(_collapse(text), limit)
 
 
 def _sanitise(text: str) -> str:
@@ -128,9 +143,26 @@ def _sanitise(text: str) -> str:
 
     Used for everything this module did not write itself — keyring backend errors, driver errors,
     OS messages. Those are already redacted upstream where upstream knows the DSN; this is the
-    layer that does not need to know it.
+    layer that does not need to know it, so it recognises shapes rather than values.
+
+    Two passes, and **the keyword pass must run first**. A password may contain ``@`` or ``://``
+    — ``password='P@ss word'`` is ordinary — so the two kinds of shape overlap. Done the other way
+    round, the token pass redacts ``password='P@ss`` and leaves ``word'`` behind, which is exactly
+    the leak this ordering exists to prevent; ``test_the_keyword_pass_runs_first`` pins it.
+
+    The second pass is a substring test over whitespace-delimited tokens rather than a regex.
+    ``\\S*(?:://|@)\\S*`` was quadratic — the prefix could consume the message and then backtrack
+    one character at a time, at every start offset, so a 200 000-character message took 103
+    seconds, on the event-loop thread, freezing the window. A token scan is linear and has nothing
+    to backtrack over at all. It redacts the whole token, which is the conservative direction.
     """
-    return _one_line(_CREDENTIAL_SHAPE.sub("***", text))
+    tokens = _collapse(_SECRET_KEYWORD.sub("***", text)).split(" ")
+    return _bounded(
+        " ".join(
+            "***" if any(marker in token for marker in _TOKEN_MARKERS) else token
+            for token in tokens
+        )
+    )
 
 
 def _no_dialog(purpose: str, current: str) -> str | None:

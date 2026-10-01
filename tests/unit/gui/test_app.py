@@ -16,6 +16,7 @@ import contextlib
 import gc
 import textwrap
 import threading
+import time
 from typing import Any
 from unittest import mock
 
@@ -134,14 +135,23 @@ class EchoingKeychain:
         raise RuntimeError(f"denied: refused to drop {self.keywords}")
 
 
-#: The four libpq spellings of one password. ``\S*`` matched only the first token of the first
-#: three, leaving the tail of the secret in the message.
+#: One password, in every spelling a keyring backend might echo it back in. The ``@`` and
+#: ``://`` variants matter on their own: a password may contain either, which makes the two kinds
+#: of credential shape overlap, and whichever pass runs second truncates at the space.
 SECRET_SHAPES = [
     "password='Zq7x PLUMBUS9'",
     "password=Zq7x\\ PLUMBUS9",
     'password="Zq7x PLUMBUS9"',
     "password=Zq7xPLUMBUS9",
     "password='Zq7x PLUMBUS9",
+    "password='P@ssw0rd PLUMBUS9'",
+    'password="P@ss PLUMBUS9"',
+    "password=P@ss\\ PLUMBUS9",
+    "password='P@ss PLUMBUS9",
+    "password=P@ssPLUMBUS9",
+    "sslpassword=p://x PLUMBUS9",
+    "passfile=/x/p@ss PLUMBUS9",
+    "sslkey=k://a PLUMBUS9",
 ]
 
 
@@ -492,6 +502,23 @@ class TestCredentials:
             assert text != "" or where == "status_message"
             assert "PLUMBUS9" not in text, f"{where}: {text}"
             assert "Zq7x" not in text, f"{where}: {text}"
+
+    def test_the_keyword_pass_runs_first(self):
+        """The two kinds of shape overlap, so the order of the passes is the whole fix.
+
+        Run the other way round, the token pass redacts ``password='P@ss`` and leaves ``word'``
+        — the tail of the password — behind. This fails if the passes are swapped.
+        """
+        assert app_module._sanitise("password='P@ss word' host=db") == "*** host=db"
+        assert app_module._sanitise("sslpassword=p://x word") == "***"
+
+    def test_sanitising_a_long_message_does_not_hang_the_loop_thread(self):
+        """`\\S*(?:://|@)\\S*` was quadratic: 200k characters took 103 seconds, on the thread
+        that draws the window."""
+        started = time.monotonic()
+        for text in ("x" * 200_000, "a:b" * 60_000, "a@b" * 60_000, "password=" + "a" * 200_000):
+            app_module._sanitise(text)
+        assert time.monotonic() - started < 5, "the token scan has to stay linear"
 
     def test_sanitising_leaves_the_non_secret_context_alone(self):
         """Over-redaction would make an unreachable host unexplainable."""
