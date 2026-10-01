@@ -254,7 +254,13 @@ def _changelog_lines(target: TargetDiff, changelog: ChangelogDiff) -> list[str]:
         for d in changelog.exectype_differences
     )
     lines.extend(
-        f"! {ref[0]} by {ref[1]}: recorded as FAILED" for ref in changelog.failed_changesets
+        f"~ {d.ref[0]} by {d.ref[1]}: filename {d.master_filename} vs {d.target_filename} "
+        f"({d.severity.label})"
+        for d in changelog.filename_differences
     )
+    for failed in changelog.failed_changesets:
+        where = {"master": master, "target": replica}.get(failed.side)
+        suffix = f" on {where}" if where else ""
+        lines.append(f"! {failed.id} by {failed.author}: recorded as FAILED{suffix}")
     lines.extend(f"note: {note}" for note in changelog.notes)
     return lines

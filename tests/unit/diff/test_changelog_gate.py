@@ -108,3 +108,79 @@ class TestNeverReadsAsClean:
         ConsoleReporter().render(report, console)
         assert "No drift at or above" not in console.getvalue()
         assert "in sync" not in console.getvalue().split("Summary")[1]
+
+
+class TestFailureSide:
+    """The headline names the environment that broke, so nobody investigates the wrong one."""
+
+    def _diff(self, master_type, target_type):
+        return diff_changelog(
+            changelog(changeset("a", exec_type=master_type)),
+            changelog(changeset("a", exec_type=target_type)),
+        )
+
+    def test_master_only(self):
+        diff = self._diff("FAILED", "EXECUTED")
+        assert diff.status is ChangelogStatus.FAILED_CHANGESETS
+        assert diff.headline("prod", "qa") == (
+            "1 changeset(s) recorded as FAILED on prod; the migration did not complete there"
+        )
+        assert diff.to_json_dict()["failed_changesets"] == [["a", "kolowae", "master"]]
+
+    def test_target_only(self):
+        diff = self._diff("EXECUTED", "FAILED")
+        assert diff.headline("prod", "qa") == (
+            "1 changeset(s) recorded as FAILED on qa; the migration did not complete there"
+        )
+        assert diff.to_json_dict()["failed_changesets"] == [["a", "kolowae", "target"]]
+
+    def test_both_sides(self):
+        diff = self._diff("FAILED", "FAILED")
+        assert diff.headline("prod", "qa") == (
+            "1 changeset(s) recorded as FAILED on prod and 1 on qa; "
+            "the migration did not complete on either"
+        )
+        assert diff.to_json_dict()["failed_changesets"] == [
+            ["a", "kolowae", "master"],
+            ["a", "kolowae", "target"],
+        ]
+
+    @pytest.mark.parametrize(
+        ("master_type", "target_type"), [("FAILED", "EXECUTED"), ("FAILED", "FAILED")]
+    )
+    def test_a_failure_on_the_master_still_gates(self, master_type, target_type, tmp_path):
+        diff = self._diff(master_type, target_type)
+        assert _report(diff, "error").has_drift(gate("error"))
+
+        path = tmp_path / "report.json"
+        out = io.StringIO()
+        JsonReporter().render(_report(diff, "error"), out)
+        path.write_text(out.getvalue(), encoding="utf-8")
+        result = CliRunner().invoke(cli, ["render", "--from", str(path), "--no-console"])
+        assert result.exit_code == ExitCode.DRIFT
+
+    def test_the_side_survives_a_json_round_trip(self):
+        from cumo_schema_comparer.report.json_report import load_report
+
+        diff = self._diff("FAILED", "EXECUTED")
+        out = io.StringIO()
+        JsonReporter().render(_report(diff, "error"), out)
+        loaded = load_report(out.getvalue()).targets[0].changelog
+        assert loaded.failed_changesets == diff.failed_changesets
+
+    def test_a_report_written_before_the_side_was_recorded_still_loads(self):
+        import json
+
+        from cumo_schema_comparer.report.json_report import load_report
+
+        out = io.StringIO()
+        JsonReporter().render(_report(self._diff("EXECUTED", "FAILED"), "error"), out)
+        data = json.loads(out.getvalue())
+        data["targets"][0]["changelog"]["failed_changesets"] = [["a", "kolowae"]]
+        loaded = load_report(json.dumps(data)).targets[0].changelog
+        assert [f.side for f in loaded.failed_changesets] == ["unknown"]
+
+    def test_the_console_names_the_side(self):
+        out = io.StringIO()
+        ConsoleReporter().render(_report(self._diff("FAILED", "EXECUTED"), "error"), out)
+        assert "recorded as FAILED on prod" in out.getvalue()

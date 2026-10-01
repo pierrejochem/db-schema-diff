@@ -203,7 +203,8 @@ class TestExecType:
         target = changelog(cs("a", exec_type="FAILED"))
         result = diff_changelog(master, target)
         assert result.severity is Severity.ERROR
-        assert result.failed_changesets == (("a", "kolowae"),)
+        assert [f.ref for f in result.failed_changesets] == [("a", "kolowae")]
+        assert [f.side for f in result.failed_changesets] == ["target"]
 
     def test_reran_is_only_informational(self):
         master = changelog(cs("a", exec_type="EXECUTED"))

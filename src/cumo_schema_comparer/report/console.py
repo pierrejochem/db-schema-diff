@@ -171,8 +171,12 @@ class ConsoleReporter:
                 )
             )
 
-        for ref in changelog.failed_changesets:
-            write(_colour("red", f"     ! {ref[0]} by {ref[1]}: recorded as FAILED"))
+        for failed in changelog.failed_changesets:
+            where = {"master": target.master_label, "target": target.target_label}.get(failed.side)
+            suffix = f" on {where}" if where else ""
+            write(
+                _colour("red", f"     ! {failed.id} by {failed.author}: recorded as FAILED{suffix}")
+            )
 
         for note in changelog.notes:
             write(_colour("bright_black", f"     note: {note}"))

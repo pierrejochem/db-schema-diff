@@ -373,7 +373,13 @@ def _changelog_from_json(data: Mapping[str, Any]) -> ChangelogDiff:
     Only the fields a reporter reads are restored: the detail lists are display data, and rebuilding
     every nested record would add a lot of surface for no reader's benefit.
     """
-    from .changelog import ChecksumMismatch, ExecTypeDifference, FilenameDifference, OrderInversion
+    from .changelog import (
+        ChecksumMismatch,
+        ExecTypeDifference,
+        FailedChangeset,
+        FilenameDifference,
+        OrderInversion,
+    )
 
     def ref(pair: Any) -> tuple[str, str]:
         return (str(pair[0]), str(pair[1]))
@@ -407,7 +413,11 @@ def _changelog_from_json(data: Mapping[str, Any]) -> ChangelogDiff:
             OrderInversion(ref(i["first_in_master"]), ref(i["second_in_master"]))
             for i in data.get("order_inversions", ())
         ),
-        failed_changesets=tuple(ref(r) for r in data.get("failed_changesets", ())),
+        # An entry is [id, author, side]; a report written before the side was recorded has two.
+        failed_changesets=tuple(
+            FailedChangeset(str(r[0]), str(r[1]), str(r[2]) if len(r) > 2 else "unknown")
+            for r in data.get("failed_changesets", ())
+        ),
         first_divergence=(ref(data["first_divergence"]) if data.get("first_divergence") else None),
         master_tag=data.get("master_tag"),
         target_tag=data.get("target_tag"),

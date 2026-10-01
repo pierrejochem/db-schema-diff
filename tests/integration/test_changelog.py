@@ -22,6 +22,13 @@ def changelog_of(databases, drift: str | None = None, **kwargs):
     return compare(databases, **kwargs).changelog
 
 
+def _gate(target, fail_on: str):
+    """The report the exit code is computed from, built around one target."""
+    from cumo_schema_comparer.diff.model import ComparisonReport
+
+    return ComparisonReport(name="t", master_label="prod", targets=(target,), fail_on=fail_on)
+
+
 class TestLocating:
     """The table is found, not assumed."""
 
@@ -144,12 +151,15 @@ class TestExecType:
 
     def test_mark_ran_does_not_fail_an_error_gate(self, databases):
         databases.setup("base", drift="drift_changelog_markran")
-        assert compare(databases).at_or_above(Severity.ERROR) == ()
+        result = compare(databases)
+        # The gate itself, not the findings: the changelog verdict is not a finding.
+        assert not _gate(result, "error").has_drift(Severity.ERROR)
 
     def test_a_failed_changeset_is_an_error(self, databases):
         result = changelog_of(databases, "drift_changelog_failed")
         assert result.severity is Severity.ERROR
-        assert ("add-dunning", "kolowae") in result.failed_changesets
+        assert _gate(compare(databases), "error").has_drift(Severity.ERROR)
+        assert ("add-dunning", "kolowae") in [f.ref for f in result.failed_changesets]
 
 
 class TestFilename:

@@ -410,3 +410,36 @@ class TestSeverityNames:
             severities=frozenset({"error"})
         )
         assert model.finding_rows(severities=frozenset({"ERROR"}))
+
+
+class TestChangelogLinesCompleteness:
+    def test_a_filename_difference_is_shown_at_its_severity(self):
+        from cumo_schema_comparer.diff.changelog import diff_changelog
+        from tests.support.builders import changelog, changeset
+
+        diff = diff_changelog(
+            changelog(changeset("a", filename="db/a.xml")),
+            changelog(changeset("a", filename="other/a.xml")),
+        )
+        from dataclasses import replace
+
+        from tests.support.reports import in_sync_target
+
+        report = _report(replace(in_sync_target(), changelog=diff))
+        lines = ResultsModel(report).changelog_lines("dev")
+        assert any("db/a.xml vs other/a.xml" in line and "(info)" in line for line in lines)
+
+    def test_a_failure_names_its_side(self):
+        from dataclasses import replace
+
+        from cumo_schema_comparer.diff.changelog import diff_changelog
+        from tests.support.builders import changelog, changeset
+        from tests.support.reports import in_sync_target
+
+        diff = diff_changelog(
+            changelog(changeset("a", exec_type="FAILED")), changelog(changeset("a"))
+        )
+        report = _report(replace(in_sync_target(), changelog=diff))
+        lines = ResultsModel(report).changelog_lines("dev")
+        assert "FAILED on prod" in lines[0]
+        assert any(line.endswith("recorded as FAILED on prod") for line in lines)

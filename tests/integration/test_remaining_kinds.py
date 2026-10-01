@@ -382,6 +382,8 @@ class TestPartitionedTables:
         assert attributes_of(result, "cumo-invoicing.invoice_event") == {"table.partition_count"}
         # Visible, but it must not fail a build.
         assert result.at_or_above(Severity.WARNING) == ()
+        # The gate also counts notes and the changelog, which the findings above do not.
+        assert (result.worst_severity() or Severity.INFO) < Severity.WARNING
 
     def test_a_changed_partition_key_is_an_error(self, databases):
         """Structural drift: every query relying on partition pruning now scans everything."""

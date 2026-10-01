@@ -181,7 +181,10 @@ class TestRenameReconciliation:
     def test_a_renamed_index_never_reports_an_error(self, databases):
         # PostgreSQL generated the name, so a difference in it is not a missing index.
         databases.setup("base", drift="drift_index_renamed")
-        assert compare(databases).at_or_above(Severity.ERROR) == ()
+        result = compare(databases)
+        assert result.at_or_above(Severity.ERROR) == ()
+        # The gate also counts notes and the changelog, which the findings above do not.
+        assert (result.worst_severity() or Severity.INFO) < Severity.ERROR
 
 
 class TestIndexDrift:

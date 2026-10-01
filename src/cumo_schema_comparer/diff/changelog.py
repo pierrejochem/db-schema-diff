@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from enum import StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
 from ..model.changelog import ChangelogState, ChangeSetRef, ChangeSetRow, ExecType
 from .severity import Severity
@@ -143,6 +143,23 @@ class OrderInversion:
         }
 
 
+class FailedChangeset(NamedTuple):
+    """A changeset recorded as FAILED, and on which side.
+
+    A tuple of ``(id, author, side)`` so code that only reads the first two items keeps working.
+    """
+
+    id: str
+    author: str
+    side: str
+    """``"master"``, ``"target"``, or ``"unknown"`` when read from a report written before the
+    side was recorded."""
+
+    @property
+    def ref(self) -> ChangeSetRef:
+        return (self.id, self.author)
+
+
 @dataclass(frozen=True)
 class ChangelogDiff:
     """One target's migration history compared against the master's."""
@@ -166,7 +183,7 @@ class ChangelogDiff:
     exectype_differences: tuple[ExecTypeDifference, ...] = ()
     filename_differences: tuple[FilenameDifference, ...] = ()
     order_inversions: tuple[OrderInversion, ...] = ()
-    failed_changesets: tuple[ChangeSetRef, ...] = ()
+    failed_changesets: tuple[FailedChangeset, ...] = ()
     first_divergence: ChangeSetRef | None = None
     """The earliest master changeset that is missing, mismatched or differently executed.
 
@@ -211,10 +228,7 @@ class ChangelogDiff:
             )
 
         if self.status is ChangelogStatus.FAILED_CHANGESETS:
-            return (
-                f"{len(self.failed_changesets)} changeset(s) recorded as FAILED; "
-                "the migration did not complete"
-            )
+            return self._failed_headline(master_label, target_label)
         if self.status is ChangelogStatus.LOCK_HELD:
             return "a deployment lock is held, so a migration may be in progress"
         if self.status is ChangelogStatus.HISTORY_DIFFERS:
@@ -237,6 +251,30 @@ class ChangelogDiff:
         if not parts:
             parts.append(f"{target_label} matches {master_label}")
         return "; ".join(parts)
+
+    def _failed_headline(self, master_label: str, target_label: str) -> str:
+        """Say which side broke: an operator reading this goes and looks at that environment."""
+        on_master = sum(1 for f in self.failed_changesets if f.side == "master")
+        on_target = sum(1 for f in self.failed_changesets if f.side == "target")
+        if on_master and on_target:
+            return (
+                f"{on_master} changeset(s) recorded as FAILED on {master_label} and "
+                f"{on_target} on {target_label}; the migration did not complete on either"
+            )
+        if on_master:
+            return (
+                f"{on_master} changeset(s) recorded as FAILED on {master_label}; "
+                "the migration did not complete there"
+            )
+        if on_target:
+            return (
+                f"{on_target} changeset(s) recorded as FAILED on {target_label}; "
+                "the migration did not complete there"
+            )
+        return (
+            f"{len(self.failed_changesets)} changeset(s) recorded as FAILED "
+            "(side not recorded); the migration did not complete"
+        )
 
     def tag_line(self, master_label: str, target_label: str) -> str | None:
         """``prod @ R7.6.2 · qa @ R7.6.1``.
@@ -267,7 +305,7 @@ class ChangelogDiff:
             "exectype_differences": [d.to_json_dict() for d in self.exectype_differences],
             "filename_differences": [d.to_json_dict() for d in self.filename_differences],
             "order_inversions": [i.to_json_dict() for i in self.order_inversions],
-            "failed_changesets": [list(r) for r in self.failed_changesets],
+            "failed_changesets": [list(f) for f in self.failed_changesets],
             "first_divergence": (list(self.first_divergence) if self.first_divergence else None),
             "master_tag": self.master_tag,
             "target_tag": self.target_tag,
@@ -318,7 +356,12 @@ def diff_changelog(
     filenames = _filename_findings(shared, target_rows)
     inversions = _order_inversions(master.rows, target.rows, target_rows)
     failed = tuple(
-        r.ref for r in (*master.rows, *target.rows) if r.exec_type.upper() == ExecType.FAILED.value
+        dict.fromkeys(
+            FailedChangeset(r.id, r.author, side)
+            for side, rows in (("master", master.rows), ("target", target.rows))
+            for r in rows
+            if r.exec_type.upper() == ExecType.FAILED.value
+        )
     )
 
     notes: list[str] = []
@@ -377,7 +420,7 @@ def diff_changelog(
         exectype_differences=exectypes,
         filename_differences=filenames,
         order_inversions=inversions,
-        failed_changesets=tuple(dict.fromkeys(failed)),
+        failed_changesets=failed,
         first_divergence=_first_divergence(master.rows, missing, mismatches, exectypes),
         master_tag=master.last_tag,
         target_tag=target.last_tag,
@@ -599,7 +642,7 @@ def _severity(
     exectypes: tuple[ExecTypeDifference, ...],
     filenames: tuple[FilenameDifference, ...],
     inversions: tuple[OrderInversion, ...],
-    failed: tuple[ChangeSetRef, ...],
+    failed: tuple[FailedChangeset, ...],
     cleared: tuple[ChangeSetRef, ...],
     skew: bool,
     lock_held: bool,
