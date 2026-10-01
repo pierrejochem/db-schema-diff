@@ -30,7 +30,7 @@ class TestOrdinaryChange:
     def test_unchanged_lines_are_context(self):
         lines = unified(BEFORE, AFTER)
         assert "  FROM t" in texts(lines)
-        assert next(l.kind for l in lines if l.text == "  FROM t") is DiffKind.CONTEXT
+        assert next(line.kind for line in lines if line.text == "  FROM t") is DiffKind.CONTEXT
 
     def test_identical_input_produces_nothing(self):
         # An empty diff is how a caller knows there is nothing to show, rather than rendering an
@@ -47,12 +47,12 @@ class TestOneSideMissing:
     def test_a_body_only_on_the_master_is_wholly_removed(self):
         lines = unified(BEFORE, None)
         assert set(kinds(lines)) <= {DiffKind.HUNK, DiffKind.REMOVED}
-        assert any(l.kind is DiffKind.REMOVED for l in lines)
+        assert any(line.kind is DiffKind.REMOVED for line in lines)
 
     def test_a_body_only_on_the_target_is_wholly_added(self):
         lines = unified(None, AFTER)
         assert set(kinds(lines)) <= {DiffKind.HUNK, DiffKind.ADDED}
-        assert any(l.kind is DiffKind.ADDED for l in lines)
+        assert any(line.kind is DiffKind.ADDED for line in lines)
 
     def test_both_missing_produces_nothing(self):
         assert unified(None, None) == ()
@@ -89,17 +89,17 @@ class TestCap:
 
     def test_a_diff_under_the_cap_gets_no_elision_line(self):
         lines = unified(BEFORE, AFTER, max_lines=100)
-        assert all(l.kind is not DiffKind.ELIDED for l in lines)
+        assert all(line.kind is not DiffKind.ELIDED for line in lines)
 
 
 class TestAwkwardText:
     def test_a_very_long_single_line_is_one_line(self):
         lines = unified("x" * 5000, "y" * 5000)
-        assert sum(1 for l in lines if l.kind is DiffKind.REMOVED) == 1
+        assert sum(1 for line in lines if line.kind is DiffKind.REMOVED) == 1
 
     def test_unicode_survives(self):
         lines = unified("SELECT 'Übergröße'", "SELECT 'Ubergrosse'")
-        assert any("Übergröße" in l.text for l in lines)
+        assert any("Übergröße" in line.text for line in lines)
 
     def test_an_empty_string_is_not_the_same_as_none(self):
         # An empty body and an absent body are different facts about the database.
