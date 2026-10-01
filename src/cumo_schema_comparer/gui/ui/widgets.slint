@@ -1,0 +1,59 @@
+// Shared building blocks. Kept in one file because they are small and always change together.
+
+import { LineEdit, CheckBox } from "std-widgets.slint";
+
+export component LabelledField inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> value;
+    in property <string> placeholder;
+    callback edited(string);
+
+    spacing: 8px;
+    Text { text: root.label; width: 140px; vertical-alignment: center; }
+    LineEdit {
+        text <=> root.value;
+        placeholder-text: root.placeholder;
+        edited(text) => { root.edited(text); }
+    }
+}
+
+export component LabelledNumber inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <int> value;
+    callback edited(int);
+
+    spacing: 8px;
+    Text { text: root.label; width: 220px; vertical-alignment: center; }
+    LineEdit {
+        text: root.value;
+        input-type: number;
+        edited(text) => {
+            root.value = text.to-float();
+            root.edited(text.to-float());
+        }
+    }
+}
+
+export component LabelledCheck inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <bool> value;
+    callback toggled(bool);
+
+    spacing: 8px;
+    CheckBox { checked <=> root.value; toggled => { root.toggled(self.checked); } }
+    Text { text: root.label; vertical-alignment: center; }
+}
+
+export component StatusLine inherits Rectangle {
+    in property <string> message;
+    in property <bool> is-error;
+
+    height: root.message == "" ? 0px : 28px;
+    background: root.is-error ? #fee4e2 : #d1fadf;
+    Text {
+        text: root.message;
+        color: root.is-error ? #b42318 : #027a48;
+        vertical-alignment: center;
+        x: 8px;
+    }
+}

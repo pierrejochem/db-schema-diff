@@ -146,7 +146,8 @@ class TestChecksums:
         result = diff_changelog(master, target)
         assert result.checksum_algorithm_skew is True
         assert result.checksum_mismatches == ()
-        assert result.status is ChangelogStatus.IN_SYNC
+        # Not IN_SYNC: a verdict carrying a WARNING must not be labelled in sync.
+        assert result.status is ChangelogStatus.HISTORY_DIFFERS
         assert result.severity is Severity.WARNING
         assert any("algorithm versions" in n for n in result.notes)
 
@@ -202,7 +203,8 @@ class TestExecType:
         target = changelog(cs("a", exec_type="FAILED"))
         result = diff_changelog(master, target)
         assert result.severity is Severity.ERROR
-        assert result.failed_changesets == (("a", "kolowae"),)
+        assert [f.ref for f in result.failed_changesets] == [("a", "kolowae")]
+        assert [f.side for f in result.failed_changesets] == ["target"]
 
     def test_reran_is_only_informational(self):
         master = changelog(cs("a", exec_type="EXECUTED"))

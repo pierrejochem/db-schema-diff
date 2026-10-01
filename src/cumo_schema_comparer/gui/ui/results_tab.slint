@@ -1,0 +1,223 @@
+// Results: the run-level verdict, the findings, and the report-writing buttons.
+//
+// The banner is driven by `verdict-level`, which the view model derives from the finished report
+// (or from the run's cancellation), and by nothing else. It is green only for the exact level
+// "ok" and only while no run is in flight; every unknown, empty or stale value is neutral.
+// Per-source progress is never consulted: all sources can be captured and the run still cancelled.
+
+import { LineEdit, Button, ScrollView, GroupBox } from "std-widgets.slint";
+import { LabelledCheck } from "widgets.slint";
+
+export struct FindingRow {
+    target: string,
+    kind: string,
+    path: string,
+    status: string,
+    severity: string,
+    detail: string,
+    suppressed_by: string,
+}
+
+export component FindingLine inherits Rectangle {
+    in property <FindingRow> data;
+
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 8px;
+        Text { text: root.data.target; width: 90px; vertical-alignment: center; }
+        Text { text: root.data.kind; width: 80px; vertical-alignment: center; }
+        Text { text: root.data.path; width: 280px; vertical-alignment: center; overflow: elide; }
+        Text { text: root.data.status; width: 110px; vertical-alignment: center; }
+        Text {
+            text: root.data.severity;
+            width: 70px;
+            vertical-alignment: center;
+            color: root.data.severity == "error" ? #b42318
+                : root.data.severity == "warning" ? #b54708 : #344054;
+        }
+        Text {
+            text: root.data.suppressed_by == "" ? root.data.detail
+                : root.data.detail + "  [ignored by " + root.data.suppressed_by + "]";
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+export component ResultsTab inherits ScrollView {
+    in property <bool> running;
+    in property <string> verdict;
+    in property <string> verdict-level;
+    in property <[FindingRow]> findings;
+    // How many findings the run produced before the filter. Lets the tab say what is hidden.
+    in property <int> total-findings;
+    in-out property <string> filter-text;
+    in-out property <bool> show-error;
+    in-out property <bool> show-warning;
+    in-out property <bool> show-info;
+    in-out property <string> output-directory;
+
+    callback filter-changed();
+    callback choose-output-directory();
+    callback write-reports();
+    callback open-html();
+
+    // "ok" | "error" | "warning" | "info" | "cancelled" | "pending". Anything the view model might
+    // send that is not exactly "ok" can never produce the success banner.
+    out property <string> banner-kind:
+        root.running ? "pending"
+        : root.verdict-level == "ok" ? "ok"
+        : root.verdict-level == "error" ? "error"
+        : root.verdict-level == "warning" ? "warning"
+        : root.verdict-level == "info" ? "info"
+        : root.verdict-level == "cancelled" ? "cancelled"
+        : "pending";
+    out property <bool> banner-is-success: root.banner-kind == "ok";
+    // The only place a kind becomes a colour. The markup consumes these and nothing else.
+    out property <color> banner-background:
+        root.banner-kind == "ok" ? #d1fadf
+        : root.banner-kind == "info" ? #d1e9ff
+        : root.banner-kind == "warning" ? #fef0c7
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #fee4e2
+        : #eaecf0;
+    out property <color> banner-text-color:
+        root.banner-kind == "ok" ? #027a48
+        : root.banner-kind == "info" ? #175cd3
+        : root.banner-kind == "warning" ? #b54708
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #b42318
+        : #344054;
+    out property <int> finding-count: root.findings.length;
+
+    // A report exists to write only for a finished run that produced one. A cancelled run, a run
+    // in flight and a window that has never run have none.
+    out property <bool> has-report:
+        !root.running && (root.verdict-level == "ok" || root.verdict-level == "error"
+            || root.verdict-level == "warning" || root.verdict-level == "info");
+    out property <bool> reports-enabled: root.has-report;
+
+    // Shown-of-total, and an explicit statement when the filter is hiding rows. An empty list
+    // must never be readable as "nothing wrong".
+    out property <int> hidden-count:
+        root.total-findings > root.findings.length ? root.total-findings - root.findings.length : 0;
+    out property <bool> filter-active:
+        root.filter-text != "" || !root.show-error || !root.show-warning || !root.show-info;
+    out property <bool> filter-hides-rows: root.hidden-count > 0;
+    out property <string> findings-summary:
+        root.running ? ""
+        : root.filter-hides-rows
+            ? "Showing " + root.findings.length + " of " + root.total-findings
+                + " findings. " + root.hidden-count + " hidden by the active filter"
+                + " - clear it to see them."
+        : root.total-findings == 0 && root.findings.length == 0 ? "No findings."
+        : "Showing " + root.findings.length + " of "
+            + (root.total-findings > root.findings.length ? root.total-findings
+                : root.findings.length) + " findings.";
+
+    // Test and click entry points: they go through the real LineEdit / CheckBox handlers.
+    public function type-filter(value: string) {
+        filter-edit.text = value;
+        filter-edit.edited(value);
+    }
+    public function toggle-error(value: bool) { error-check.value = value; error-check.toggled(value); }
+    public function toggle-warning(value: bool) { warning-check.value = value; warning-check.toggled(value); }
+    public function toggle-info(value: bool) { info-check.value = value; info-check.toggled(value); }
+    public function type-output-directory(value: string) { output-edit.text = value; }
+    out property <string> filter-shown: filter-edit.text;
+    out property <bool> error-shown: error-check.value;
+    out property <bool> warning-shown: warning-check.value;
+    out property <bool> info-shown: info-check.value;
+    out property <string> output-directory-shown: output-edit.text;
+
+    public function request-filter-changed() { root.filter-changed(); }
+    public function request-choose-output-directory() { root.choose-output-directory(); }
+    public function request-write-reports() {
+        if (root.reports-enabled) { root.write-reports(); }
+    }
+    public function request-open-html() {
+        if (root.reports-enabled) { root.open-html(); }
+    }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 12px;
+
+        Rectangle {
+            height: 44px;
+            border-radius: 4px;
+            background: root.banner-background;
+            Text {
+                x: 12px;
+                width: parent.width - 24px;
+                text: root.running ? "Run in progress…"
+                    : root.verdict == "" ? "No comparison has finished yet." : root.verdict;
+                vertical-alignment: center;
+                wrap: word-wrap;
+                color: root.banner-text-color;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            filter-edit := LineEdit {
+                text <=> root.filter-text;
+                placeholder-text: "filter by object path, e.g. invoice";
+                edited(t) => { root.request-filter-changed(); }
+            }
+            error-check := LabelledCheck {
+                label: "error";
+                value <=> root.show-error;
+                toggled(v) => { root.request-filter-changed(); }
+            }
+            warning-check := LabelledCheck {
+                label: "warning";
+                value <=> root.show-warning;
+                toggled(v) => { root.request-filter-changed(); }
+            }
+            info-check := LabelledCheck {
+                label: "info";
+                value <=> root.show-info;
+                toggled(v) => { root.request-filter-changed(); }
+            }
+        }
+
+        Rectangle {
+            height: root.findings-summary == "" ? 0px : 28px;
+            background: root.filter-hides-rows ? #fef0c7 : transparent;
+            Text {
+                x: 8px;
+                text: root.findings-summary;
+                vertical-alignment: center;
+                font-weight: root.filter-hides-rows ? 700 : 400;
+                color: root.filter-hides-rows ? #b54708 : #344054;
+            }
+        }
+
+        GroupBox {
+            title: "Findings";
+            VerticalLayout {
+                spacing: 2px;
+                for row[i] in root.findings: FindingLine {
+                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    data: row;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "reports to"; vertical-alignment: center; }
+            output-edit := LineEdit { text <=> root.output-directory; placeholder-text: "output directory"; }
+            Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }
+            Button {
+                text: "Write reports";
+                enabled: root.reports-enabled;
+                clicked => { root.request-write-reports(); }
+            }
+            Button {
+                text: "Open HTML report";
+                enabled: root.reports-enabled;
+                clicked => { root.request-open-html(); }
+            }
+        }
+    }
+}

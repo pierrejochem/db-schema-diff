@@ -30,6 +30,7 @@ dependencies = [
 dev = [
   "pytest>=8",
   "pytest-cov>=5",
+  "pytest-asyncio>=0.24",
   "pytest-randomly>=3.15",
   # 4.15 dropped the "postgresql" extra and moved the module to
   # testcontainers.community.postgres; the base package now carries it.
@@ -39,9 +40,16 @@ dev = [
   "types-PyYAML>=6",
   "build>=1.2",
 ]
+gui = [
+  # Every slint Python release is a pre-release; the pin is explicit so an install cannot
+  # silently pick up a different one.
+  "slint>=1.18.1b1,<2",
+  "keyring>=25,<26",
+]
 
 [project.scripts]
 cumo-schema-diff = "cumo_schema_comparer.cli:main"
+cumo-schema-diff-gui = "cumo_schema_comparer.gui.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 # hatchling ships every file inside the package directory, including the .sql query files, the
@@ -84,6 +92,12 @@ module = "tests.*"
 strict = false
 disallow_untyped_defs = false
 
+[[tool.mypy.overrides]]
+module = ["keyring", "slint"]
+# Optional (gui extra); absent from the plain dev environment, where mypy runs. Both ship their
+# own types, so this is about them not being installed rather than about them being untyped.
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -m 'not integration'"
@@ -94,3 +108,8 @@ markers = [
 [tool.coverage.run]
 source = ["cumo_schema_comparer"]
 branch = true
+# The GUI is an optional extra. slint cannot be installed on 3.11, which the `unit` matrix
+# includes, so there every GUI test skips and ~1600 statements would count as uncovered and fail
+# the gate. The GUI has its own floor in the `gui` job, which measures it with .coveragerc-gui
+# (same settings, without this omit) on an interpreter that can actually import slint.
+omit = ["*/cumo_schema_comparer/gui/*"]

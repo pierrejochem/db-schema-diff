@@ -133,6 +133,37 @@ jobs:
             build/console.txt
           if-no-files-found: ignore
 
+  gui:
+    name: gui-py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Slint Python binding requires 3.12; the CLI still supports 3.11.
+        python: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # --pre is required: every slint Python release is a pre-release. `dev` is not optional
+      # either -- without pytest-asyncio the session tests fail rather than skip.
+      - run: pip install --pre -e '.[dev,gui]'
+
+      # Headless: slint.load_file instantiates without a display, so no xvfb is needed.
+      #
+      # The GUI carries its own coverage floor, because the default configuration omits it: the
+      # `unit` matrix includes 3.11, where slint cannot be installed and every GUI test skips.
+      # Measured at 93.32% when the floor was set.
+      - run: >-
+          pytest tests/unit/gui -v
+          --cov --cov-config=.coveragerc-gui
+          --cov-report=term-missing --cov-fail-under=90
+
   build:
     name: build
     runs-on: ubuntu-latest
@@ -164,16 +195,30 @@ jobs:
           import importlib, pkgutil
           import cumo_schema_comparer
 
+          # Dependencies only the `gui` extra installs. This environment is the CLI's floor
+          # (3.11), where slint cannot be installed at all, so a GUI module that imports is a
+          # bonus and one that cannot is expected -- but it still has to be *in* the wheel.
+          OPTIONAL = {"slint", "keyring"}
+
           # Every subpackage must import from the installed wheel, not just from the checkout.
           missing = []
+          found = set()
           for info in pkgutil.walk_packages(
               cumo_schema_comparer.__path__, f"{cumo_schema_comparer.__name__}."
           ):
+              found.add(info.name)
               try:
                   importlib.import_module(info.name)
               except ImportError as exc:
+                  if getattr(exc, "name", None) in OPTIONAL:
+                      continue
                   missing.append(f"{info.name}: {exc}")
           assert not missing, "modules missing from the wheel:\n" + "\n".join(missing)
+
+          # Named explicitly: a module absent from the wheel is never walked, so the loop above
+          # would pass by saying nothing about it.
+          for name in ("cumo_schema_comparer.gui.app", "cumo_schema_comparer.gui.__main__"):
+              assert name in found, f"{name} is not in the wheel"
 
           # Package data is loaded at run time, so it fails on first real use, not at import.
           from cumo_schema_comparer.db.introspect import load_query
@@ -189,6 +234,17 @@ jobs:
 
           assert load_template_source().strip()
           assert load_default_ignores().rules
+
+          # The .slint files are loaded at run time, exactly like the Jinja template.
+          import importlib.resources as resources
+
+          ui = resources.files("cumo_schema_comparer.gui").joinpath("ui")
+          names = {p.name for p in ui.iterdir()}
+          assert names >= {
+              "main.slint", "widgets.slint", "config_tab.slint",
+              "ignores_tab.slint", "credentials_tab.slint",
+              "run_tab.slint", "results_tab.slint",
+          }, names
 
           print("wheel is complete: every module imports and all package data loads")
           PY

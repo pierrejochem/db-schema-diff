@@ -1,0 +1,134 @@
+// Run: the flags that are not config, Start and Cancel, and live per-source progress.
+//
+// A progress row is truthful history of one source, never a verdict. Every source can read
+// "captured" and the run still end cancelled, so nothing here may be coloured or worded as a
+// success. The verdict lives on the Results tab and comes from the run, not from these rows.
+
+import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
+import { LabelledCheck } from "widgets.slint";
+
+export struct ProgressRow {
+    label: string,
+    state: string,    // idle | connecting | capturing | captured | failed | cancelled
+    detail: string,
+}
+
+export component ProgressLine inherits Rectangle {
+    in property <ProgressRow> data;
+
+    HorizontalLayout {
+        padding: 6px;
+        spacing: 12px;
+        Text { text: root.data.label; width: 180px; vertical-alignment: center; }
+        // Neutral for every state except failure; "captured" is deliberately not green.
+        Text {
+            text: root.data.state;
+            width: 110px;
+            vertical-alignment: center;
+            color: root.data.state == "failed" ? #b42318 : #344054;
+        }
+        Text { text: root.data.detail; vertical-alignment: center; }
+    }
+}
+
+export component RunTab inherits ScrollView {
+    in-out property <bool> running;
+    in property <[ProgressRow]> progress;
+    in-out property <string> run-fail-on;
+    in-out property <string> baseline-path;
+    in-out property <bool> show-cosmetic;
+    in-out property <bool> skip-liquibase;
+    in-out property <bool> strict-changelog;
+    in-out property <bool> no-default-ignores;
+    in-out property <bool> allow-unreachable;
+    in-out property <bool> sequential;
+
+    callback start-run();
+    callback cancel-run();
+    callback choose-baseline();
+
+    // What the controls actually offer; read by tests so a dropped binding shows.
+    out property <bool> start-enabled: !root.running;
+    out property <bool> cancel-enabled: root.running;
+    out property <[string]> fail-on-choices: ["error", "warning", "any", "never"];
+    out property <string> baseline-shown: baseline-edit.text;
+    public function type-baseline(value: string) { baseline-edit.text = value; }
+    out property <int> progress-count: root.progress.length;
+
+    // Every click goes through these, so a test exercises the real gate and forwarding.
+    // Start claims the run itself, so the gate holds whatever the Python handler does. Whoever
+    // handles start-run must clear `running` on every exit path, including an exception.
+    public function request-start() {
+        if (root.start-enabled) {
+            root.running = true;
+            root.start-run();
+        }
+    }
+    public function request-cancel() {
+        if (root.cancel-enabled) { root.cancel-run(); }
+    }
+    public function request-choose-baseline() {
+        root.choose-baseline();
+    }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 12px;
+
+        GroupBox {
+            title: "Options";
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "fail on"; width: 140px; vertical-alignment: center; }
+                    ComboBox {
+                        model: root.fail-on-choices;
+                        current-value <=> root.run-fail-on;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "baseline"; width: 140px; vertical-alignment: center; }
+                    baseline-edit := LineEdit {
+                        text <=> root.baseline-path;
+                        placeholder-text: "(none)";
+                    }
+                    Button { text: "Choose…"; clicked => { root.request-choose-baseline(); } }
+                }
+                LabelledCheck { label: "show cosmetic"; value <=> root.show-cosmetic; }
+                LabelledCheck { label: "skip liquibase"; value <=> root.skip-liquibase; }
+                LabelledCheck { label: "strict changelog"; value <=> root.strict-changelog; }
+                LabelledCheck { label: "no default ignores"; value <=> root.no-default-ignores; }
+                LabelledCheck { label: "allow unreachable"; value <=> root.allow-unreachable; }
+                LabelledCheck { label: "sequential"; value <=> root.sequential; }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Button {
+                text: root.running ? "Running…" : "Run comparison";
+                primary: true;
+                enabled: root.start-enabled;
+                clicked => { root.request-start(); }
+            }
+            Button {
+                text: "Cancel";
+                enabled: root.cancel-enabled;
+                clicked => { root.request-cancel(); }
+            }
+        }
+
+        GroupBox {
+            title: "Sources";
+            VerticalLayout {
+                spacing: 2px;
+                for row[i] in root.progress: ProgressLine {
+                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    data: row;
+                }
+            }
+        }
+    }
+}

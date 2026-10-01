@@ -21,18 +21,21 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from . import __version__
 from .build import build_inventory
 from .config.model import ComparerConfig, SourceRef
 from .config.secrets import Dsn
-from .db.connect import ConnectionOptions, open_connection
+from .db.connect import ConnectionOptions, open_connection, server_features
+from .db.introspect import Introspector
 from .diff.changelog import ChangelogOptions
 from .diff.engine import diff_inventories
 from .diff.ignores import IgnoreRuleSet
 from .diff.model import ComparisonReport, DiffOptions, Note, NoteKind, TargetDiff
 from .diff.severity import Severity
 from .errors import ComparerError
+from .model.changelog import ChangelogLocation, ChangelogState
 from .model.inventory import Inventory
 
 log = logging.getLogger(__name__)
@@ -86,6 +89,99 @@ def connection_options(config: ComparerConfig) -> ConnectionOptions:
         statement_timeout=config.options.statement_timeout_seconds,
         lock_timeout=config.options.lock_timeout_seconds,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionStatus:
+    """What one source looks like, without capturing its inventory.
+
+    Answers the questions that otherwise turn into a confusing comparison later: which server
+    version, which schemas, and where the Liquibase changelog actually lives.
+    """
+
+    label: str
+    ok: bool
+    server_version: str | None = None
+    database: str | None = None
+    user: str | None = None
+    encoding: str | None = None
+    collation: str | None = None
+    schemas: tuple[str, ...] = ()
+    changelog: str | None = None
+    changelog_count: int | None = None
+    changelog_tag: str | None = None
+    changelog_candidates: tuple[str, ...] = ()
+    changelog_locked: bool | None = None
+    error: str | None = None
+    """Already redacted. Never contains a connection string."""
+
+
+def check_connection(
+    source: SourceRef,
+    dsn: Dsn,
+    *,
+    options: ConnectionOptions | None = None,
+    exclude_schemas: tuple[str, ...] = (),
+) -> ConnectionStatus:
+    """Connect to one source and report what is there, without inventorying it.
+
+    Uses the same hardened read-only connection a comparison uses, with the same timeouts, so a
+    successful check means the comparison will connect too — not merely that a socket opened.
+
+    A failure is returned rather than raised: callers show one row per source, and one unreachable
+    host must not stop the others.
+    """
+    try:
+        with open_connection(dsn, label=source.label, options=options, version=__version__) as conn:
+            introspector = Introspector(conn, server_features(conn))
+            info = introspector.server_info()
+            schemas = introspector.schemas(exclude=exclude_schemas, only=source.schemas)
+            changelog = _changelog_summary(introspector, source)
+    except ComparerError as exc:
+        return ConnectionStatus(label=source.label, ok=False, error=str(exc))
+
+    return ConnectionStatus(
+        label=source.label,
+        ok=True,
+        server_version=str(info["server_version"]),
+        database=str(info["database"]),
+        user=str(info["user"]),
+        encoding=str(info["encoding"]),
+        collation=str(info["datcollate"]),
+        schemas=tuple(schemas),
+        **changelog,
+    )
+
+
+def _changelog_summary(introspector: Introspector, source: SourceRef) -> dict[str, Any]:
+    """Where the changelog is, or why that cannot be answered.
+
+    Located rather than assumed: it is not reliably in ``public``.
+    """
+    if source.liquibase is not None:
+        location = ChangelogLocation(
+            schema=source.liquibase.schema_name, table=source.liquibase.table
+        )
+        state = introspector.changelog_state(location)
+        return _changelog_fields(state)
+
+    candidates = introspector.locate_changelog()
+    if not candidates:
+        return {}
+    if len(candidates) > 1:
+        return {"changelog_candidates": tuple(c.qualified for c in candidates)}
+    return _changelog_fields(introspector.changelog_state(candidates[0]))
+
+
+def _changelog_fields(state: ChangelogState) -> dict[str, Any]:
+    if state.location is None:
+        return {}
+    return {
+        "changelog": state.location.qualified,
+        "changelog_count": state.count,
+        "changelog_tag": state.last_tag,
+        "changelog_locked": state.lock_held,
+    }
 
 
 def capture_all(

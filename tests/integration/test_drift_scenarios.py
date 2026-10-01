@@ -95,6 +95,7 @@ class TestSeverityGate:
         databases.setup("base", drift="drift_extra_table")
         result = compare(databases)
         assert result.at_or_above(Severity.ERROR) == ()
+        assert (result.worst_severity() or Severity.INFO) < Severity.ERROR
         assert len(result.at_or_above(Severity.WARNING)) == 3
 
     def test_an_error_is_reported_above_both_gates(self, databases):

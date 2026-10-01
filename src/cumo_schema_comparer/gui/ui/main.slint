@@ -1,0 +1,250 @@
+// The window shell. Tabs are added by later tasks; the properties and callbacks the Python layer
+// binds are declared here and forwarded down.
+
+import { TabWidget, Button } from "std-widgets.slint";
+import { StatusLine } from "widgets.slint";
+import { ConfigTab, SourceRow } from "config_tab.slint";
+import { IgnoresTab, RuleRow } from "ignores_tab.slint";
+import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
+import { RunTab, ProgressRow } from "run_tab.slint";
+import { ResultsTab, FindingRow } from "results_tab.slint";
+
+export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow }
+
+export component MainWindow inherits Window {
+    title: "cumo-schema-diff";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+
+    in-out property <string> config-name;
+    in-out property <string> config-path;
+    in-out property <bool> dirty;
+    in-out property <string> status-message;
+    in-out property <bool> status-is-error;
+    in property <[SourceRow]> sources;
+    in property <[string]> exclude-schemas;
+    // The editable comma-separated form of exclude-schemas.
+    in-out property <string> exclude-schemas-text: "";
+
+    in-out property <int> connect-timeout-seconds: 10;
+    in-out property <int> statement-timeout-seconds: 60;
+    in-out property <int> lock-timeout-seconds: 3;
+    in-out property <bool> parallel: true;
+    in-out property <int> max-workers: 4;
+    in-out property <string> fail-on: "error";
+    in-out property <bool> ignore-column-order;
+    in-out property <bool> include-owners;
+    in-out property <bool> include-comments;
+    in-out property <bool> include-grants;
+
+    in property <[RuleRow]> rules;
+    in property <[RuleRow]> default-rules;
+    in-out property <bool> case-insensitive-globs;
+
+    in property <[CredentialRow]> credentials;
+    in property <bool> keychain-available;
+    in property <string> keychain-problem;
+
+    // Run. Defaults are the CLI's defaults.
+    in-out property <bool> running: false;
+    in property <[ProgressRow]> progress;
+    in-out property <string> run-fail-on: "error";
+    in-out property <string> baseline-path: "";
+    in-out property <bool> show-cosmetic: false;
+    in-out property <bool> skip-liquibase: false;
+    in-out property <bool> strict-changelog: false;
+    in-out property <bool> no-default-ignores: false;
+    in-out property <bool> allow-unreachable: false;
+    in-out property <bool> sequential: false;
+
+    // Results. verdict-level is the run-level outcome, never derived from progress.
+    in-out property <string> verdict: "";
+    in-out property <string> verdict-level: "";
+    in property <[FindingRow]> findings;
+    in property <int> total-findings;
+    in-out property <string> filter-text: "";
+    in-out property <bool> show-error: true;
+    in-out property <bool> show-warning: true;
+    in-out property <bool> show-info: true;
+    in-out property <string> output-directory: "";
+
+    callback start-run();
+    callback cancel-run();
+    callback choose-baseline();
+    callback choose-output-directory();
+    callback write-reports();
+    callback open-html();
+    callback filter-changed();
+
+    callback rule-changed(string, string, string);
+    callback add-rule();
+    callback remove-rule(string);
+    callback save-ignores();
+    callback store-credential(string, string);
+    callback forget-credential(string);
+
+    callback source-changed(string, string, string);
+    callback add-target();
+    callback remove-target(string);
+    callback check-connection(string);
+    callback check-all();
+    callback validate-config();
+    callback save-config();
+    callback load-config();
+
+    // Read-backs and a driver for tests. Python cannot click, and a callback it assigns replaces
+    // the handler it would be testing, so these run the real forwarding chain instead.
+    public function ignores-rule-count() -> int { return ignores-tab.rule-count; }
+    public function ignores-default-rule-count() -> int { return ignores-tab.default-rule-count; }
+    public function credential-row-count() -> int { return credentials-tab.row-count; }
+    public function drive-store-credential(env-name: string, secret: string) {
+        credentials-tab.submit(env-name, secret);
+    }
+
+    public function run-progress-count() -> int { return run-tab.progress-count; }
+    public function results-finding-count() -> int { return results-tab.finding-count; }
+    public function run-start-enabled() -> bool { return run-tab.start-enabled; }
+    public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
+    public function results-banner-kind() -> string { return results-tab.banner-kind; }
+    public function results-banner-is-success() -> bool { return results-tab.banner-is-success; }
+    public function run-fail-on-choices() -> string {
+        return run-tab.fail-on-choices[0] + "," + run-tab.fail-on-choices[1] + ","
+            + run-tab.fail-on-choices[2] + "," + run-tab.fail-on-choices[3];
+    }
+    public function run-banner-background() -> color { return results-tab.banner-background; }
+    public function run-banner-text-color() -> color { return results-tab.banner-text-color; }
+    public function results-summary() -> string { return results-tab.findings-summary; }
+    public function results-filter-hides-rows() -> bool { return results-tab.filter-hides-rows; }
+    public function results-reports-enabled() -> bool { return results-tab.reports-enabled; }
+    public function results-baseline-shown() -> string { return run-tab.baseline-shown; }
+    public function results-output-directory-shown() -> string { return results-tab.output-directory-shown; }
+    public function results-filter-shown() -> string { return results-tab.filter-shown; }
+    public function results-show-error-shown() -> bool { return results-tab.error-shown; }
+    public function results-show-warning-shown() -> bool { return results-tab.warning-shown; }
+    public function results-show-info-shown() -> bool { return results-tab.info-shown; }
+    public function drive-type-baseline(v: string) { run-tab.type-baseline(v); }
+    public function drive-type-filter(v: string) { results-tab.type-filter(v); }
+    public function drive-type-output-directory(v: string) { results-tab.type-output-directory(v); }
+    public function drive-toggle-error(v: bool) { results-tab.toggle-error(v); }
+    public function drive-toggle-warning(v: bool) { results-tab.toggle-warning(v); }
+    public function drive-toggle-info(v: bool) { results-tab.toggle-info(v); }
+    public function drive-start-run() { run-tab.request-start(); }
+    public function drive-cancel-run() { run-tab.request-cancel(); }
+    public function drive-choose-baseline() { run-tab.request-choose-baseline(); }
+    public function drive-filter-changed() { results-tab.request-filter-changed(); }
+    public function drive-choose-output-directory() { results-tab.request-choose-output-directory(); }
+    public function drive-write-reports() { results-tab.request-write-reports(); }
+    public function drive-open-html() { results-tab.request-open-html(); }
+
+    VerticalLayout {
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+            Text {
+                text: root.config-path == "" ? "(unsaved)" : root.config-path;
+                vertical-alignment: center;
+            }
+            Text { text: root.dirty ? "• modified" : ""; vertical-alignment: center; }
+            Rectangle { }
+            Button { text: "Open…"; clicked => { root.load-config(); } }
+        }
+
+        StatusLine { message: root.status-message; is-error: root.status-is-error; }
+
+        TabWidget {
+            Tab {
+                title: "Config";
+                ConfigTab {
+                    config-name <=> root.config-name;
+                    sources: root.sources;
+                    exclude-schemas-text <=> root.exclude-schemas-text;
+                    connect-timeout-seconds <=> root.connect-timeout-seconds;
+                    statement-timeout-seconds <=> root.statement-timeout-seconds;
+                    lock-timeout-seconds <=> root.lock-timeout-seconds;
+                    parallel <=> root.parallel;
+                    max-workers <=> root.max-workers;
+                    fail-on <=> root.fail-on;
+                    ignore-column-order <=> root.ignore-column-order;
+                    include-owners <=> root.include-owners;
+                    include-comments <=> root.include-comments;
+                    include-grants <=> root.include-grants;
+
+                    source-changed(l, f, v) => { root.source-changed(l, f, v); }
+                    add-target => { root.add-target(); }
+                    remove-target(l) => { root.remove-target(l); }
+                    check-connection(l) => { root.check-connection(l); }
+                    check-all => { root.check-all(); }
+                    validate-config => { root.validate-config(); }
+                    save-config => { root.save-config(); }
+                }
+            }
+
+            Tab {
+                title: "Run";
+                run-tab := RunTab {
+                    running <=> root.running;
+                    progress: root.progress;
+                    run-fail-on <=> root.run-fail-on;
+                    baseline-path <=> root.baseline-path;
+                    show-cosmetic <=> root.show-cosmetic;
+                    skip-liquibase <=> root.skip-liquibase;
+                    strict-changelog <=> root.strict-changelog;
+                    no-default-ignores <=> root.no-default-ignores;
+                    allow-unreachable <=> root.allow-unreachable;
+                    sequential <=> root.sequential;
+
+                    start-run => { root.start-run(); }
+                    cancel-run => { root.cancel-run(); }
+                    choose-baseline => { root.choose-baseline(); }
+                }
+            }
+
+            Tab {
+                title: "Results";
+                results-tab := ResultsTab {
+                    running: root.running;
+                    verdict: root.verdict;
+                    verdict-level: root.verdict-level;
+                    findings: root.findings;
+                    total-findings: root.total-findings;
+                    filter-text <=> root.filter-text;
+                    show-error <=> root.show-error;
+                    show-warning <=> root.show-warning;
+                    show-info <=> root.show-info;
+                    output-directory <=> root.output-directory;
+
+                    filter-changed => { root.filter-changed(); }
+                    choose-output-directory => { root.choose-output-directory(); }
+                    write-reports => { root.write-reports(); }
+                    open-html => { root.open-html(); }
+                }
+            }
+
+            Tab {
+                title: "Ignores";
+                ignores-tab := IgnoresTab {
+                    rules: root.rules;
+                    default-rules: root.default-rules;
+                    case-insensitive-globs <=> root.case-insensitive-globs;
+
+                    rule-changed(i, f, v) => { root.rule-changed(i, f, v); }
+                    add-rule => { root.add-rule(); }
+                    remove-rule(i) => { root.remove-rule(i); }
+                    save-ignores => { root.save-ignores(); }
+                }
+            }
+
+            Tab {
+                title: "Credentials";
+                credentials-tab := CredentialsTab {
+                    credentials: root.credentials;
+                    keychain-available: root.keychain-available;
+                    keychain-problem: root.keychain-problem;
+
+                    store-credential(e, s) => { root.store-credential(e, s); }
+                    forget-credential(e) => { root.forget-credential(e); }
+                }
+            }
+        }
+    }
+}

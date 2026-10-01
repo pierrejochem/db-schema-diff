@@ -65,6 +65,10 @@ export QA_INVOICING_DSN='postgresql://user:pass@db-qa:5432/invoicing'
 Every source is inspected in a read-only `REPEATABLE READ` transaction with
 `statement_timeout` and `lock_timeout` set, so pointing this at production is safe.
 
+The optional desktop application can also store a credential in the OS keychain, for itself only
+— see [Desktop application](#desktop-application). The command line reads the environment and
+nothing else, whatever is in the keychain.
+
 ## Usage
 
 Start from `config.example.yaml`:
@@ -231,6 +235,37 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 | `--out-dir DIR` | Write all three machine-readable reports into one directory. |
 | `--sequential` | Capture one source at a time, for debugging. |
 
+## Desktop application
+
+```sh
+pip install --pre '.[gui]'     # needs Python 3.12+; --pre because the Slint binding is a beta
+cumo-schema-diff-gui config/invoicing.yaml
+```
+
+Five tabs: **Config** (every parameter of the config file, with a Check connection button per
+source), **Ignores** (the project's rules, with the bundled defaults shown read-only),
+**Credentials**, **Run** and **Results**.
+
+Credentials are stored in the OS keychain and resolved **keychain first, environment as fallback**.
+A connection string is never shown, never logged and never written to the config file — the UI shows
+only where each credential came from and a redacted host/database summary.
+
+**The CLI does not read the keychain.** It reads the environment and nothing else, so a credential
+stored here cannot change what a CI run does.
+
+A cancelled comparison produces no report and says so: the Results banner is only ever green for a
+finished run that found nothing. Cancelling stops sources that have not started, but a capture
+already connected is abandoned rather than interrupted — PostgreSQL work in flight ends on its own
+`statement_timeout`, which at the defaults can be minutes.
+
+The GUI is an optional extra: installing the CLI alone keeps its Python 3.11 floor and its five
+dependencies.
+
+Two rough edges in this first version: there is no native file dialog, so the config file is named
+on the command line and the baseline and output-directory paths are typed into their fields; and
+the Slint binding is a beta whose Python objects must be freed on the thread that made them, so the
+application drives the cyclic garbage collector itself (see `gui/app.py`).
+
 ## Exit codes
 
 | Code | Meaning |
@@ -282,8 +317,7 @@ cumo-schema-diff validate-config -c config/invoicing.yaml --check-env
 ```
 
 **Then probe.** This answers the questions that otherwise turn into a confusing comparison — which
-server version, which schemas, where the changelog actually lives, and whether the connecting role
-can see the definitions at all:
+server version, which schemas, and where the changelog actually lives:
 
 ```
 $ cumo-schema-diff probe -c config/invoicing.yaml
@@ -291,7 +325,6 @@ prod: PostgreSQL 15.19
   database  invoicing as cumo
   encoding  UTF8  collation de_DE.utf8
   schemas   cumo-invoicing, public
-  objects   41 tables, 380 columns, 52 constraints, 28 indexes, 3 views, ...
   liquibase cumo-invoicing.DATABASECHANGELOG: 214 changeset(s), last tag R7.6.2
 ```
 
@@ -300,9 +333,6 @@ If `probe` reports `liquibase AMBIGUOUS`, name the right table in the config:
 ```yaml
     liquibase: { schema: cumo-invoicing, table: DATABASECHANGELOG }
 ```
-
-If it warns that a role returned no definition for some views, fix the grant before trusting a
-comparison — otherwise those objects read as drift when they are really a permissions problem.
 
 **Now compare.** The first run against environments that have drifted for years will find a lot,
 all of it true and none of it actionable today:
@@ -357,6 +387,12 @@ or against an existing one:
 CUMO_SCHEMA_DIFF_TEST_IMAGE=postgres:17 make test-integration
 CUMO_SCHEMA_DIFF_TEST_DSN='postgresql://...' make test-integration
 ```
+
+> **`CUMO_SCHEMA_DIFF_TEST_DSN` is destructive.** The suite runs
+> `DROP DATABASE IF EXISTS … WITH (FORCE)` and recreates `master_db` and `target_db` on whatever
+> server that DSN points at, once per session, forcing any other connection to them off. Point it
+> only at a server you own, and never at one that hosts anything called `master_db` or `target_db`
+> that you want to keep. The default path — a throwaway container — touches nothing.
 
 Two tests are worth knowing about:
 

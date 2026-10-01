@@ -1,0 +1,237 @@
+// Every field of ComparerConfig, SourceRef and Options.
+
+import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
+import { LabelledField, LabelledNumber, LabelledCheck } from "widgets.slint";
+
+export struct SourceRow {
+    label: string,
+    dsn_env: string,
+    host: string,
+    database: string,
+    schemas: string,          // comma-separated; the view model splits and joins
+    schema_map: string,       // "from=to, from=to"
+    liquibase_schema: string,
+    liquibase_table: string,
+    is_master: bool,
+    credential_source: string,   // keychain | environment | unset
+    connection_status: string,
+    connection_ok: bool,
+    checked: bool,
+}
+
+export component ConfigTab inherits ScrollView {
+    in-out property <string> config-name;
+    in property <[SourceRow]> sources;
+    in-out property <string> exclude-schemas-text;
+
+    in-out property <int> connect-timeout-seconds;
+    in-out property <int> statement-timeout-seconds;
+    in-out property <int> lock-timeout-seconds;
+    in-out property <bool> parallel;
+    in-out property <int> max-workers;
+    in-out property <string> fail-on;
+    in-out property <bool> ignore-column-order;
+    in-out property <bool> include-owners;
+    in-out property <bool> include-comments;
+    in-out property <bool> include-grants;
+
+    callback source-changed(string, string, string);   // label, field, value
+    callback add-target();
+    callback remove-target(string);
+    callback check-connection(string);
+    callback check-all();
+    callback validate-config();
+    callback save-config();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 12px;
+
+        LabelledField {
+            label: "name";
+            value <=> root.config-name;
+            placeholder: "invoicing";
+            edited(v) => { root.source-changed("", "name", v); }
+        }
+
+        GroupBox {
+            title: "Sources";
+            VerticalLayout {
+                spacing: 6px;
+                for row[i] in root.sources: Rectangle {
+                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text {
+                                text: row.is_master ? "master" : "target";
+                                width: 60px;
+                                color: #5b6672;
+                                vertical-alignment: center;
+                            }
+                            LineEdit {
+                                text: row.label;
+                                edited(v) => { root.source-changed(row.label, "label", v); }
+                            }
+                            LineEdit {
+                                text: row.dsn_env;
+                                placeholder-text: "PROD_DSN";
+                                edited(v) => { root.source-changed(row.label, "dsn_env", v); }
+                            }
+                            Text {
+                                text: row.credential_source;
+                                width: 90px;
+                                vertical-alignment: center;
+                            }
+                            Button {
+                                text: "Check connection";
+                                clicked => { root.check-connection(row.label); }
+                            }
+                            Button {
+                                text: "Remove";
+                                enabled: !row.is_master;
+                                clicked => { root.remove-target(row.label); }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit {
+                                text: row.host;
+                                placeholder-text: "host (documentation only)";
+                                edited(v) => { root.source-changed(row.label, "host", v); }
+                            }
+                            LineEdit {
+                                text: row.database;
+                                placeholder-text: "database (documentation only)";
+                                edited(v) => { root.source-changed(row.label, "database", v); }
+                            }
+                            LineEdit {
+                                text: row.schemas;
+                                placeholder-text: "schemas, comma separated";
+                                edited(v) => { root.source-changed(row.label, "schemas", v); }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit {
+                                text: row.schema_map;
+                                placeholder-text: "schema_map: master=target, master=target";
+                                edited(v) => { root.source-changed(row.label, "schema_map", v); }
+                            }
+                            LineEdit {
+                                text: row.liquibase_schema;
+                                placeholder-text: "liquibase schema (optional)";
+                                edited(v) => {
+                                    root.source-changed(row.label, "liquibase_schema", v);
+                                }
+                            }
+                            LineEdit {
+                                text: row.liquibase_table;
+                                placeholder-text: "DATABASECHANGELOG";
+                                edited(v) => {
+                                    root.source-changed(row.label, "liquibase_table", v);
+                                }
+                            }
+                        }
+                        Text {
+                            text: row.connection_status;
+                            color: row.connection_ok ? #027a48 : #b42318;
+                            visible: row.connection_status != "";
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: "Add target"; clicked => { root.add-target(); } }
+                    Button { text: "Check all"; clicked => { root.check-all(); } }
+                }
+            }
+        }
+
+        LabelledField {
+            label: "exclude_schemas";
+            value <=> root.exclude-schemas-text;
+            placeholder: "quartz, audit_archive";
+            edited(v) => { root.source-changed("", "exclude_schemas", v); }
+        }
+
+        GroupBox {
+            title: "Options";
+            VerticalLayout {
+                spacing: 4px;
+                LabelledNumber {
+                    label: "connect_timeout_seconds";
+                    value <=> root.connect-timeout-seconds;
+                    edited(v) => { root.source-changed("", "connect_timeout_seconds", v); }
+                }
+                LabelledNumber {
+                    label: "statement_timeout_seconds";
+                    value <=> root.statement-timeout-seconds;
+                    edited(v) => { root.source-changed("", "statement_timeout_seconds", v); }
+                }
+                LabelledNumber {
+                    label: "lock_timeout_seconds";
+                    value <=> root.lock-timeout-seconds;
+                    edited(v) => { root.source-changed("", "lock_timeout_seconds", v); }
+                }
+                LabelledNumber {
+                    label: "max_workers";
+                    value <=> root.max-workers;
+                    edited(v) => { root.source-changed("", "max_workers", v); }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "fail_on"; width: 220px; vertical-alignment: center; }
+                    ComboBox {
+                        model: ["error", "warning", "any", "never"];
+                        current-value <=> root.fail-on;
+                        selected(v) => { root.source-changed("", "fail_on", v); }
+                    }
+                }
+                LabelledCheck {
+                    label: "parallel";
+                    value <=> root.parallel;
+                    toggled(v) => {
+                        root.source-changed("", "parallel", v ? "true" : "false");
+                    }
+                }
+                LabelledCheck {
+                    label: "ignore_column_order";
+                    value <=> root.ignore-column-order;
+                    toggled(v) => {
+                        root.source-changed("", "ignore_column_order", v ? "true" : "false");
+                    }
+                }
+                LabelledCheck {
+                    label: "include_owners";
+                    value <=> root.include-owners;
+                    toggled(v) => {
+                        root.source-changed("", "include_owners", v ? "true" : "false");
+                    }
+                }
+                LabelledCheck {
+                    label: "include_comments";
+                    value <=> root.include-comments;
+                    toggled(v) => {
+                        root.source-changed("", "include_comments", v ? "true" : "false");
+                    }
+                }
+                LabelledCheck {
+                    label: "include_grants";
+                    value <=> root.include-grants;
+                    toggled(v) => {
+                        root.source-changed("", "include_grants", v ? "true" : "false");
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Button { text: "Validate"; clicked => { root.validate-config(); } }
+            Button { text: "Save"; primary: true; clicked => { root.save-config(); } }
+        }
+    }
+}
