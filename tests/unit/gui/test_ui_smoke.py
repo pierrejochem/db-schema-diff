@@ -112,6 +112,10 @@ def test_the_main_window_instantiates(window):
 
 @pytest.mark.parametrize(("name", "value"), PROPERTIES, ids=[p[0] for p in PROPERTIES])
 def test_every_property_exists_and_round_trips(window, name, value):
+    # Read BEFORE writing. SlintClassWrapper lets setattr on an undeclared name succeed by
+    # shadowing it in the instance dict, so a write-then-read passes for a typo'd property too.
+    # Only a declared property can be read before it has been set.
+    getattr(window, name)
     setattr(window, name, value)
     assert getattr(window, name) == value
 
@@ -124,6 +128,7 @@ def test_the_property_list_has_one_entry_per_options_field():
 
 
 def test_exclude_schemas_is_a_readable_string_list(window):
+    # Read-first, as above: the list property itself, not only exclude_schemas_text.
     assert list(window.exclude_schemas) == []
     window.exclude_schemas = slint.ListModel(["quartz", "audit"])
     assert list(window.exclude_schemas) == ["quartz", "audit"]
@@ -131,11 +136,22 @@ def test_exclude_schemas_is_a_readable_string_list(window):
 
 @pytest.mark.parametrize(("name", "args"), CALLBACKS.items(), ids=list(CALLBACKS))
 def test_every_callback_is_assigned_and_invoked_by_calling_it(window, name, args):
+    # Read-first: assigning to an undeclared callback name silently succeeds, so prove it is
+    # declared (an undeclared name raises AttributeError on read) and is callable.
+    assert callable(getattr(window, name))
     seen = []
     setattr(window, name, lambda *a: seen.append(a))
     getattr(window, name)(*args)  # no invoke_ prefix
     assert seen == [args]
     assert not hasattr(window, f"invoke_{name}")
+
+
+def test_source_row_declares_exactly_the_expected_fields():
+    """A field dropped from the struct would otherwise be a silently absent dict key."""
+    declared = {
+        k.replace("-", "_") for k in dict(slint.load_file(str(UI / "main.slint")).SourceRow())
+    }
+    assert declared == set(SOURCE_ROW_FIELDS)
 
 
 def test_a_source_row_round_trips_every_field(window):
