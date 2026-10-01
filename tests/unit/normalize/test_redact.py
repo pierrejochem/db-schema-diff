@@ -299,3 +299,41 @@ def test_a_200kb_body_with_every_kind_of_secret_is_fast():
     start = time.perf_counter()
     mask_literals(body)
     assert time.perf_counter() - start < 1.0
+
+
+class TestAssignmentOperators:
+    @pytest.mark.parametrize("keyword", KEYWORDS)
+    @pytest.mark.parametrize("operator", ["=", ":=", "=>"])
+    @pytest.mark.parametrize("spacing", ["{k}{o}'x'", "{k} {o}'x'", "{k} {o} 'x'"])
+    def test_the_literal_after_a_secret_keyword_and_operator_is_masked(
+        self, keyword, operator, spacing
+    ):
+        sql = "f(" + spacing.format(k=keyword, o=operator) + ")"
+        out = mask_literals(sql)
+        assert "'x'" not in out
+        assert out.startswith(f"f({keyword}")
+        assert MASK_PREFIX in out
+
+    @pytest.mark.parametrize("operator", ["<=", ">=", "<>", "!=", "<", ">"])
+    def test_comparisons_other_than_equals_are_left_alone(self, operator):
+        sql = f"WHERE password {operator} 'x'"
+        assert mask_literals(sql) == sql
+
+    @pytest.mark.parametrize("sql", ["v_password := 'x'", "other := 'x'", "x = y => 'x'"])
+    def test_other_names_and_arrows_are_left_alone(self, sql):
+        assert mask_literals(sql) == sql
+
+    def test_plpgsql_assignment_in_a_body(self):
+        out = mask_literals("$$ BEGIN password := 'hunter2'; n := 'ok'; END $$")
+        assert "hunter2" not in out
+        assert "n := 'ok'" in out
+
+    def test_a_named_argument(self):
+        out = mask_literals("SELECT connect(host => 'h', password => 'hunter2')")
+        assert "hunter2" not in out
+        assert "host => 'h'" in out
+
+    def test_assignment_masking_is_idempotent_and_distinct(self):
+        once = mask_literals("password := 'a'")
+        assert mask_literals(once) == once
+        assert once != mask_literals("password := 'b'")

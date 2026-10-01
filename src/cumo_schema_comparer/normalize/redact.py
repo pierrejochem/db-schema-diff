@@ -125,23 +125,43 @@ def _mask_comment(text: str) -> str:
     return f"/* {_mask_for(body)} */" if terminated else f"/* {_mask_for(body)}"
 
 
+#: Operator-token sequences that bind a value to a name. The tokenizer emits ``:=`` and ``=>`` as
+#: two tokens each.
+_ASSIGNMENTS = (("=",), (":", "="), ("=", ">"))
+
+
+def _follows_secret_keyword(recent: list[Token]) -> bool:
+    """Whether the tokens just before a literal are ``<keyword> =``, ``:=`` or ``=>``.
+
+    ``:=`` is the plpgsql assignment and ``=>`` the named-argument arrow. Comparisons such as
+    ``<=``, ``>=`` and ``<>`` are single other tokens and deliberately do not count: they are not
+    assignments. ``=`` stays because it is the libpq form and also assigns in ``SET``.
+    """
+    for operators in _ASSIGNMENTS:
+        count = len(operators)
+        if len(recent) <= count:
+            continue
+        tail = recent[-count:]
+        keyword = recent[-count - 1]
+        if (
+            all(t.type is TokenType.OPERATOR for t in tail)
+            and tuple(t.text for t in tail) == operators
+            and keyword.type is TokenType.WORD
+            and keyword.text.lower() in _SECRET_WORDS
+        ):
+            return True
+    return False
+
+
 def _mask_tokens(text: str, tokens: list[Token], depth: int) -> str:
     pieces: list[str] = []
     cursor = 0
-    previous: Token | None = None
-    before_previous: Token | None = None
+    recent: list[Token] = []  # the last three non-comment tokens, oldest first
     for token in tokens:
         if token.type is TokenType.COMMENT:
             replacement = _mask_comment(token.text)
         elif token.type is TokenType.STRING:
-            force = (
-                previous is not None
-                and previous.type is TokenType.OPERATOR
-                and previous.text == "="
-                and before_previous is not None
-                and before_previous.type is TokenType.WORD
-                and before_previous.text.lower() in _SECRET_WORDS
-            )
+            force = _follows_secret_keyword(recent)
             if token.text.startswith("$"):
                 replacement = _mask_dollar(token.text, depth, force=force)
             else:
@@ -149,7 +169,7 @@ def _mask_tokens(text: str, tokens: list[Token], depth: int) -> str:
         else:
             replacement = None
         if token.type is not TokenType.COMMENT:
-            before_previous, previous = previous, token
+            recent = [*recent[-2:], token]
         if replacement is not None:
             pieces.append(text[cursor : token.start])
             pieces.append(replacement)
