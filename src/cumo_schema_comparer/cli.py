@@ -487,8 +487,8 @@ def probe_command(ctx: click.Context, config_path: Path) -> None:
     """Connect to every source and report what was found, without comparing anything.
 
     The first thing to run against a new environment. It answers the questions that otherwise turn
-    into a confusing comparison: which server version, which schemas, where the changelog lives, and
-    whether the connecting role can actually see the definitions.
+    into a confusing comparison: which server version, which schemas, and where the changelog
+    lives.
     """
     cli_options = ctx.obj or {}
     config = load_config([config_path])[0]
