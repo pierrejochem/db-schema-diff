@@ -75,8 +75,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # S101 asserts are the point of a test; ANN annotations add noise to them; S105/S106 flag the
 # obviously-fake credentials the redaction tests need. S314 flags xml parsing of untrusted input,
-# but these tests parse output this tool produced moments earlier, in-process.
-"tests/**" = ["S101", "ANN", "S105", "S106", "S314"]
+# but these tests parse output this tool produced moments earlier, in-process. E741 (ambiguous
+# variable name) is acceptable when comparing or iterating across collections in test cases.
+"tests/**" = ["S101", "ANN", "S105", "S106", "S314", "E741"]
 
 [tool.ruff.format]
 quote-style = "double"
