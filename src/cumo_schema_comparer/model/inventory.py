@@ -210,10 +210,12 @@ class Inventory:
     def from_json_dict(cls, data: Mapping[str, Any]) -> Inventory:
         """Rebuild an inventory written by :meth:`to_json_dict`."""
         version = data.get("schema_version")
-        if version not in READABLE_SCHEMA_VERSIONS:
+        if type(version) is not int or version not in READABLE_SCHEMA_VERSIONS:
+            hint = " (expected an integer)" if isinstance(version, str) else ""
+            readable_list = sorted(READABLE_SCHEMA_VERSIONS)
             raise ValueError(
                 f"unsupported inventory schema_version {version!r}; "
-                f"this build reads {sorted(READABLE_SCHEMA_VERSIONS)} and writes {SCHEMA_VERSION}"
+                f"this build reads {readable_list} and writes {SCHEMA_VERSION}{hint}"
             )
         if not _OBJECT_TYPES:
             _register()

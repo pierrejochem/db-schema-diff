@@ -313,11 +313,12 @@ class ComparisonReport:
         captured in one place and rendered somewhere else entirely.
         """
         version = data.get("schema_version")
-        if version not in READABLE_REPORT_VERSIONS:
+        if type(version) is not int or version not in READABLE_REPORT_VERSIONS:
+            hint = " (expected an integer)" if isinstance(version, str) else ""
             raise ValueError(
                 f"unsupported report schema_version {version!r}; "
                 f"this build reads {sorted(READABLE_REPORT_VERSIONS)} "
-                f"and writes {REPORT_SCHEMA_VERSION}"
+                f"and writes {REPORT_SCHEMA_VERSION}{hint}"
             )
         return cls(
             name=data["name"],
