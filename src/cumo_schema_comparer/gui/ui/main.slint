@@ -6,8 +6,10 @@ import { StatusLine } from "widgets.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
 import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
+import { RunTab, ProgressRow } from "run_tab.slint";
+import { ResultsTab, FindingRow } from "results_tab.slint";
 
-export { SourceRow, RuleRow, CredentialRow }
+export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow }
 
 export component MainWindow inherits Window {
     title: "cumo-schema-diff";
@@ -43,6 +45,36 @@ export component MainWindow inherits Window {
     in property <bool> keychain-available;
     in property <string> keychain-problem;
 
+    // Run. Defaults are the CLI's defaults.
+    in-out property <bool> running: false;
+    in property <[ProgressRow]> progress;
+    in-out property <string> run-fail-on: "error";
+    in-out property <string> baseline-path: "";
+    in-out property <bool> show-cosmetic: false;
+    in-out property <bool> skip-liquibase: false;
+    in-out property <bool> strict-changelog: false;
+    in-out property <bool> no-default-ignores: false;
+    in-out property <bool> allow-unreachable: false;
+    in-out property <bool> sequential: false;
+
+    // Results. verdict-level is the run-level outcome, never derived from progress.
+    in-out property <string> verdict: "";
+    in-out property <string> verdict-level: "";
+    in property <[FindingRow]> findings;
+    in-out property <string> filter-text: "";
+    in-out property <bool> show-error: true;
+    in-out property <bool> show-warning: true;
+    in-out property <bool> show-info: true;
+    in-out property <string> output-directory: "";
+
+    callback start-run();
+    callback cancel-run();
+    callback choose-baseline();
+    callback choose-output-directory();
+    callback write-reports();
+    callback open-html();
+    callback filter-changed();
+
     callback rule-changed(string, string, string);
     callback add-rule();
     callback remove-rule(string);
@@ -67,6 +99,20 @@ export component MainWindow inherits Window {
     public function drive-store-credential(env-name: string, secret: string) {
         credentials-tab.submit(env-name, secret);
     }
+
+    public function run-progress-count() -> int { return run-tab.progress-count; }
+    public function results-finding-count() -> int { return results-tab.finding-count; }
+    public function run-start-enabled() -> bool { return run-tab.start-enabled; }
+    public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
+    public function results-banner-kind() -> string { return results-tab.banner-kind; }
+    public function results-banner-is-success() -> bool { return results-tab.banner-is-success; }
+    public function drive-start-run() { run-tab.request-start(); }
+    public function drive-cancel-run() { run-tab.request-cancel(); }
+    public function drive-choose-baseline() { run-tab.request-choose-baseline(); }
+    public function drive-filter-changed() { results-tab.request-filter-changed(); }
+    public function drive-choose-output-directory() { results-tab.request-choose-output-directory(); }
+    public function drive-write-reports() { results-tab.request-write-reports(); }
+    public function drive-open-html() { results-tab.request-open-html(); }
 
     VerticalLayout {
         HorizontalLayout {
@@ -108,6 +154,46 @@ export component MainWindow inherits Window {
                     check-all => { root.check-all(); }
                     validate-config => { root.validate-config(); }
                     save-config => { root.save-config(); }
+                }
+            }
+
+            Tab {
+                title: "Run";
+                run-tab := RunTab {
+                    running: root.running;
+                    progress: root.progress;
+                    run-fail-on <=> root.run-fail-on;
+                    baseline-path <=> root.baseline-path;
+                    show-cosmetic <=> root.show-cosmetic;
+                    skip-liquibase <=> root.skip-liquibase;
+                    strict-changelog <=> root.strict-changelog;
+                    no-default-ignores <=> root.no-default-ignores;
+                    allow-unreachable <=> root.allow-unreachable;
+                    sequential <=> root.sequential;
+
+                    start-run => { root.start-run(); }
+                    cancel-run => { root.cancel-run(); }
+                    choose-baseline => { root.choose-baseline(); }
+                }
+            }
+
+            Tab {
+                title: "Results";
+                results-tab := ResultsTab {
+                    running: root.running;
+                    verdict: root.verdict;
+                    verdict-level: root.verdict-level;
+                    findings: root.findings;
+                    filter-text <=> root.filter-text;
+                    show-error <=> root.show-error;
+                    show-warning <=> root.show-warning;
+                    show-info <=> root.show-info;
+                    output-directory <=> root.output-directory;
+
+                    filter-changed => { root.filter-changed(); }
+                    choose-output-directory => { root.choose-output-directory(); }
+                    write-reports => { root.write-reports(); }
+                    open-html => { root.open-html(); }
                 }
             }
 

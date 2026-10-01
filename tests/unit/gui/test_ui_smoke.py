@@ -109,6 +109,8 @@ def test_there_are_slint_files_to_check():
         "widgets.slint",
         "ignores_tab.slint",
         "credentials_tab.slint",
+        "run_tab.slint",
+        "results_tab.slint",
     }
 
 
@@ -382,3 +384,209 @@ def test_credentials_tab_masks_the_password_field_and_never_logs():
     assert "input-type: password" in text
     for path in slint_files():
         assert "debug(" not in path.read_text(), path.name
+
+
+RUN_PROPERTIES = [
+    "running", "progress", "run_fail_on", "baseline_path", "show_cosmetic",
+    "skip_liquibase", "strict_changelog", "no_default_ignores",
+    "allow_unreachable", "sequential",
+]  # fmt: skip
+RESULTS_PROPERTIES = [
+    "verdict", "verdict_level", "findings", "filter_text",
+    "show_error", "show_warning", "show_info", "output_directory",
+]  # fmt: skip
+RUN_CALLBACKS = [
+    "start_run", "cancel_run", "choose_baseline", "choose_output_directory",
+    "write_reports", "open_html", "filter_changed",
+]  # fmt: skip
+PROGRESS_ROW_FIELDS = ["label", "state", "detail"]
+FINDING_ROW_FIELDS = ["target", "kind", "path", "status", "severity", "detail", "suppressed_by"]
+
+
+def make_progress(**overrides):
+    row = {"label": "prod", "state": "idle", "detail": ""}
+    row.update(overrides)
+    return row
+
+
+def make_finding(**overrides):
+    row = {
+        "target": "qa",
+        "kind": "column",
+        "path": "cumo-invoicing.invoice.number",
+        "status": "differs",
+        "severity": "error",
+        "detail": "column.data_type: varchar(40) -> text",
+        "suppressed_by": "",
+    }
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.parametrize("name", RUN_PROPERTIES + RESULTS_PROPERTIES)
+def test_every_run_and_results_property_exists(window, name):
+    getattr(window, name)  # raises AttributeError if undeclared
+
+
+@pytest.mark.parametrize("name", RUN_CALLBACKS)
+def test_every_run_callback_is_declared_and_invoked_by_calling_it(window, name):
+    assert callable(getattr(window, name))  # read first: setattr on a typo would succeed
+    seen = []
+    setattr(window, name, lambda *a: seen.append(a))
+    getattr(window, name)()
+    assert seen == [()]
+
+
+def test_progress_and_finding_rows_declare_exactly_the_expected_fields():
+    assert declared_fields("ProgressRow") == set(PROGRESS_ROW_FIELDS)
+    assert declared_fields("FindingRow") == set(FINDING_ROW_FIELDS)
+
+
+def test_progress_rows_update_in_place(window):
+    model = slint.ListModel([make_progress()])
+    window.progress = model
+    model[0] = make_progress(state="capturing", detail="12 tables")
+    assert window.progress[0]["state"] == "capturing"
+    assert window.progress[0]["detail"] == "12 tables"
+
+
+def test_finding_rows_carry_everything_the_tab_renders(window):
+    sent = make_finding(suppressed_by="quartz-runtime")
+    window.findings = slint.ListModel([sent])
+    row = window.findings[0]
+    assert {k: row[k] for k in FINDING_ROW_FIELDS} == sent
+
+
+def test_the_run_flags_default_to_the_cli_defaults(window):
+    assert window.run_fail_on == "error"
+    assert window.sequential is False
+    assert window.allow_unreachable is False
+    assert window.show_cosmetic is False
+    assert window.skip_liquibase is False
+    assert window.strict_changelog is False
+    assert window.no_default_ignores is False
+    assert window.show_error is True
+    assert window.show_warning is True
+    assert window.show_info is True
+    assert window.running is False
+
+
+def test_the_window_wires_progress_and_findings_into_the_tabs(window):
+    # The tabs' own counts: `progress: []` in main.slint leaves window.progress full, tab empty.
+    assert window.run_progress_count() == 0
+    assert window.results_finding_count() == 0
+    window.progress = slint.ListModel([make_progress(), make_progress(label="qa")])
+    window.findings = slint.ListModel([make_finding()])
+    assert window.run_progress_count() == 2
+    assert window.results_finding_count() == 1
+
+
+def test_start_is_unavailable_while_running_and_cancel_only_then(window):
+    assert (window.run_start_enabled(), window.run_cancel_enabled()) == (True, False)
+    window.running = True
+    assert (window.run_start_enabled(), window.run_cancel_enabled()) == (False, True)
+    window.running = False
+    assert (window.run_start_enabled(), window.run_cancel_enabled()) == (True, False)
+
+
+def test_a_double_click_on_start_fires_one_run(window):
+    """Drive the real click path; the probe is on the outward callback (no handler to replace)."""
+    starts, cancels = [], []
+
+    def start():
+        starts.append(1)
+        window.running = True
+
+    window.start_run = start
+    window.cancel_run = lambda: cancels.append(1)
+    window.drive_start_run()
+    window.drive_start_run()
+    assert len(starts) == 1
+    window.drive_cancel_run()
+    assert len(cancels) == 1
+    window.running = False
+    window.drive_cancel_run()  # nothing to cancel
+    assert len(cancels) == 1
+
+
+def test_start_and_cancel_forward_nothing_in_the_wrong_state(window):
+    seen = []
+    window.start_run = lambda: seen.append("start")
+    window.cancel_run = lambda: seen.append("cancel")
+    window.running = True
+    window.drive_start_run()
+    assert seen == []
+    window.running = False
+    window.drive_cancel_run()
+    assert seen == []
+
+
+def test_the_other_buttons_forward_to_the_window_callbacks(window):
+    seen = []
+    for name in ("choose_baseline", "choose_output_directory", "write_reports", "open_html",
+                 "filter_changed"):  # fmt: skip
+        setattr(window, name, lambda n=name: seen.append(n))
+    window.drive_choose_baseline()
+    window.drive_choose_output_directory()
+    window.drive_write_reports()
+    window.drive_open_html()
+    window.drive_filter_changed()
+    assert seen == ["choose_baseline", "choose_output_directory", "write_reports", "open_html",
+                    "filter_changed"]  # fmt: skip
+
+
+def test_reports_cannot_be_written_while_a_run_is_in_flight(window):
+    seen = []
+    window.write_reports = lambda: seen.append("w")
+    window.open_html = lambda: seen.append("o")
+    window.running = True
+    window.drive_write_reports()
+    window.drive_open_html()
+    assert seen == []
+
+
+@pytest.mark.parametrize(
+    ("level", "running", "kind", "success"),
+    [
+        ("ok", False, "ok", True),
+        ("error", False, "error", False),
+        ("warning", False, "warning", False),
+        ("info", False, "info", False),
+        ("cancelled", False, "cancelled", False),
+        ("", False, "pending", False),
+        ("OK", False, "pending", False),
+        ("success", False, "pending", False),
+        ("ok", True, "pending", False),  # a stale "ok" while the next run is in flight
+    ],
+)
+def test_only_the_exact_ok_level_ever_shows_success(window, level, running, kind, success):
+    window.verdict_level = level
+    window.running = running
+    assert window.results_banner_kind() == kind
+    assert window.results_banner_is_success() is success
+
+
+def test_all_sources_captured_does_not_make_a_cancelled_run_look_clean(window):
+    """The session can report every source CAPTURED and still end cancelled."""
+    window.progress = slint.ListModel(
+        [make_progress(label="prod", state="captured"), make_progress(label="qa", state="captured")]
+    )
+    window.verdict = "Run cancelled; no comparison was produced."
+    window.verdict_level = "cancelled"
+    assert window.results_banner_is_success() is False
+    assert window.results_banner_kind() == "cancelled"
+    window.verdict_level = ""  # no verdict at all: still not success
+    assert window.results_banner_is_success() is False
+
+
+def test_the_results_markup_never_reads_progress():
+    text = (UI / "results_tab.slint").read_text()
+    assert "root.progress" not in text
+    assert "ProgressRow" not in text
+
+
+def test_the_run_and_results_tabs_never_log_or_hold_a_connection_string():
+    for name in ("run_tab.slint", "results_tab.slint"):
+        text = (UI / name).read_text()
+        assert "debug(" not in text
+        assert "dsn" not in text.lower()
