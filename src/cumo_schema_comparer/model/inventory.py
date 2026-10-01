@@ -27,6 +27,11 @@ from .kinds import KIND_ORDER, ObjectKind
 
 SCHEMA_VERSION = 1
 
+#: Versions this build can *read*. A file on disk outlives the build that wrote it, so dropping
+#: one from this set is a breaking change and has to be a deliberate edit rather than a side
+#: effect of bumping SCHEMA_VERSION.
+READABLE_SCHEMA_VERSIONS = frozenset({1})
+
 #: Object types keyed by kind, for deserialisation.
 _OBJECT_TYPES: dict[ObjectKind, type] = {}
 
@@ -205,10 +210,10 @@ class Inventory:
     def from_json_dict(cls, data: Mapping[str, Any]) -> Inventory:
         """Rebuild an inventory written by :meth:`to_json_dict`."""
         version = data.get("schema_version")
-        if version != SCHEMA_VERSION:
+        if version not in READABLE_SCHEMA_VERSIONS:
             raise ValueError(
                 f"unsupported inventory schema_version {version!r}; "
-                f"this build writes {SCHEMA_VERSION}"
+                f"this build reads {sorted(READABLE_SCHEMA_VERSIONS)} and writes {SCHEMA_VERSION}"
             )
         if not _OBJECT_TYPES:
             _register()

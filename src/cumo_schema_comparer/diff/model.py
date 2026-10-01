@@ -21,6 +21,9 @@ from .severity import Severity
 #: Version of the JSON report format. Bumped whenever the shape changes incompatibly.
 REPORT_SCHEMA_VERSION = 1
 
+#: Versions this build can *read*; see the note on the inventory's equivalent.
+READABLE_REPORT_VERSIONS = frozenset({1})
+
 
 class ObjectStatus(StrEnum):
     """How one object compares between master and target."""
@@ -310,10 +313,11 @@ class ComparisonReport:
         captured in one place and rendered somewhere else entirely.
         """
         version = data.get("schema_version")
-        if version != REPORT_SCHEMA_VERSION:
+        if version not in READABLE_REPORT_VERSIONS:
             raise ValueError(
                 f"unsupported report schema_version {version!r}; "
-                f"this build writes {REPORT_SCHEMA_VERSION}"
+                f"this build reads {sorted(READABLE_REPORT_VERSIONS)} "
+                f"and writes {REPORT_SCHEMA_VERSION}"
             )
         return cls(
             name=data["name"],
