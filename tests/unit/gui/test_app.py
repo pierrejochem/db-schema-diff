@@ -827,6 +827,42 @@ class TestRunning:
         assert app.window.results_banner_is_success() is False
         assert all(row["suppressed_by"] == "baseline" for row in rows(app.window.findings))
 
+    @pytest.mark.parametrize("gate", ["never", "any", "warning", "error"])
+    def test_a_configured_gate_is_what_the_next_run_uses(self, tmp_path, gate):
+        """The Run tab's combo box defaults to "error" and silently replaced the config's gate.
+
+        Two visible widgets disagreed and the untouched one won, which also wrote the wrong
+        fail_on into every report the Results tab writes.
+        """
+        app = application(tmp_path, text=CONFIG + f"options:\n  fail_on: {gate}\n")
+        assert app.window.fail_on == gate
+        assert app.window.run_fail_on == gate
+        assert app._effective_config().options.fail_on == gate
+
+    def test_an_explicit_run_tab_gate_still_wins_and_does_not_touch_the_file(self, tmp_path):
+        app = application(tmp_path, text=CONFIG + "options:\n  fail_on: never\n")
+        app.window.run_fail_on = "warning"
+        app.window.source_changed("qa", "host", "db-qa-2")  # any edit refreshes the window
+        assert app.window.run_fail_on == "warning", "a per-run choice must survive a refresh"
+        assert app._effective_config().options.fail_on == "warning"
+        assert app.config.config.options.fail_on == "never", "the file's own gate is untouched"
+
+    def test_editing_the_configs_gate_carries_the_run_tab_with_it(self, tmp_path):
+        app = application(tmp_path)
+        app.window.source_changed("", "fail_on", "any")
+        assert (app.window.fail_on, app.window.run_fail_on) == ("any", "any")
+        assert app._effective_config().options.fail_on == "any"
+
+    @pytest.mark.asyncio
+    async def test_a_configured_gate_reaches_the_written_report(self, app, tmp_path):
+        app.window.source_changed("", "fail_on", "never")
+        with mock.patch(CAPTURE, drifted_capture):
+            await run_to_completion(app)
+        assert "--fail-on never" in app.window.verdict
+        app.window.output_directory = str(tmp_path)
+        app.window.drive_write_reports()
+        assert '"fail_on": "never"' in (tmp_path / "report.json").read_text()
+
     @pytest.mark.asyncio
     async def test_the_run_tabs_gate_reaches_the_report(self, app):
         app.window.run_fail_on = "never"

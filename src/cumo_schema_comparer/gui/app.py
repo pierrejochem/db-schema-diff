@@ -176,6 +176,10 @@ class Application:
         self._run_task: asyncio.Task[None] | None = None
         self._checks: dict[str, ConnectionStatus] = {}
         self._described: dict[str, CredentialStatus] = {}
+        #: The gate this module last wrote into the Run tab. The ComboBox there reports no
+        #: change, so comparing against this is the only way to tell an untouched widget from a
+        #: deliberate per-run choice.
+        self._seeded_gate: str = str(self.window.run_fail_on)
         self._verdict: tuple[str, str] = ("", "")
         self._progress: Any = slint.ListModel([])
         self._progress_index: dict[str, int] = {}
@@ -260,6 +264,13 @@ class Application:
         window.parallel = options.parallel
         window.max_workers = options.max_workers
         window.fail_on = options.fail_on
+        # The Run tab's gate is a per-run override of this one, and it defaults to "error" in the
+        # markup. Left unseeded it silently replaced a configured `never` or `any` -- two visible
+        # widgets disagreeing, with the untouched one winning, and the wrong fail_on written into
+        # every report. Seeded while the user has not chosen one themselves; their choice wins.
+        if str(window.run_fail_on) == self._seeded_gate:
+            window.run_fail_on = options.fail_on
+        self._seeded_gate = str(window.run_fail_on)
         window.ignore_column_order = options.ignore_column_order
         window.include_owners = options.include_owners
         window.include_comments = options.include_comments
