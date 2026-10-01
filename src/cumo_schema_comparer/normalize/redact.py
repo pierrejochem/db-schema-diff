@@ -8,8 +8,16 @@ dollar-quoted, and an apostrophe in a comment inside it (``don't``) would shift 
 quote-pairing regex and leave a connection string unmasked. Each literal's whole body is judged
 by the predicate and replaced whole, so a secret is never half-replaced.
 
-The decision is made per literal and per comment, never per routine body: masking a whole body
-would erase exactly the diff this tool exists to show.
+The decision is made per literal, per comment and per credential-bearing span, never per routine
+body: masking a whole body would erase exactly the diff this tool exists to show.
+
+Two structural rules carry the weight, because a keyword alone cannot tell a value from code:
+
+* A dollar quote is masked whole only when its residue is a credential-bearing *value* — a
+  connection URL, or nothing but ``key=value`` pairs. A routine body has bare tokens and is
+  recursed into instead.
+* A comment is free text, so only the offending spans inside it are masked and the rest of the
+  text survives for whoever reads the diff.
 """
 
 from __future__ import annotations
@@ -42,6 +50,41 @@ _MASK = re.compile(re.escape(MASK_PREFIX) + r"[0-9a-f]{12}")
 
 _SECRET_WORDS = frozenset(SECRET_KEYWORDS)
 
+#: ``\s*=\s*`` collapsed to ``=``, so ``host = db1`` and ``host=db1`` are judged alike: libpq
+#: accepts both spellings of a conninfo pair.
+_AROUND_EQUALS = re.compile(r"\s*=\s*")
+
+#: One ``key=value`` pair — the only thing a libpq conninfo is made of.
+_CONNINFO_PAIR = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=\S*")
+
+#: A URL whose userinfo carries a password (``scheme://user:secret@host``). Narrower on purpose
+#: than ``literals.looks_like_credential_url``: in free text a bare ``git@github.com`` or
+#: ``user@host`` names an account, not a secret, and masking it would delete the git and
+#: documentation URLs a reviewer of a drift diff is reading the comment for. The scheme is
+#: anchored and neither character class can straddle the separator it looks for, so the scan is
+#: linear with nothing to backtrack over.
+_PASSWORD_IN_URL = re.compile(
+    r"(?<![a-z0-9+.-])[0-9+.-]*[a-z][a-z0-9+.-]*://[^/?#\s@:]*:[^/?#\s@]*@", re.IGNORECASE
+)
+
+#: A secret keyword bound tight to its value, the libpq conninfo form, as it reads in free text.
+#: The value may be quoted and then carries spaces (``password='P@ss word'``), which is why this
+#: pass must run before the token scan: the token scan alone would mask ``password='P@ss`` and
+#: leave ``word'`` behind, which is the leak the ordering exists to prevent (``gui/app.py``'s
+#: ``_sanitise`` pins the same rule). Only the tight ``=`` counts — ``password = NULL`` is prose
+#: about a column, and masking it destroys the comment rather than a secret.
+_COMMENT_SECRET = re.compile(
+    r"(?<![\w-])(?:"
+    + "|".join(SECRET_KEYWORDS)
+    + r")="
+    + r"(?:'(?:\\.|[^'\\\n])*'?|\"(?:\\.|[^\"\\\n])*\"?|\S*)",
+    re.IGNORECASE,
+)
+
+#: A whitespace-delimited token. Substituting over these keeps every byte of surrounding
+#: whitespace, so a masked multi-line comment still has its line breaks.
+_NON_SPACE = re.compile(r"\S+")
+
 
 def _mask_for(secret: str) -> str:
     """A stable, non-reversible stand-in that still differs between different secrets.
@@ -67,7 +110,9 @@ def _mask_quoted(text: str, *, force: bool) -> str:
     # an unterminated one swallows the extra character.
     terminated = scan_single_quoted(text + "x", quote, backslash_escapes=backslashes) == len(text)
     body = text[quote + 1 : -1] if terminated else text[quote + 1 :]
-    if _MASK.fullmatch(body) or (not force and not looks_like_connection_string(body)):
+    # An empty literal carries no secret, and masking it would publish the sha256 of the empty
+    # string — a well-known constant that announces the password as empty.
+    if not body or _MASK.fullmatch(body) or (not force and not looks_like_connection_string(body)):
         return text
     return f"{prefix}'{_mask_for(body)}" + ("'" if terminated else "")
 
@@ -94,35 +139,83 @@ def _code_residue(inner: str, tokens: list[Token]) -> str:
     return " ".join(pieces)
 
 
+def _is_conninfo(residue: str) -> bool:
+    """Whether ``residue`` is nothing but ``key=value`` pairs.
+
+    This is the structural difference between a conninfo *value* and a routine *body*, and it is
+    structural rather than a question of which keyword appears. Every token of ``host=db1 user=u
+    password=s3cret dbname=d`` is a pair; ``BEGIN UPDATE t SET password = other_col; END`` has
+    bare tokens (``BEGIN``, ``UPDATE``, ``t``, ``SET``, ``END``) that no conninfo ever has.
+    Keying off the keyword instead either leaks the first or destroys the second — both have
+    happened here.
+    """
+    tokens = _AROUND_EQUALS.sub("=", residue).split()
+    return bool(tokens) and all(_CONNINFO_PAIR.fullmatch(token) for token in tokens)
+
+
+def _is_credential_value(residue: str) -> bool:
+    """Whether a dollar quote's code residue is a credential-bearing *value*, not code.
+
+    Two shapes qualify and nothing else. A connection URL cannot be valid code, so a dollar
+    quote whose residue holds one is a plain string value (``$q$postgresql://u:p@h/d$q$`` is
+    legal SQL). And a libpq conninfo is only ``key=value`` pairs, so a residue made of nothing
+    else that also names a secret keyword is one — ``dblink_connect($$host=db1
+    password=s3cret dbname=d$$)`` and ``postgres_fdw`` options are precisely what this module
+    exists to catch. Code is left alone either way, because ``password = other_col`` is good SQL
+    and a body masked whole destroys the diff this tool is for.
+    """
+    if looks_like_credential_url(residue):
+        return True
+    # The cheap keyword test first: it is false for nearly every body, and it keeps the pair scan
+    # off the 200 KB residues that carry no secret keyword at all.
+    return looks_like_connection_string(residue) and _is_conninfo(residue)
+
+
 def _mask_dollar(text: str, depth: int, *, force: bool) -> str:
     tag, inner, closing = _split_dollar(text)
     if force:
-        return text if _MASK.fullmatch(inner) else f"{tag}{_mask_for(inner)}{closing}"
+        if not inner or _MASK.fullmatch(inner):
+            return text
+        return f"{tag}{_mask_for(inner)}{closing}"
     if depth >= _MAX_DEPTH:
+        # Past the cap nothing has looked inside, so judge the blob with the wide predicate and
+        # fail closed. No real routine nests tags this deep.
         masked = _mask_for(inner) if looks_like_connection_string(inner) else inner
         return f"{tag}{masked}{closing}"
     tokens = tokenize_with_comments(inner)
-    # A connection URL left over once literals and comments are cut out cannot be valid code, so
-    # this dollar quote is a plain string value rather than a routine body. Only the URL shapes
-    # count here: ``password = other_col`` is perfectly good code.
-    if looks_like_credential_url(_code_residue(inner, tokens)):
+    if _is_credential_value(_code_residue(inner, tokens)):
         return f"{tag}{_mask_for(inner)}{closing}"
     return f"{tag}{_mask_tokens(inner, tokens, depth + 1)}{closing}"
 
 
+def _mask_free_text(text: str) -> str:
+    """Mask the credential-bearing spans of free text, leaving every other byte in place.
+
+    The keyword pass runs first and the token scan second; see ``_COMMENT_SECRET`` for why that
+    order is the one that does not leak.
+    """
+
+    def mask_token(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return _mask_for(token) if _PASSWORD_IN_URL.search(token) else token
+
+    bound = _COMMENT_SECRET.sub(lambda match: _mask_for(match.group(0)), text)
+    return _NON_SPACE.sub(mask_token, bound)
+
+
 def _mask_comment(text: str) -> str:
-    """Mask the content of a comment whole, keeping its delimiters."""
+    """Mask the credential-bearing spans of a comment, keeping its delimiters and its prose.
+
+    A comment is free text, not SQL, so masking *within* it cannot change what the definition
+    means — and the comments in a view or routine body are exactly the context a reviewer of a
+    drift diff needs. Replacing the content whole, which is what this did before, destroyed every
+    comment that merely mentioned ``password =`` or cited a git or documentation URL.
+    """
     if text.startswith("--"):
-        body = text[2:].rstrip("\r\n")
-        ending = text[2 + len(body) :]
-        if not looks_like_connection_string(body):
-            return text
-        return f"-- {_mask_for(body)}{ending}"
-    terminated = len(text) >= 4 and text.endswith("*/")
-    body = text[2:-2] if terminated else text[2:]
-    if not looks_like_connection_string(body):
-        return text
-    return f"/* {_mask_for(body)} */" if terminated else f"/* {_mask_for(body)}"
+        return "--" + _mask_free_text(text[2:])
+    if len(text) >= 4 and text.endswith("*/"):
+        return "/*" + _mask_free_text(text[2:-2]) + "*/"
+    return "/*" + _mask_free_text(text[2:])
 
 
 #: Operator-token sequences that bind a value to a name. The tokenizer emits ``:=`` and ``=>`` as
@@ -179,12 +272,14 @@ def _mask_tokens(text: str, tokens: list[Token], depth: int) -> str:
 
 
 def mask_literals(text: str | None) -> str | None:
-    """Mask credentials in ``text`` one literal or comment at a time, keeping the SQL around them.
+    """Mask credentials in ``text`` one literal, comment or span at a time, keeping the SQL.
 
     Masked: a string literal whose own body is credential-shaped; the literal right after a secret
-    keyword and ``=`` (``password = 'x'``), whatever its shape; and a comment whose content is
-    credential-shaped. Inside a dollar-quoted body the inner literals and comments are handled the
-    same way, and the body itself is never masked.
+    keyword and ``=``, ``:=`` or ``=>`` (``password = 'x'``), whatever its shape; the
+    credential-bearing spans of a comment; and a dollar quote whose residue is a credential value
+    rather than code (see :func:`_is_credential_value`). An empty literal is left alone: it holds
+    no secret. Inside a dollar-quoted body the inner literals and comments are handled the same
+    way, and a body that is code is never masked whole.
 
     A masked piece no longer looks like a credential, so applying this twice equals applying it
     once; there is deliberately no "starts with the mask prefix" skip, which would let
@@ -192,6 +287,15 @@ def mask_literals(text: str | None) -> str | None:
 
     An unterminated literal runs to the end of the input (the tokenizer's rule), so it is judged
     and masked as a whole, and left unterminated.
+
+    **What the mask does and does not guarantee.** It is an unsalted sha256 truncated to 48 bits,
+    so it is a *stable pseudonym, not confidentiality*: anyone holding a report can confirm a
+    guess with a single hash, and ``***:f52fbd32b2b3`` is ``hunter2`` to whoever tries it. That is
+    the accepted price of the property the tool needs — master and target must mask an unchanged
+    value identically, or every run would report drift, and a changed credential must mask
+    differently, or a rotation would report as no change. A salt would buy secrecy and lose both.
+    Treat a masked report as "the secret is not quoted in full", never as "the secret is
+    protected"; a weak or already-known value stays guessable.
     """
     if text is None:
         return None

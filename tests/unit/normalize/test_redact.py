@@ -168,6 +168,11 @@ class TestUnterminated:
     def test_an_unterminated_ordinary_literal_is_untouched(self):
         assert mask_literals("x = 'abc") == "x = 'abc"
 
+    def test_an_unterminated_literal_stays_unterminated_byte_for_byte(self):
+        # Pinned exactly: treating it as terminated drops the last byte of the secret from the
+        # digest and invents a closing quote, changing both the SQL shape and the mask.
+        assert mask_literals("x = 'postgresql://u:s3cret@h/db") == "x = '***:2e8037391e21"
+
     def test_masking_an_unterminated_literal_is_idempotent(self):
         once = mask_literals("x = 'postgresql://u:s3cret@h/db")
         assert mask_literals(once) == once
@@ -182,8 +187,27 @@ class TestUnterminated:
         "$$ -- it's\n" + "SELECT 'a'' b'; " * 15_000 + "$$",
         "$a$" * 60_000,
         "''" * 100_000,
+        # The conninfo pair scan: all pairs and a secret keyword, so it runs to the last token.
+        "$$" + "host=db1 user=u password=s3cret dbname=d " * 4_800 + "$$",
+        # All pairs, no secret keyword: the cheap predicate must keep the pair scan off this.
+        "$$" + "host=db1 user=u dbname=d " * 8_000 + "$$",
+        # The comment token scan, over tokens that each hold a ``://`` and an ``@``.
+        "-- " + "git clone git://git@github.com/org/repo password = NULL " * 3_500,
+        # One comment token of nothing but colons: the userinfo scan must not backtrack over it.
+        "-- a://" + ":" * 200_000,
     ],
-    ids=["many-secrets", "unbroken", "unterminated", "dollar-body", "tags", "doubled"],
+    ids=[
+        "many-secrets",
+        "unbroken",
+        "unterminated",
+        "dollar-body",
+        "tags",
+        "doubled",
+        "conninfo-pairs",
+        "pairs-no-secret",
+        "comment-tokens",
+        "colons",
+    ],
 )
 def test_a_200kb_body_masks_in_well_under_a_second(body):
     start = time.perf_counter()
@@ -198,9 +222,11 @@ class TestPerLiteralDecisions:
     """The decision is made per literal and per comment, never per routine body."""
 
     def test_a_secret_in_a_comment_is_masked_and_the_rest_is_identical(self):
+        # Only the credential span goes: the prose around it is what a reviewer reads the comment
+        # for, and a comment cannot change what the SQL means, so masking inside it is safe.
         out = mask_literals("-- sync from postgresql://u:s3cret@h/db\nSELECT 1")
         assert "s3cret" not in out
-        assert out.startswith("-- ***:") and out.endswith("\nSELECT 1")
+        assert out == "-- sync from ***:2e8037391e21\nSELECT 1"
 
     def test_a_body_with_no_literals_and_a_column_called_password_is_untouched(self):
         sql = "$$ BEGIN UPDATE t SET password = other_col; END $$"
@@ -337,3 +363,164 @@ class TestAssignmentOperators:
         once = mask_literals("password := 'a'")
         assert mask_literals(once) == once
         assert once != mask_literals("password := 'b'")
+
+
+class TestDollarQuotedConninfo:
+    """A libpq conninfo in a dollar-quoted value is the shape ``dblink_connect`` and
+    ``postgres_fdw`` actually use, and it must not survive into a published report. The
+    discriminator against a routine body is structural: a conninfo is nothing but ``key=value``
+    pairs, code has bare tokens."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT dblink_connect($$host=db1 user=u password=s3cret dbname=d$$)",
+            "SELECT dblink_connect($conn$host=db1 password=s3cret$conn$)",
+            "SELECT dblink_connect($$host = db1 password = s3cret$$)",
+            "OPTIONS (conninfo $$host=db1 sslkey=/k/p password=s3cret$$)",
+        ],
+        ids=["anonymous-tag", "named-tag", "spaced-equals", "fdw-options"],
+    )
+    def test_a_conninfo_in_a_dollar_quoted_value_is_masked(self, sql):
+        out = mask_literals(sql)
+        assert "s3cret" not in out
+        assert MASK_PREFIX in out
+
+    def test_the_quote_tag_and_the_surrounding_sql_survive(self):
+        out = mask_literals("SELECT dblink_connect($conn$host=db1 password=s3cret$conn$) FROM t")
+        assert out.startswith("SELECT dblink_connect($conn$")
+        assert out.endswith("$conn$) FROM t")
+
+    def test_the_dollar_and_single_quoted_forms_mask_identically(self):
+        # Rewriting a conninfo from '...' to $$...$$ changes no credential, so it must not read
+        # as drift.
+        conninfo = "host=db1 user=u password=s3cret dbname=d"
+        assert mask_literals(f"f($${conninfo}$$)") == "f($$***:dfac0471847d$$)"
+        assert mask_literals(f"f('{conninfo}')") == "f('***:dfac0471847d')"
+
+    def test_a_routine_body_mentioning_a_password_column_is_still_untouched(self):
+        # The regression this pairs with: restoring the wide predicate here masked the whole body.
+        for sql in (
+            "$$ BEGIN UPDATE t SET password = other_col; END $$",
+            "$$ BEGIN IF password = old THEN RAISE; END IF; END $$",
+            "$body$ SELECT password = $1 FROM users $body$",
+        ):
+            assert mask_literals(sql) == sql
+
+    def test_a_conninfo_with_no_secret_keyword_is_untouched(self):
+        sql = "SELECT dblink_connect($$host=db1 user=u dbname=d$$)"
+        assert mask_literals(sql) == sql
+
+    def test_an_unterminated_dollar_quote_is_still_judged_and_masked(self):
+        # The tokenizer runs an unterminated dollar quote to the end of the input, so the whole
+        # remainder is one value; it is masked and left unterminated.
+        out = mask_literals("x = $$host=h password=s3cret")
+        assert "s3cret" not in out
+        assert out.startswith("x = $$") and MASK_PREFIX in out
+        assert mask_literals(out) == out
+
+    def test_masking_a_dollar_conninfo_is_idempotent_and_distinct(self):
+        once = mask_literals("f($$host=h password=aaa$$)")
+        assert mask_literals(once) == once
+        assert once != mask_literals("f($$host=h password=bbb$$)")
+
+
+class TestCommentsKeepTheirText:
+    """A comment carries no SQL meaning, so only the offending span is masked. Destroying the
+    whole comment costs the reviewer the context the diff exists to show."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "-- set password = NULL for disabled users",
+            "/* column password = legacy bcrypt; do not reuse */",
+            "-- clone with: git clone git://git@github.com/org/repo",
+            "-- see https://wiki.example.com/db/password-rotation",
+            "/* mail ops@example.com before changing the password */",
+            "$$ BEGIN -- password = NULL means disabled\n x(1); END $$",
+        ],
+        ids=["prose-null", "prose-column", "git-url", "doc-url", "mailto-ish", "in-a-body"],
+    )
+    def test_a_comment_with_no_credential_is_byte_identical(self, sql):
+        assert mask_literals(sql) == sql
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "-- replicated from postgresql://replica1.example.com/app",
+            "-- see postgres://reporting@warehouse/app for the read model",
+        ],
+        ids=["no-userinfo", "user-but-no-password"],
+    )
+    def test_a_dsn_in_a_comment_with_no_password_keeps_its_text(self, sql):
+        # Deliberate, and narrower than ``literals.looks_like_credential_url``: in a comment the
+        # host name is context a reviewer needs and there is no secret in it. A secret in the
+        # userinfo (``u:s3cret@``) is masked; a userinfo without a ``:`` names an account.
+        assert mask_literals(sql) == sql
+
+    def test_only_the_credential_span_of_a_comment_is_replaced(self):
+        out = mask_literals("-- rotate password=s3cret then restart the pooler\n")
+        assert "s3cret" not in out
+        assert out == "-- rotate ***:0c8ea7f07be8 then restart the pooler\n"
+
+    def test_a_quoted_value_with_a_space_is_masked_whole(self):
+        # The keyword pass must run before the token scan. The token scan alone masks
+        # ``password='P@ss`` and leaves ``word'`` behind, which is the leak the order prevents.
+        out = mask_literals("-- conninfo: password='P@ss word' host=db1")
+        assert "P@ss" not in out and "word" not in out
+        assert out == "-- conninfo: ***:2bcef52e5215 host=db1"
+
+    def test_a_multi_line_block_comment_keeps_its_line_breaks(self):
+        out = mask_literals("/* line one\n   dsn postgresql://u:s3cret@h/db\n   line three */")
+        assert "s3cret" not in out
+        assert out == "/* line one\n   dsn ***:2e8037391e21\n   line three */"
+
+    def test_a_comment_in_a_routine_body_survives_around_the_mask(self):
+        out = mask_literals("$$ BEGIN -- dsn postgresql://u:s3cret@h/db\n x(1); END $$")
+        assert out == "$$ BEGIN -- dsn ***:2e8037391e21\n x(1); END $$"
+
+
+class TestEmptyLiterals:
+    """The sha256 of the empty string is a published constant, so masking an empty value would
+    announce that the password is empty. An empty literal holds no secret."""
+
+    @pytest.mark.parametrize(
+        "sql", ["password = ''", "password := ''", "password = $$$$", "password = E''"]
+    )
+    def test_an_empty_value_after_a_keyword_is_left_alone(self, sql):
+        assert mask_literals(sql) == sql
+
+    def test_the_well_known_empty_digest_never_appears(self):
+        assert "e3b0c44298fc" not in mask_literals("password = ''")
+
+
+class TestStability:
+    """A digest that differs between runs turns an unchanged value into reported drift, and a
+    changed credential into 'no change'. That silent-miss class is the one this tool has already
+    shipped once."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "password = $$hunter2$$",
+            "password = $tag$hunter2$tag$",
+            "f($$host=h password=hunter2$$)",
+        ],
+        ids=["forced-anonymous", "forced-named", "conninfo"],
+    )
+    def test_remasking_a_dollar_quoted_value_is_a_fixed_point(self, sql):
+        once = mask_literals(sql)
+        assert "hunter2" not in once
+        twice = mask_literals(once)
+        assert twice == once
+        assert mask_literals(twice) == once
+
+    def test_a_nest_deeper_than_the_cap_does_not_recurse_to_the_limit(self):
+        # The depth cap is what keeps a pathological nest from raising RecursionError. 5_000 is
+        # far past the cap and far past Python's frame limit, so removing the cap breaks here.
+        depth = 5_000
+        tags = [f"$t{index}$" for index in range(depth)]
+        sql = "".join(tags) + "'postgresql://u:s3cret@h/db'" + "".join(reversed(tags))
+        out = mask_literals(sql)
+        assert "s3cret" not in out
+        assert out.startswith("$t0$") and out.endswith("$t0$")
