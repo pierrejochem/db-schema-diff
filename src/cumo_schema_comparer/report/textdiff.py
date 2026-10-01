@@ -61,22 +61,26 @@ def unified(
     Empty when the two are equivalent — including when both are absent — so a caller can tell
     "nothing to show" from "a change I should render".
     """
+    if max_lines is not None and max_lines < 0:
+        max_lines = 0
+
     before, after = _lines(master), _lines(target)
     if before == after:
         return ()
 
-    raw = difflib.unified_diff(before, after, n=context, lineterm="")
+    raw = list(difflib.unified_diff(before, after, n=context, lineterm=""))
+    # The first two lines are difflib's file headers. Filtering them by prefix instead would
+    # discard a removed line that starts with "--" — a SQL comment — because difflib prefixes it
+    # to "---". Dropping them by position cannot confuse content with a header.
     out: list[DiffLine] = []
-    for line in raw:
-        if line.startswith(("---", "+++")):
-            # File headers name nothing here: both sides are the same object.
-            continue
+    for line in raw[2:]:
         kind = _PREFIXES.get(line[:1], DiffKind.CONTEXT)
         out.append(DiffLine(kind=kind, text=line[1:] if kind is not DiffKind.HUNK else line))
 
     if max_lines is not None and len(out) > max_lines:
         dropped = len(out) - max_lines
         out = out[:max_lines]
-        out.append(DiffLine(kind=DiffKind.ELIDED, text=f"… {dropped} more lines"))
+        plural = "line" if dropped == 1 else "lines"
+        out.append(DiffLine(kind=DiffKind.ELIDED, text=f"… {dropped} more {plural}"))
 
     return tuple(out)
