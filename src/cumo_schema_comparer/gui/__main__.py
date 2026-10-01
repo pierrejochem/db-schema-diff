@@ -23,9 +23,9 @@ def main() -> int:
         )
         return 2
 
-    from .app import run  # type: ignore[import-untyped]
+    from .app import run
 
-    return run()  # type: ignore[no-any-return]
+    return run()
 
 
 if __name__ == "__main__":

@@ -93,8 +93,9 @@ strict = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = "keyring"
-# Optional (gui extra); absent from the plain dev environment.
+module = ["keyring", "slint"]
+# Optional (gui extra); absent from the plain dev environment, where mypy runs. Both ship their
+# own types, so this is about them not being installed rather than about them being untyped.
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

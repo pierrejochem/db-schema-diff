@@ -108,7 +108,7 @@ from ..config.model import ComparerConfig, SourceRef
 from ..config.secrets import Dsn
 from ..diff.changelog import ChangelogOptions
 from ..diff.ignores import IgnoreRuleSet
-from ..diff.model import ComparisonReport
+from ..diff.model import ComparisonReport, DiffOptions
 from ..errors import MissingCredentialsError
 from ..report.json_report import load_report
 from ..runner import CaptureResult, ConnectionStatus
@@ -285,6 +285,7 @@ class Session:
         skip_liquibase: bool = False,
         sequential: bool = False,
         baseline: ComparisonReport | None = None,
+        show_cosmetic: bool = False,
     ) -> Coroutine[Any, Any, ComparisonReport]:
         """Capture every source and build the report.
 
@@ -293,8 +294,25 @@ class Session:
         a cancelled run. One source failing does not stop the others: it becomes a skipped target.
         """
         claim = self._claim()
-        work = self._compare(ignores, changelog_options, skip_liquibase, sequential, baseline)
+        work = self._compare(
+            ignores, changelog_options, skip_liquibase, sequential, baseline, show_cosmetic
+        )
         return self._watched(claim, work, self._run(claim, work))
+
+    def _diff_options(self, show_cosmetic: bool) -> DiffOptions:
+        """The same options the command line builds, plus the one flag only a caller knows.
+
+        ``show_cosmetic`` has no home in the config file: it is a per-run choice, exactly as
+        ``--show-cosmetic`` is on the command line.
+        """
+        options = self._config.options
+        return DiffOptions(
+            ignore_column_order=options.ignore_column_order,
+            include_owners=options.include_owners,
+            include_comments=options.include_comments,
+            include_grants=options.include_grants,
+            show_cosmetic=show_cosmetic,
+        )
 
     async def _compare(
         self,
@@ -303,6 +321,7 @@ class Session:
         skip_liquibase: bool,
         sequential: bool,
         baseline: ComparisonReport | None,
+        show_cosmetic: bool = False,
     ) -> ComparisonReport:
         captures = await self._capture_sources(sequential, skip_liquibase)
         report = await self._uncancellable(
@@ -313,6 +332,7 @@ class Session:
                     captures,
                     ignores=ignores,
                     changelog_options=changelog_options,
+                    diff_options=self._diff_options(show_cosmetic),
                 )
             )
         )
