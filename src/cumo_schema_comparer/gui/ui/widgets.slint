@@ -9,7 +9,7 @@ export component LabelledField inherits HorizontalLayout {
     in property <string> placeholder;
     callback edited(string);
 
-    spacing: 8px;
+    spacing: Tokens.space-2;
     Text {
         text: root.label;
         width: 140px;
@@ -29,7 +29,7 @@ export component LabelledNumber inherits HorizontalLayout {
     in-out property <int> value;
     callback edited(int);
 
-    spacing: 8px;
+    spacing: Tokens.space-2;
     Text {
         text: root.label;
         width: 220px;
@@ -52,7 +52,7 @@ export component LabelledCheck inherits HorizontalLayout {
     in-out property <bool> value;
     callback toggled(bool);
 
-    spacing: 8px;
+    spacing: Tokens.space-2;
     CheckBox { checked <=> root.value; toggled => { root.toggled(self.checked); } }
     Text {
         text: root.label;
@@ -68,6 +68,8 @@ export component StatusLine inherits Rectangle {
 
     height: root.message == "" ? 0px : 28px;
     background: root.is-error ? Tokens.danger-surface : Tokens.success-surface;
+    border-width: root.message == "" ? 0px : Tokens.hairline-width;
+    border-color: root.is-error ? Tokens.danger : Tokens.success;
     Text {
         text: root.message;
         color: root.is-error ? Tokens.danger : Tokens.success;

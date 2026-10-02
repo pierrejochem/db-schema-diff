@@ -45,8 +45,8 @@ export component ConfigTab inherits ScrollView {
     callback save-config();
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 12px;
+        padding: Tokens.space-3;
+        spacing: Tokens.space-3;
 
         LabelledField {
             label: "name";
@@ -58,14 +58,14 @@ export component ConfigTab inherits ScrollView {
         GroupBox {
             title: "Sources";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 for row[i] in root.sources: Rectangle {
                     background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     VerticalLayout {
-                        padding: 6px;
-                        spacing: 4px;
+                        padding: Tokens.space-2;
+                        spacing: Tokens.space-1;
                         HorizontalLayout {
-                            spacing: 8px;
+                            spacing: Tokens.space-2;
                             Text {
                                 text: row.is_master ? "master" : "target";
                                 width: 60px;
@@ -101,7 +101,7 @@ export component ConfigTab inherits ScrollView {
                             }
                         }
                         HorizontalLayout {
-                            spacing: 8px;
+                            spacing: Tokens.space-2;
                             LineEdit {
                                 text: row.host;
                                 placeholder-text: "host (documentation only)";
@@ -119,7 +119,7 @@ export component ConfigTab inherits ScrollView {
                             }
                         }
                         HorizontalLayout {
-                            spacing: 8px;
+                            spacing: Tokens.space-2;
                             LineEdit {
                                 text: row.schema_map;
                                 placeholder-text: "schema_map: master=target, master=target";
@@ -149,7 +149,7 @@ export component ConfigTab inherits ScrollView {
                     }
                 }
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Tokens.space-2;
                     Button { text: "Add target"; clicked => { root.add-target(); } }
                     Button { text: "Check all"; clicked => { root.check-all(); } }
                 }
@@ -166,7 +166,7 @@ export component ConfigTab inherits ScrollView {
         GroupBox {
             title: "Options";
             VerticalLayout {
-                spacing: 4px;
+                spacing: Tokens.space-1;
                 LabelledNumber {
                     label: "connect_timeout_seconds";
                     value <=> root.connect-timeout-seconds;
@@ -188,7 +188,7 @@ export component ConfigTab inherits ScrollView {
                     edited(v) => { root.source-changed("", "max_workers", v); }
                 }
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Tokens.space-2;
                     Text {
                         text: "fail_on";
                         width: 220px;
@@ -240,7 +240,7 @@ export component ConfigTab inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             Button { text: "Validate"; clicked => { root.validate-config(); } }
             Button { text: "Save"; primary: true; clicked => { root.save-config(); } }
         }

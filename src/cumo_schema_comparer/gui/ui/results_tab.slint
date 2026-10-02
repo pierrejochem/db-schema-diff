@@ -41,8 +41,8 @@ export component FindingLine inherits Rectangle {
     TouchArea { clicked => { root.clicked(); } }
 
     HorizontalLayout {
-        padding: 4px;
-        spacing: 8px;
+        padding: Tokens.space-1;
+        spacing: Tokens.space-2;
         Text {
             text: root.data.target;
             width: 90px;
@@ -219,16 +219,18 @@ export component ResultsTab inherits ScrollView {
     }
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 12px;
+        padding: Tokens.space-3;
+        spacing: Tokens.space-3;
 
         Rectangle {
-            height: 44px;
-            border-radius: 4px;
+            height: 56px;
+            border-radius: Tokens.radius-card;
+            border-width: Tokens.hairline-width;
+            border-color: root.banner-text-color;
             background: root.banner-background;
             Text {
-                x: 12px;
-                width: parent.width - 24px;
+                x: Tokens.space-4;
+                width: parent.width - 2 * Tokens.space-4;
                 text: root.running ? "Run in progress…"
                     : root.verdict == "" ? "No comparison has finished yet." : root.verdict;
                 vertical-alignment: center;
@@ -242,7 +244,7 @@ export component ResultsTab inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             filter-edit := LineEdit {
                 text <=> root.filter-text;
                 placeholder-text: "filter by object path, e.g. invoice";
@@ -267,9 +269,10 @@ export component ResultsTab inherits ScrollView {
 
         Rectangle {
             height: root.findings-summary == "" ? 0px : 28px;
+            border-radius: Tokens.radius-subtle;
             background: root.filter-hides-rows ? Tokens.caution-surface : transparent;
             Text {
-                x: 8px;
+                x: Tokens.space-3;
                 text: root.findings-summary;
                 vertical-alignment: center;
                 font-weight: root.filter-hides-rows ? Tokens.weight-bold : Tokens.weight-regular;
@@ -279,12 +282,19 @@ export component ResultsTab inherits ScrollView {
 
         GroupBox {
             title: "Findings";
-            VerticalLayout {
-                spacing: 2px;
-                for row[i] in root.findings: FindingLine {
-                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
-                    data: row;
-                    clicked => { root.choose-row(i); }
+            Rectangle {
+                background: Tokens.card;
+                border-radius: Tokens.radius-card;
+                border-width: Tokens.hairline-width;
+                border-color: Tokens.hairline;
+                VerticalLayout {
+                    padding: Tokens.space-1;
+                    spacing: Tokens.space-1;
+                    for row[i] in root.findings: FindingLine {
+                        background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
+                        data: row;
+                        clicked => { root.choose-row(i); }
+                    }
                 }
             }
         }
@@ -292,7 +302,7 @@ export component ResultsTab inherits ScrollView {
         GroupBox {
             title: "Detail";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 heading-text := Text {
                     text: root.selected-heading == "" ? "Select a finding to see its detail."
                         : root.selected-heading;
@@ -304,7 +314,7 @@ export component ResultsTab inherits ScrollView {
                     overflow: elide;
                 }
                 for d in root.selected-deltas: HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Tokens.space-2;
                     Text {
                         text: d.attribute;
                         width: 160px;
@@ -348,6 +358,7 @@ export component ResultsTab inherits ScrollView {
                                 color: Tokens.heading;
                             }
                             Rectangle {
+                                border-radius: Tokens.radius-subtle;
                                 background: line.kind == "added" || line.kind == "removed"
                                     ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
                                 Text {
@@ -364,7 +375,7 @@ export component ResultsTab inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             Text { text: "reports to"; vertical-alignment: center; color: Tokens.muted; }
             output-edit := LineEdit { text <=> root.output-directory; placeholder-text: "output directory"; }
             Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }

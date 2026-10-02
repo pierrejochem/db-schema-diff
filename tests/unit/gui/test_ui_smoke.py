@@ -147,6 +147,21 @@ def test_type_is_named_by_token_and_never_by_literal(markup):
             assert "Tokens." in value, f"{markup}: {attribute}: {value.strip()} is not a token"
 
 
+@pytest.mark.parametrize("markup", sorted(p.name for p in UI.glob("*.slint")))
+def test_spacing_and_shape_come_from_the_grid(markup):
+    """Padding, gaps, radii and hairlines are design decisions, not local taste.
+
+    Column widths stay as literals — they are sized to their content, not to the grid — but anything
+    that sets rhythm or shape reads a token, so the 4px grid and the two radii hold across tabs.
+    """
+    code = "\n".join(line.split("//")[0] for line in (UI / markup).read_text().splitlines())
+    for attribute in ("padding", "spacing", "border-radius", "border-width"):
+        for value in re.findall(rf"\b{attribute}:\s*([^;]+);", code):
+            if markup == "tokens.slint" or value.strip() == "0px":
+                continue
+            assert "Tokens." in value, f"{markup}: {attribute}: {value.strip()} is not a token"
+
+
 def test_the_window_sets_the_brand_defaults():
     # std-widgets expose font-size but not font-family, so a LineEdit's face can only be set
     # through the window's default. Without this, controls render in the system face while the

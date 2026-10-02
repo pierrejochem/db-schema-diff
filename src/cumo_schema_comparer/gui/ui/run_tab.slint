@@ -18,8 +18,8 @@ export component ProgressLine inherits Rectangle {
     in property <ProgressRow> data;
 
     HorizontalLayout {
-        padding: 6px;
-        spacing: 12px;
+        padding: Tokens.space-2;
+        spacing: Tokens.space-3;
         Text {
             text: root.data.label;
             width: 180px;
@@ -79,15 +79,15 @@ export component RunTab inherits ScrollView {
     }
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 12px;
+        padding: Tokens.space-3;
+        spacing: Tokens.space-3;
 
         GroupBox {
             title: "Options";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Tokens.space-2;
                     Text {
                         text: "fail on";
                         width: 140px;
@@ -100,7 +100,7 @@ export component RunTab inherits ScrollView {
                     }
                 }
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Tokens.space-2;
                     Text {
                         text: "baseline";
                         width: 140px;
@@ -123,7 +123,7 @@ export component RunTab inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             Button {
                 text: root.running ? "Running…" : "Run comparison";
                 primary: true;
@@ -140,7 +140,7 @@ export component RunTab inherits ScrollView {
         GroupBox {
             title: "Sources";
             VerticalLayout {
-                spacing: 2px;
+                spacing: Tokens.space-1;
                 for row[i] in root.progress: ProgressLine {
                     background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
