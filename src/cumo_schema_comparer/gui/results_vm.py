@@ -23,6 +23,7 @@ from ..diff.severity import Severity
 from ..model.kinds import KIND_ORDER
 from ..report.base import Reporter, render_to_path
 from ..report.html import HtmlReporter
+from ..report.html import _diff_for as diff_for  # one decision, shared with the HTML report
 from ..report.json_report import JsonReporter
 from ..report.junit import JUnitReporter
 from .errors import GuiError
@@ -102,17 +103,78 @@ class ResultsModel:
         means no severity filter, and an empty set means nothing is shown. Severity names are
         matched case-insensitively.
         """
+        return [
+            _row(target, finding)
+            for target, finding in self._filtered(needle=needle, severities=severities)
+        ]
+
+    def delta_rows(
+        self,
+        index: int,
+        *,
+        needle: str = "",
+        severities: frozenset[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """The selected finding's deltas, as complete dicts for a Slint model.
+
+        ``index`` is into the filtered rows, because that is what the user clicked. An index that
+        no longer resolves yields nothing rather than describing the wrong finding. ``master`` and
+        ``target`` are the compared values; the body text belongs in :meth:`diff_rows`.
+        """
+        finding = self._selected(index, needle=needle, severities=severities)
+        if finding is None:
+            return []
+        return [
+            {
+                "attribute": delta.attribute,
+                "master": delta.master_value or "",
+                "target": delta.target_value or "",
+                "severity": delta.severity.label,
+                "note": delta.note or "",
+                "is_body": delta.body,
+            }
+            for delta in finding.deltas
+        ]
+
+    def diff_rows(
+        self,
+        index: int,
+        *,
+        needle: str = "",
+        severities: frozenset[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """The diff lines for the selected finding's body deltas, as complete dicts."""
+        finding = self._selected(index, needle=needle, severities=severities)
+        if finding is None:
+            return []
+        return [
+            {"kind": line.kind.value, "text": line.text}
+            for delta in finding.deltas
+            for line in diff_for(delta)
+        ]
+
+    def _filtered(
+        self, *, needle: str, severities: frozenset[str] | None
+    ) -> list[tuple[TargetDiff, ObjectFinding]]:
         text = needle.strip().lower()
         wanted = None if severities is None else {name.lower() for name in severities}
-        rows: list[FindingRow] = []
+        rows: list[tuple[TargetDiff, ObjectFinding]] = []
         for target in self._report.targets:
             for finding in (*_ordered(target.findings), *_ordered(target.ignored)):
                 if text and text not in finding.key.path.lower():
                     continue
                 if wanted is not None and finding.severity.label not in wanted:
                     continue
-                rows.append(_row(target, finding))
+                rows.append((target, finding))
         return rows
+
+    def _selected(
+        self, index: int, *, needle: str, severities: frozenset[str] | None
+    ) -> ObjectFinding | None:
+        rows = self._filtered(needle=needle, severities=severities)
+        if not 0 <= index < len(rows):
+            return None
+        return rows[index][1]
 
     def changelog_lines(self, target: str) -> list[str]:
         """The Liquibase section for one target, headline first."""
