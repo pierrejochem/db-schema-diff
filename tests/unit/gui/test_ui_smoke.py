@@ -1247,3 +1247,16 @@ def test_the_rail_carries_the_config_block():
     assert 'Button { text: "Open…"' in rail
     # Blue on navy fails contrast, so rail labels are lime; a plain Eyebrow here would be a defect.
     assert "Eyebrow {" not in rail
+
+
+def test_the_master_accent_edge_is_clipped_to_the_card_corners():
+    """A square bar on a rounded card overhangs its two left corners.
+
+    The bar cannot round itself out of this: 12px of corner radius on a 4px-wide rectangle clamps
+    into a tapered sliver. The card clips instead, so the bar is cut along the corner arc.
+    """
+    source = (UI / "config_tab.slint").read_text()
+    card = source[source.index("for row[i] in root.sources: Rectangle {") :]
+    card = card[: card.index("background: Tokens.lime;")]
+    assert "border-radius: Tokens.radius-card;" in card
+    assert "clip: true;" in card, "the source card must clip, or the accent edge overhangs it"

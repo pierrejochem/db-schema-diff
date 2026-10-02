@@ -88,6 +88,11 @@ export component ConfigTab inherits ScrollView {
                 border-radius: Tokens.radius-card;
                 border-width: Tokens.hairline-width;
                 border-color: row.is_master ? Tokens.heading : Tokens.hairline;
+                // Clipped so the accent edge below follows the card's corners. A square bar at the
+                // card's own left edge otherwise overhangs the two rounded corners. Giving the bar
+                // its own corner radius does not work: 12px of radius on a 4px-wide rectangle
+                // clamps into a tapered sliver rather than a bar that hugs the corner.
+                clip: true;
                 // The master is the reference every target is read against, so it carries the
                 // accent edge as well as the word.
                 Rectangle {
