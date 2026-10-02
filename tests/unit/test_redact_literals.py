@@ -23,7 +23,7 @@ from cumo_schema_comparer.config.model import SourceRef
 from cumo_schema_comparer.diff.attributes import SPECS
 from cumo_schema_comparer.model.keys import ObjectKey
 from cumo_schema_comparer.model.kinds import ObjectKind
-from cumo_schema_comparer.model.objects import Index, IndexKey, RawValues, Routine
+from cumo_schema_comparer.model.objects import Index, IndexKey, RawValues, Routine, UserType
 from tests.support.builders import col, inventory, table
 
 #: The definition-bearing attributes. The same ``body=True`` flag drives masking, the choice of a
@@ -111,7 +111,7 @@ EXPECTED_MASKED_FIELDS = {
     ObjectKind.MATVIEW: ("definition",),
     ObjectKind.ROUTINE: ("body", "argument_defaults", "arguments", "config"),
     ObjectKind.TRIGGER: ("condition", "arguments"),
-    ObjectKind.ENUM_TYPE: ("constraints", "default"),
+    ObjectKind.ENUM_TYPE: ("constraints", "default", "labels"),
     ObjectKind.DOMAIN_TYPE: ("constraints", "default"),
     ObjectKind.COMPOSITE_TYPE: ("constraints", "default"),
     ObjectKind.RANGE_TYPE: ("constraints", "default"),
@@ -159,6 +159,43 @@ def test_an_expression_index_key_is_masked():
     assert "s3cret" not in repr(masked.keys)
     assert "s3cret" not in masked.structure
     assert masked.keys[0].is_expression is True
+
+
+def test_an_enum_label_carrying_a_connection_string_is_masked():
+    """The eighth leak path. A label is free text a user wrote, and the only one left.
+
+    Every other unmasked attribute of every kind is an identifier, a type name, a flag or an
+    enumeration; reloptions look like a setting but PostgreSQL rejects any parameter it does not
+    recognise, and every one it recognises is a boolean, an integer or an enum.
+    """
+    k = ObjectKey(ObjectKind.ENUM_TYPE, "public", "sync_mode")
+    enum = UserType(key=k, typtype="e", labels=("ok", "postgresql://u:s3cretXXX@h/db"))
+    masked = redact_inventory(inventory({k: enum})).objects[k]
+
+    assert masked.labels[0] == "ok", "an ordinary label must survive"
+    assert masked.labels[1].startswith("***:")
+    assert "s3cret" not in redact_inventory(inventory({k: enum})).to_json()
+    # The order is the type's comparison operator, so it must not move.
+    assert len(masked.labels) == 2
+
+
+def test_a_masked_label_still_compares_the_same_way():
+    # Masking is stable, so an unchanged credential is not drift and a rotated one still is.
+    def labels(secret):
+        k = ObjectKey(ObjectKind.ENUM_TYPE, "public", "e")
+        enum = UserType(key=k, typtype="e", labels=(f"postgresql://u:{secret}@h/db",))
+        return redact_inventory(inventory({k: enum})).objects[k].labels
+
+    assert labels("one") == labels("one")
+    assert labels("one") != labels("two")
+
+
+def test_an_apostrophe_in_a_label_survives_the_quoting():
+    # The label is judged as the literal it was written as, so it has to be quoted and unquoted
+    # again; a naive round trip doubles or eats the apostrophe.
+    k = ObjectKey(ObjectKind.ENUM_TYPE, "public", "e")
+    enum = UserType(key=k, typtype="e", labels=("it's fine",))
+    assert redact_inventory(inventory({k: enum})).objects[k].labels == ("it's fine",)
 
 
 def test_a_routine_config_setting_is_masked():

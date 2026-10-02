@@ -234,7 +234,7 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 | `--html PATH` | Write the standalone HTML report. |
 | `--out-dir DIR` | Write all three machine-readable reports into one directory. |
 | `--sequential` | Capture one source at a time, for debugging. |
-| `--redact-literals` / `--no-redact-literals` | Mask credential-shaped string literals in definition text. **On by default**; see below. |
+| `--redact-literals` / `--no-redact-literals` | Mask credential-shaped string literals in definition text and in enum labels. **On by default**; see below. |
 
 ## Desktop application
 
@@ -383,8 +383,8 @@ diff is as safe as the compared value. The HTML report and the GUI's Results tab
 A delta whose text is short and single-line stays a plain before/after row.
 
 Because that text can contain a hardcoded connection string, `compare` and `inventory` mask
-credential-shaped string literals (column defaults, view bodies, check expressions, routine bodies)
-at capture time, before anything is written. A mask keeps a short digest (`'***:3fa9c2d41b07'`), so
+credential-shaped string literals (column defaults, view bodies, check expressions, routine
+bodies) and enum labels at capture time, before anything is written. A mask keeps a short digest (`'***:3fa9c2d41b07'`), so
 two *different* secrets still compare as different and a rotated one still shows as drift.
 
 `--no-redact-literals` shows the real text, for inspecting a database locally. **An inventory or

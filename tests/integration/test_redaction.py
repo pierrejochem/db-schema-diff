@@ -156,3 +156,25 @@ def test_a_secret_in_a_view_body_survives_being_shown_as_raw_text(tmp_path, secr
     assert "\n" in delta["master_display"] and "\n" in delta["target_display"]
     assert SECRET not in delta["target_display"]
     assert "***:" in delta["target_display"]
+
+
+def test_an_enum_label_is_masked_in_every_output(tmp_path, secret_databases):
+    """A credential-shaped enum label, end to end.
+
+    ``test_a_secret_is_masked_in_every_output`` covers the same artifacts; this names the path, so
+    a regression says which of the eight it was.
+    """
+    console, out_dir = invoke(tmp_path, secret_databases)
+    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    delta = next(
+        d
+        for target in report["targets"]
+        for f in target["findings"]
+        if f["path"] == "cumo-invoicing.dunning_stage"
+        for d in f.get("deltas", [])
+        if d["attribute"] == "enum_type.labels"
+    )
+    assert SECRET not in delta["target"]
+    assert "***:" in delta["target"]
+    assert "LEGAL" in delta["target"], "the ordinary labels must survive"
+    assert SECRET not in console

@@ -162,7 +162,8 @@ def cli(ctx: click.Context, verbose: int, quiet: bool, debug: bool) -> None:
     default=True,
     help=(
         "Mask credential-shaped string literals in definition text (defaults, view bodies, "
-        "check expressions, routine bodies) before they reach any output. On by default: a "
+        "check expressions, routine bodies) and in enum labels before they reach any output. "
+        "On by default: a "
         "report is often uploaded as a CI artifact, and a hardcoded connection string in a "
         "function body would travel with it. Masks keep a short digest, so two different "
         "secrets still compare as different. Pass --no-redact-literals to inspect the real "
@@ -282,7 +283,8 @@ def compare_command(
     default=True,
     help=(
         "Mask credential-shaped string literals in definition text (defaults, view bodies, "
-        "check expressions, routine bodies) before they reach any output. On by default: a "
+        "check expressions, routine bodies) and in enum labels before they reach any output. "
+        "On by default: a "
         "report is often uploaded as a CI artifact, and a hardcoded connection string in a "
         "function body would travel with it. Masks keep a short digest, so two different "
         "secrets still compare as different. Pass --no-redact-literals to inspect the real "

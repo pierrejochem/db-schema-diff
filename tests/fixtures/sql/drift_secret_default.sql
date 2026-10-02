@@ -35,3 +35,7 @@ CREATE OR REPLACE VIEW "cumo-invoicing".open_invoice AS
 SELECT * FROM "cumo-invoicing".invoice_summary
  WHERE status::text = 'OPEN'::text
    AND 'postgresql://u:s3cret@h/db' <> '';
+
+-- An enum label. Not definition text at all: a label is free text the user wrote, stored bare, so
+-- it has to be judged as the literal it came from or it reaches every output verbatim.
+ALTER TYPE "cumo-invoicing".dunning_stage ADD VALUE 'postgresql://u:s3cret@h/db';

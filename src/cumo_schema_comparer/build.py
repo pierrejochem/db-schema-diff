@@ -109,6 +109,12 @@ _EXTRA_TEXT_FIELDS: Mapping[ObjectKind, tuple[str, ...]] = {
     # ``keys`` holds IndexKey objects whose ``expression`` is parsed from the same text as
     # ``predicate``; masking one and not the other would print the secret one slot later.
     ObjectKind.INDEX: ("keys",),
+    # An enum's labels are the only *free text* a user writes outside a definition: every other
+    # unmasked attribute of every kind is an identifier, a type name, a flag or an enumeration.
+    # ``CREATE TYPE e AS ENUM ('ok','postgresql://u:s3cret@h/db')`` put the label verbatim into the
+    # console, report.json, report.html, junit.xml, the redacted inventory and the GUI's pane.
+    # Only enums have labels; the other three type kinds always have none.
+    ObjectKind.ENUM_TYPE: ("labels",),
 }
 
 
@@ -148,17 +154,43 @@ def _mask_value(value: Any) -> Any:
 #: literal, so ``mask_literals`` would see no literal in it at all.
 _SETTING_FIELDS = frozenset({"config"})
 
+#: Fields holding a bare value that was *written* as a SQL literal — an enum label. Same problem as
+#: a setting and the same answer: judge it as the literal it came from.
+_BARE_LITERAL_FIELDS = frozenset({"labels"})
+
+
+def _as_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _unquote(masked: str) -> str:
+    return masked[1:-1].replace("''", "'")
+
 
 def _mask_setting(entry: str) -> str:
     """Mask the value of one ``name=value`` setting by judging it as the literal it was set as."""
     name, sep, value = entry.partition("=")
     if not sep:
         return entry
-    masked = mask_literals(f"{name} = '{value.replace(chr(39), chr(39) * 2)}'") or ""
+    masked = mask_literals(f"{name} = {_as_literal(value)}") or ""
     prefix = f"{name} = '"
     if not (masked.startswith(prefix) and masked.endswith("'")):
         return entry
-    return f"{name}={masked[len(prefix) : -1].replace(chr(39) * 2, chr(39))}"
+    return f"{name}={_unquote(masked[len(prefix) - 1 :])}"
+
+
+def _mask_bare_literal(value: str) -> str:
+    """Mask one value stored bare that was written as a quoted literal, keeping it bare.
+
+    ``mask_literals`` on a bare label is a no-op: it sees no literal, because there are no quotes
+    to find. Quoting it first is what makes the predicate apply, exactly as :func:`_mask_setting`
+    does for a ``name=value`` setting. The name is not needed — a label follows no keyword, so only
+    its own credential shape can condemn it, which is the right test for free text.
+    """
+    masked = mask_literals(_as_literal(value)) or ""
+    if len(masked) < 2 or not (masked.startswith("'") and masked.endswith("'")):
+        return value  # pragma: no cover - mask_literals keeps the quotes it was given
+    return _unquote(masked)
 
 
 def _redact_object(obj: Any, fields: tuple[str, ...]) -> Any:
@@ -167,6 +199,8 @@ def _redact_object(obj: Any, fields: tuple[str, ...]) -> Any:
         current = getattr(obj, name)
         if name in _SETTING_FIELDS:
             masked = tuple(_mask_setting(e) for e in current)
+        elif name in _BARE_LITERAL_FIELDS:
+            masked = tuple(_mask_bare_literal(e) for e in current)
         else:
             masked = _mask_value(current)
         if masked != current:
