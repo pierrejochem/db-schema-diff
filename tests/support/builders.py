@@ -20,7 +20,10 @@ from cumo_schema_comparer.model.changelog import (
 )
 from cumo_schema_comparer.model.inventory import Inventory, SourceInfo
 from cumo_schema_comparer.model.keys import ObjectKey, column_key, table_key
-from cumo_schema_comparer.model.objects import Column, RawValues, Table
+from cumo_schema_comparer.model.kinds import ObjectKind
+from cumo_schema_comparer.model.objects import Column, RawValues, Routine, Table
+from cumo_schema_comparer.normalize.routines import body_hash as hash_body
+from cumo_schema_comparer.normalize.routines import canonical_body
 
 CAPTURED_AT = datetime(2026, 1, 15, 9, 30, tzinfo=UTC)
 
@@ -102,6 +105,34 @@ def table(
             spec["ordinal"] = position
         objects[ckey] = Column(key=ckey, **spec)
     return objects
+
+
+_UNSET: Any = object()
+
+
+def routine(
+    schema: str,
+    name: str,
+    source_text: str | None = None,
+    *,
+    body: Any = _UNSET,
+    body_hash: Any = _UNSET,
+    **overrides: Any,
+) -> dict[ObjectKey, Any]:
+    """A routine built from its source text, the way the inventory builder does it.
+
+    ``body`` and ``body_hash`` default to the canonical form of ``source_text`` and its hash. Pass
+    either explicitly (including ``None``) to simulate a version 1 capture, which has no body.
+    """
+    key = ObjectKey(ObjectKind.ROUTINE, schema, name)
+    return {
+        key: Routine(
+            key=key,
+            body=canonical_body(source_text) if body is _UNSET else body,
+            body_hash=hash_body(source_text) if body_hash is _UNSET else body_hash,
+            **overrides,
+        )
+    }
 
 
 def changeset(

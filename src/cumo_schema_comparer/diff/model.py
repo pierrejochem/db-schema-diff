@@ -19,7 +19,10 @@ from .changelog import ChangelogDiff, ChangelogStatus
 from .severity import Severity
 
 #: Version of the JSON report format. Bumped whenever the shape changes incompatibly.
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
+
+#: Versions this build can *read*; see the note on the inventory's equivalent.
+READABLE_REPORT_VERSIONS = frozenset({1, 2})
 
 
 class ObjectStatus(StrEnum):
@@ -97,6 +100,20 @@ class AttributeDelta:
     """
     note: str | None = None
     """Why this matters, when the attribute name alone does not say it."""
+    master_display: str | None = None
+    target_display: str | None = None
+    """What to *show* instead of the compared values, when there is something better to show.
+
+    A routine is compared by its body hash, which is also what identifies the finding in a
+    baseline; these carry the body text for a reader. Both or neither, and purely additive:
+    ``master_value`` and ``target_value`` remain the compared values.
+    """
+    body: bool = False
+    """Whether this is a printed *definition* — a view body, a check expression, a routine body.
+
+    Propagated from the attribute spec's own ``body`` flag, so the two cannot disagree. A renderer
+    uses it to decide between a diff and a one-line row.
+    """
 
     def to_json_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -109,10 +126,20 @@ class AttributeDelta:
             payload["cosmetic"] = True
         if self.note:
             payload["note"] = self.note
+        if self.master_display is not None and self.target_display is not None:
+            payload["master_display"] = self.master_display
+            payload["target_display"] = self.target_display
+        if self.body:
+            payload["body"] = True
         return payload
 
     @classmethod
     def from_json_dict(cls, data: Mapping[str, Any]) -> AttributeDelta:
+        master_display = data.get("master_display")
+        target_display = data.get("target_display")
+        if not (isinstance(master_display, str) and isinstance(target_display, str)):
+            # Both or neither: a lone or non-string value is dropped rather than held in memory.
+            master_display = target_display = None
         return cls(
             attribute=data["attribute"],
             master_value=data.get("master"),
@@ -120,6 +147,9 @@ class AttributeDelta:
             severity=_severity(data["severity"]),
             cosmetic=bool(data.get("cosmetic", False)),
             note=data.get("note"),
+            master_display=master_display,
+            target_display=target_display,
+            body=data.get("body") is True,
         )
 
 
@@ -310,10 +340,12 @@ class ComparisonReport:
         captured in one place and rendered somewhere else entirely.
         """
         version = data.get("schema_version")
-        if version != REPORT_SCHEMA_VERSION:
+        if type(version) is not int or version not in READABLE_REPORT_VERSIONS:
+            hint = " (expected an integer)" if isinstance(version, str) else ""
             raise ValueError(
                 f"unsupported report schema_version {version!r}; "
-                f"this build writes {REPORT_SCHEMA_VERSION}"
+                f"this build reads {sorted(READABLE_REPORT_VERSIONS)} "
+                f"and writes {REPORT_SCHEMA_VERSION}{hint}"
             )
         return cls(
             name=data["name"],

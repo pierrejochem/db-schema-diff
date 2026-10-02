@@ -135,7 +135,11 @@ class TestUnavailableBackend:
         backend = FakeKeyring(fail_with=RuntimeError("User denied access"))
         subject = store(backend, PROD_DSN=SECRET)
         assert subject.storage_available is False
-        assert "denied" in (subject.storage_problem or "").lower()
+        # Reported as a type, not in the backend's own words; see TestBackendTextIsNotRepeated.
+        problem = subject.storage_problem or ""
+        assert "keychain unavailable" in problem
+        assert "RuntimeError" in problem
+        assert "denied" not in problem.lower()
         assert subject.describe("PROD_DSN").storage_available is False
 
     def test_storing_into_an_unavailable_keychain_raises_a_clear_error(self):
@@ -187,12 +191,74 @@ class TestFixRound:
         subject = store(backend)
         assert subject.storage_available is True
         backend.fail_with = RuntimeError("User denied access")
-        with pytest.raises(RuntimeError, match="denied"):
+        with pytest.raises(RuntimeError, match="keychain unavailable"):
             subject.store("PROD_DSN", SECRET)
         assert subject.storage_available is False
-        assert "denied" in (subject.storage_problem or "")
+        assert "RuntimeError" in (subject.storage_problem or "")
 
     def test_forget_refuses_when_storage_is_unavailable(self):
         subject = store(FakeKeyring(fail_with=RuntimeError("locked")))
-        with pytest.raises(RuntimeError, match="locked"):
+        with pytest.raises(RuntimeError, match="keychain unavailable"):
             subject.forget("PROD_DSN")
+
+
+class LoudBackend(Exception):
+    """A backend error that quotes the value it was handed, the way a real one can.
+
+    macOS's Security framework and Linux's Secret Service both produce messages this tool does not
+    control, and a stored credential is exactly what they were given.
+    """
+
+
+class TestBackendTextIsNotRepeated:
+    """``store`` and ``forget`` used to put the backend's own message into ``_problem`` and into
+    ``__cause__``. ``gui.app._sanitise`` catches a URL and a ``password=`` shape, but not a bare
+    echoed value, and a chained cause carries the text into every traceback regardless."""
+
+    LOUD = LoudBackend(f"could not write {SECRET}: item hunter2 already exists")
+
+    def each_operation(self):
+        for name, call in (
+            ("store", lambda s: s.store("PROD_DSN", SECRET)),
+            ("forget", lambda s: s.forget("PROD_DSN")),
+        ):
+            backend = FakeKeyring()
+            subject = store(backend)
+            assert subject.storage_available is True
+            backend.fail_with = self.LOUD
+            yield name, subject, call
+
+    def test_neither_the_raised_message_nor_the_problem_repeats_the_backend(self):
+        for name, subject, call in self.each_operation():
+            with pytest.raises(RuntimeError) as raised:
+                call(subject)
+            text = str(raised.value) + (subject.storage_problem or "")
+            assert "hunter2" not in text, name
+            assert SECRET not in text, name
+            assert "LoudBackend" in text, name
+
+    def test_the_cause_is_dropped_so_no_traceback_carries_the_text(self):
+        for name, subject, call in self.each_operation():
+            with pytest.raises(RuntimeError) as raised:
+                call(subject)
+            assert raised.value.__cause__ is None, name
+            assert raised.value.__suppress_context__ is True, name
+
+    def test_a_read_failure_is_type_only_too(self):
+        subject = store(FakeKeyring(fail_with=self.LOUD), PROD_DSN=OTHER)
+        problem = subject.storage_problem or ""
+        assert "hunter2" not in problem and SECRET not in problem
+        assert "LoudBackend" in problem
+        # And the application still works from the environment.
+        assert subject.resolve("PROD_DSN").value == OTHER
+
+    def test_the_log_records_the_type_and_not_the_message(self, caplog):
+        import logging
+
+        caplog.set_level(logging.WARNING)
+        subject = store(FakeKeyring(fail_with=self.LOUD))
+        with pytest.raises(RuntimeError):
+            subject.store("PROD_DSN", SECRET)
+        assert caplog.text
+        assert "hunter2" not in caplog.text and SECRET not in caplog.text
+        assert "LoudBackend" in caplog.text

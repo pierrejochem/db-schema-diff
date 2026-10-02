@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
+from dataclasses import fields as dataclass_fields
+from dataclasses import is_dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +20,7 @@ import psycopg
 from .config.model import SourceRef
 from .db.connect import server_features
 from .db.introspect import Introspector
+from .diff.attributes import SPECS
 from .model.changelog import ChangelogLocation, ChangelogState
 from .model.inventory import Inventory, SourceInfo
 from .model.keys import ObjectKey, column_key, table_key
@@ -44,6 +48,7 @@ from .model.objects import (
 )
 from .normalize.defaults import canonical_default
 from .normalize.expressions import canonical_expr
+from .normalize.redact import mask_literals
 from .normalize.routines import body_hash, canonical_body
 from .normalize.types import canonical_type
 
@@ -56,8 +61,14 @@ def build_inventory(
     *,
     exclude_schemas: tuple[str, ...] = (),
     skip_liquibase: bool = False,
+    redact_literals: bool = True,
 ) -> Inventory:
-    """Capture one database as a canonical inventory."""
+    """Capture one database as a canonical inventory.
+
+    With ``redact_literals`` (the default) credential-shaped literals in definition text are masked
+    here, as the inventory is built, so they never enter the in-memory model and every consumer
+    inherits that. See :func:`redact_inventory`.
+    """
     features = server_features(connection)
     introspector = Introspector(connection, features)
 
@@ -80,7 +91,142 @@ def build_inventory(
 
     changelog = None if skip_liquibase else _changelog(introspector, source)
 
-    return Inventory(source=info, schemas=tuple(schemas), objects=objects, changelog=changelog)
+    inventory = Inventory(source=info, schemas=tuple(schemas), objects=objects, changelog=changelog)
+    return redact_inventory(inventory) if redact_literals else inventory
+
+
+#: Specs whose compared attribute is not itself the text that travels. ``routine.body_hash`` is a
+#: hash; the body text that reaches a report is carried in :attr:`Routine.body` (and
+#: ``raw["body"]``), so that is the field to mask. Every other body spec names its own field.
+_BODY_TEXT_FIELDS: Mapping[str, tuple[str, ...]] = {"routine.body_hash": ("body",)}
+
+#: Definition-bearing text that no ``body`` spec covers but that can still hold a literal: the
+#: argument list shown for a routine (with its defaults) and the literal arguments of a trigger.
+#: Kept explicit and pinned by a test, like the derived set.
+_EXTRA_TEXT_FIELDS: Mapping[ObjectKind, tuple[str, ...]] = {
+    ObjectKind.ROUTINE: ("arguments", "config"),
+    ObjectKind.TRIGGER: ("arguments",),
+    # ``keys`` holds IndexKey objects whose ``expression`` is parsed from the same text as
+    # ``predicate``; masking one and not the other would print the secret one slot later.
+    ObjectKind.INDEX: ("keys",),
+    # An enum's labels are the only *free text* a user writes outside a definition: every other
+    # unmasked attribute of every kind is an identifier, a type name, a flag or an enumeration.
+    # ``CREATE TYPE e AS ENUM ('ok','postgresql://u:s3cret@h/db')`` put the label verbatim into the
+    # console, report.json, report.html, junit.xml, the redacted inventory and the GUI's pane.
+    # Only enums have labels; the other three type kinds always have none.
+    ObjectKind.ENUM_TYPE: ("labels",),
+}
+
+
+def masked_fields() -> dict[ObjectKind, tuple[str, ...]]:
+    """Which model fields carry definition text, per object kind.
+
+    Derived from the ``body=True`` attribute specs rather than listed by hand, so a new body
+    attribute is covered automatically.
+    """
+    out: dict[ObjectKind, list[str]] = {}
+    for kind, specs in SPECS.items():
+        for spec in specs:
+            if not spec.body:
+                continue
+            attribute = spec.name.split(".", 1)[1]
+            for name in _BODY_TEXT_FIELDS.get(spec.name, (attribute,)):
+                out.setdefault(kind, []).append(name)
+    for kind, names in _EXTRA_TEXT_FIELDS.items():
+        out.setdefault(kind, []).extend(names)
+    return {kind: tuple(names) for kind, names in out.items()}
+
+
+def _mask_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return mask_literals(value)
+    if isinstance(value, tuple):
+        return tuple(_mask_value(item) for item in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        # Generic rather than a per-class case (IndexKey today): any structured value that holds
+        # text is masked field by field, so a new one cannot silently pass through.
+        changes = {f.name: _mask_value(getattr(value, f.name)) for f in dataclass_fields(value)}
+        return replace(value, **{k: v for k, v in changes.items() if v != getattr(value, k)})
+    return value
+
+
+#: Fields holding ``name=value`` settings (``proconfig``). The value is stored bare, not as a SQL
+#: literal, so ``mask_literals`` would see no literal in it at all.
+_SETTING_FIELDS = frozenset({"config"})
+
+#: Fields holding a bare value that was *written* as a SQL literal — an enum label. Same problem as
+#: a setting and the same answer: judge it as the literal it came from.
+_BARE_LITERAL_FIELDS = frozenset({"labels"})
+
+
+def _as_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _unquote(masked: str) -> str:
+    return masked[1:-1].replace("''", "'")
+
+
+def _mask_setting(entry: str) -> str:
+    """Mask the value of one ``name=value`` setting by judging it as the literal it was set as."""
+    name, sep, value = entry.partition("=")
+    if not sep:
+        return entry
+    masked = mask_literals(f"{name} = {_as_literal(value)}") or ""
+    prefix = f"{name} = '"
+    if not (masked.startswith(prefix) and masked.endswith("'")):
+        return entry
+    return f"{name}={_unquote(masked[len(prefix) - 1 :])}"
+
+
+def _mask_bare_literal(value: str) -> str:
+    """Mask one value stored bare that was written as a quoted literal, keeping it bare.
+
+    ``mask_literals`` on a bare label is a no-op: it sees no literal, because there are no quotes
+    to find. Quoting it first is what makes the predicate apply, exactly as :func:`_mask_setting`
+    does for a ``name=value`` setting. The name is not needed — a label follows no keyword, so only
+    its own credential shape can condemn it, which is the right test for free text.
+    """
+    masked = mask_literals(_as_literal(value)) or ""
+    if len(masked) < 2 or not (masked.startswith("'") and masked.endswith("'")):
+        return value  # pragma: no cover - mask_literals keeps the quotes it was given
+    return _unquote(masked)
+
+
+def _redact_object(obj: Any, fields: tuple[str, ...]) -> Any:
+    changes: dict[str, Any] = {}
+    for name in fields:
+        current = getattr(obj, name)
+        if name in _SETTING_FIELDS:
+            masked = tuple(_mask_setting(e) for e in current)
+        elif name in _BARE_LITERAL_FIELDS:
+            masked = tuple(_mask_bare_literal(e) for e in current)
+        else:
+            masked = _mask_value(current)
+        if masked != current:
+            changes[name] = masked
+    # Every raw value is pre-normalisation server text kept for display; whichever definition it
+    # holds, it is the same secret in a second place.
+    raw = obj.raw.values
+    masked_raw = {name: _mask_value(text) for name, text in raw.items()}
+    if masked_raw != raw:
+        changes["raw"] = RawValues(masked_raw)
+    return replace(obj, **changes) if changes else obj
+
+
+def redact_inventory(inventory: Inventory) -> Inventory:
+    """A copy of ``inventory`` with credential-shaped literals in definition text masked.
+
+    Touches only the fields from :func:`masked_fields` and each object's ``raw`` display text;
+    identifiers, types and flags are never rewritten. Idempotent. ``Routine.body_hash`` is left as
+    computed from the real body: it is a digest, not text, and keeping it means redaction never
+    changes which routines compare as different.
+    """
+    fields = masked_fields()
+    objects = {
+        key: _redact_object(obj, fields.get(key.kind, ())) for key, obj in inventory.objects.items()
+    }
+    return replace(inventory, objects=objects)
 
 
 def _changelog(introspector: Introspector, source: SourceRef) -> ChangelogState:
@@ -184,20 +330,28 @@ def _columns(rows: list[dict[str, Any]]) -> dict[ObjectKey, Column]:
         owned_sequence = _text(row.get("owned_sequence"))
         generated_kind = _text(row.get("generated_kind"))
 
-        # A stored generated column's expression lives in the same catalog slot as a default,
-        # but the two are not the same thing and must not be compared as one.
+        raw_values = {"data_type": raw_type}
+        # A stored generated column's expression lives in the same catalog slot as a default, but
+        # the two are not the same thing and must not be compared as one — nor filed as one. Both
+        # `default_expr` and `generated_expr` are the same `pg_get_expr(adbin)` text, so the raw
+        # entry goes under whichever attribute the value was compared as. Filing it under
+        # "default" unconditionally made the report and the GUI pane print a generation expression
+        # beside an empty `column.default`, and made `--show-cosmetic` attribute it there too.
         if generated_kind == "s":
             default = None
-            generated = canonical_expr(_text(row.get("generated_expr")), column_type=data_type)
+            raw_generated = _text(row.get("generated_expr")) or raw_default
+            generated = canonical_expr(raw_generated, column_type=data_type)
+            if raw_generated is not None:
+                raw_values["generated"] = raw_generated
         else:
             default = canonical_default(
                 raw_default, column_type=data_type, owned_sequence=owned_sequence
             )
             generated = None
-
-        raw_values = {"data_type": raw_type}
-        if raw_default is not None:
-            raw_values["default"] = raw_default
+            # A serial column's default canonicalises to a sentinel, so its raw `nextval(...)` is
+            # the only text a reader can see. It is a real default and still belongs here.
+            if raw_default is not None:
+                raw_values["default"] = raw_default
 
         out[key] = Column(
             key=key,
@@ -407,6 +561,7 @@ def _routines(rows: list[dict[str, Any]]) -> dict[ObjectKey, Routine]:
             return_type=canonical_type(return_type) if return_type else None,
             returns_set=bool(row.get("returns_set")),
             arguments=_text(row.get("arguments")),
+            body=canonical_body(body),
             body_hash=body_hash(body),
             volatility=str(row.get("volatility") or "v"),
             strict=bool(row.get("strict")),

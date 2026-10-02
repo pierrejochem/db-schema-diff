@@ -18,8 +18,36 @@ export struct FindingRow {
     suppressed_by: string,
 }
 
+// One name per meaning. Every tint that stands for success, failure, warning or de-emphasis in
+// this tab reads one of these, so the banner and the diff cannot disagree.
+global Palette {
+    out property <color> success: #027a48;
+    out property <color> danger: #b42318;
+    out property <color> caution: #b54708;
+    out property <color> body: #344054;
+    out property <color> muted: #667085;
+}
+
+export struct DeltaRow {
+    attribute: string,
+    master: string,
+    target: string,
+    severity: string,
+    note: string,
+    is_body: bool,
+}
+
+export struct DiffLine {
+    attribute: string,
+    kind: string,
+    text: string,
+}
+
 export component FindingLine inherits Rectangle {
     in property <FindingRow> data;
+    callback clicked();
+
+    TouchArea { clicked => { root.clicked(); } }
 
     HorizontalLayout {
         padding: 4px;
@@ -32,8 +60,8 @@ export component FindingLine inherits Rectangle {
             text: root.data.severity;
             width: 70px;
             vertical-alignment: center;
-            color: root.data.severity == "error" ? #b42318
-                : root.data.severity == "warning" ? #b54708 : #344054;
+            color: root.data.severity == "error" ? Palette.danger
+                : root.data.severity == "warning" ? Palette.caution : Palette.body;
         }
         Text {
             text: root.data.suppressed_by == "" ? root.data.detail
@@ -56,8 +84,14 @@ export component ResultsTab inherits ScrollView {
     in-out property <bool> show-warning;
     in-out property <bool> show-info;
     in-out property <string> output-directory;
+    // The pane describes one finding, named by identity (target, kind, path) and never by index:
+    // an index is only meaningful under the filter state it was clicked in.
+    in property <string> selected-heading;
+    in property <[DeltaRow]> selected-deltas;
+    in property <[DiffLine]> selected-diff;
 
     callback filter-changed();
+    callback select-finding(string, string, string);
     callback choose-output-directory();
     callback write-reports();
     callback open-html();
@@ -81,12 +115,30 @@ export component ResultsTab inherits ScrollView {
         : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #fee4e2
         : #eaecf0;
     out property <color> banner-text-color:
-        root.banner-kind == "ok" ? #027a48
+        root.banner-kind == "ok" ? Palette.success
         : root.banner-kind == "info" ? #175cd3
-        : root.banner-kind == "warning" ? #b54708
-        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #b42318
-        : #344054;
+        : root.banner-kind == "warning" ? Palette.caution
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Palette.danger
+        : Palette.body;
     out property <int> finding-count: root.findings.length;
+    out property <int> delta-count: root.selected-deltas.length;
+    out property <int> diff-count: root.selected-diff.length;
+
+    // The only place a diff line kind becomes a colour; text and tint both read it.
+    pure function diff-colour(kind: string) -> color {
+        return kind == "added" ? Palette.success
+            : kind == "removed" ? Palette.danger
+            : kind == "hunk" || kind == "elided" ? Palette.muted
+            : Palette.body;
+    }
+    // A diff line opens a group when its attribute differs from the line before it. The pane
+    // relies on the view model emitting rows grouped by attribute: for a, b, a it labels all three.
+    pure public function starts-group(index: int) -> bool {
+        return index == 0 || root.selected-diff[index].attribute
+            != root.selected-diff[index - 1].attribute;
+    }
+    out property <string> heading-shown: heading-text.text;
+    pure public function diff-colour-for(kind: string) -> color { return root.diff-colour(kind); }
 
     // A report exists to write only for a finished run that produced one. A cancelled run, a run
     // in flight and a window that has never run have none.
@@ -127,6 +179,18 @@ export component ResultsTab inherits ScrollView {
     out property <bool> warning-shown: warning-check.value;
     out property <bool> info-shown: info-check.value;
     out property <string> output-directory-shown: output-edit.text;
+
+    // The click path: the identity is read from the row the user clicked, in the model as it
+    // stands at click time, and leaves through the one outward callback.
+    public function choose-row(index: int) {
+        root.select-finding(root.findings[index].target, root.findings[index].kind,
+            root.findings[index].path);
+    }
+
+    out property <length> diff-viewport-width: diff-scroll.content-width;
+    out property <length> diff-pane-width: diff-scroll.width;
+    out property <length> diff-pane-height: diff-scroll.height;
+    out property <length> tab-min-width: root.min-width;
 
     public function request-filter-changed() { root.filter-changed(); }
     public function request-choose-output-directory() { root.choose-output-directory(); }
@@ -188,7 +252,7 @@ export component ResultsTab inherits ScrollView {
                 text: root.findings-summary;
                 vertical-alignment: center;
                 font-weight: root.filter-hides-rows ? 700 : 400;
-                color: root.filter-hides-rows ? #b54708 : #344054;
+                color: root.filter-hides-rows ? Palette.caution : Palette.body;
             }
         }
 
@@ -199,6 +263,62 @@ export component ResultsTab inherits ScrollView {
                 for row[i] in root.findings: FindingLine {
                     background: mod(i, 2) == 0 ? transparent : #00000008;
                     data: row;
+                    clicked => { root.choose-row(i); }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Detail";
+            VerticalLayout {
+                spacing: 6px;
+                heading-text := Text {
+                    text: root.selected-heading == "" ? "Select a finding to see its detail."
+                        : root.selected-heading;
+                    font-weight: 700;
+                    color: Palette.body;
+                    overflow: elide;
+                }
+                for d in root.selected-deltas: HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: d.attribute; width: 160px; overflow: elide; }
+                    Text {
+                        text: d.is_body ? "(see diff below)" : d.master;
+                        width: 200px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: d.is_body ? "" : d.target;
+                        width: 200px;
+                        overflow: elide;
+                    }
+                    Text { text: d.severity; width: 70px; }
+                    Text { text: d.note; overflow: elide; }
+                }
+                // Horizontal scrolling: a routine body is one line and may be tens of KB, which
+                // must scroll rather than wrap or size the window.
+                diff-scroll := ScrollView {
+                    height: root.selected-diff.length == 0 ? 0px : 240px;
+                    VerticalLayout {
+                        alignment: start;
+                        for line[i] in root.selected-diff: VerticalLayout {
+                            if root.starts-group(i): Text {
+                                text: line.attribute;
+                                font-weight: 700;
+                                color: Palette.body;
+                            }
+                            Rectangle {
+                                background: line.kind == "added" || line.kind == "removed"
+                                    ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
+                                Text {
+                                    text: line.text;
+                                    font-family: "monospace";
+                                    wrap: no-wrap;
+                                    color: root.diff-colour(line.kind);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

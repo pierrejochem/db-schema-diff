@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from ..diff.severity import Severity
 from ..model.kinds import KIND_ORDER
 from ..report.base import Reporter, render_to_path
 from ..report.html import HtmlReporter
+from ..report.html import _diff_for as diff_for  # one decision, shared with the HTML report
 from ..report.json_report import JsonReporter
 from ..report.junit import JUnitReporter
 from .errors import GuiError
@@ -33,6 +35,11 @@ HTML_NAME = "report.html"
 
 #: Same sentence the console and the HTML report use for a partial comparison.
 INCOMPLETE = "At least one source could not be inspected, so this comparison is incomplete."
+
+#: Fields of the ``DeltaRow`` and ``DiffLine`` structs in ``ui/results_tab.slint``. A test compares
+#: them with the structs, so they cannot drift from the markup.
+DELTA_ROW_FIELDS = ("attribute", "master", "target", "severity", "note", "is_body")
+DIFF_ROW_FIELDS = ("attribute", "kind", "text")
 
 _SEVERITIES = (Severity.ERROR, Severity.WARNING, Severity.INFO)
 
@@ -102,17 +109,113 @@ class ResultsModel:
         means no severity filter, and an empty set means nothing is shown. Severity names are
         matched case-insensitively.
         """
+        return [
+            _row(target, finding)
+            for target, finding in self._filtered(needle=needle, severities=severities)
+        ]
+
+    def delta_rows(
+        self,
+        target: str,
+        kind: str,
+        path: str,
+        *,
+        needle: str = "",
+        severities: frozenset[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """The deltas of the ``kind`` finding at ``path`` on ``target``, as dicts for Slint.
+
+        The finding is named by identity, not position, so a selection cannot go stale: it is
+        named by ``(target, kind, path)``, which is unique (a column, a constraint and a trigger can
+        share a path) and is exactly the three fields of a :class:`FindingRow`. It is looked up in
+        the same filtered list :meth:`finding_rows` builds. A finding that moved still
+        resolves to itself; one the filter now hides, or that never existed, yields nothing.
+        ``master`` and ``target`` are the compared values; body text belongs in :meth:`diff_rows`.
+        """
+        finding = self._selected(target, kind, path, needle=needle, severities=severities)
+        if finding is None:
+            return []
+        return [
+            {
+                "attribute": delta.attribute,
+                "master": delta.master_value or "",
+                "target": delta.target_value or "",
+                "severity": delta.severity.label,
+                "note": delta.note or "",
+                "is_body": delta.body,
+            }
+            for delta in finding.deltas
+        ]
+
+    def finding_status(
+        self,
+        target: str,
+        kind: str,
+        path: str,
+        *,
+        needle: str = "",
+        severities: frozenset[str] | None = None,
+    ) -> str | None:
+        """How the named finding compares (``"missing in target"``), or ``None`` if it is not there.
+
+        The distinction a caller cannot otherwise make: :meth:`delta_rows` returns an empty list
+        both for a finding that is not in the filtered list and for one that legitimately has no
+        attribute differences. A missing or extra object is in the second group — there is no
+        second version of it to differ from — and that is the commonest finding there is, so
+        treating the two alike makes clicking most rows read as a no-op. Resolution is as in
+        :meth:`delta_rows`.
+        """
+        finding = self._selected(target, kind, path, needle=needle, severities=severities)
+        return None if finding is None else finding.status.label
+
+    def diff_rows(
+        self,
+        target: str,
+        kind: str,
+        path: str,
+        *,
+        needle: str = "",
+        severities: frozenset[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Diff lines for the finding's body deltas, each labelled with its delta's attribute.
+
+        Rows are grouped in delta order. Resolution is as in :meth:`delta_rows`.
+        """
+        finding = self._selected(target, kind, path, needle=needle, severities=severities)
+        if finding is None:
+            return []
+        return [
+            {"attribute": delta.attribute, "kind": line.kind.value, "text": line.text}
+            for delta in finding.deltas
+            for line in diff_for(delta)
+        ]
+
+    def _filtered(
+        self, *, needle: str, severities: frozenset[str] | None
+    ) -> list[tuple[TargetDiff, ObjectFinding]]:
         text = needle.strip().lower()
         wanted = None if severities is None else {name.lower() for name in severities}
-        rows: list[FindingRow] = []
+        rows: list[tuple[TargetDiff, ObjectFinding]] = []
         for target in self._report.targets:
             for finding in (*_ordered(target.findings), *_ordered(target.ignored)):
                 if text and text not in finding.key.path.lower():
                     continue
                 if wanted is not None and finding.severity.label not in wanted:
                     continue
-                rows.append(_row(target, finding))
+                rows.append((target, finding))
         return rows
+
+    def _selected(
+        self, target: str, kind: str, path: str, *, needle: str, severities: frozenset[str] | None
+    ) -> ObjectFinding | None:
+        for candidate, finding in self._filtered(needle=needle, severities=severities):
+            if (
+                candidate.target_label == target
+                and finding.kind.value == kind
+                and finding.key.path == path
+            ):
+                return finding
+        return None
 
     def changelog_lines(self, target: str) -> list[str]:
         """The Liquibase section for one target, headline first."""
@@ -264,3 +367,31 @@ def _changelog_lines(target: TargetDiff, changelog: ChangelogDiff) -> list[str]:
         lines.append(f"! {failed.id} by {failed.author}: recorded as FAILED{suffix}")
     lines.extend(f"note: {note}" for note in changelog.notes)
     return lines
+
+
+def checked_rows(
+    rows: Sequence[Mapping[str, Any]], fields: tuple[str, ...], what: str
+) -> list[Mapping[str, Any]]:
+    """Return ``rows`` unchanged after proving every one carries every field of its struct.
+
+    Assign a Slint model only from rows that went through here. Slint accepts a row dict with a
+    key missing and then dies later, at ``show()`` or the next repaint, with no Python exception:
+    ``panicked at internal/core/rtti.rs:260: binding was of the wrong type: ()``, process exit
+    code 134. The window simply vanishes, far from its cause. A missing ``DiffLine.kind`` is
+    quieter and no better: accepted, and drawn as context. Do not remove this as paranoid.
+    Wrong types and extra keys already raise ``ValueError`` in the binding, so only presence is
+    checked.
+    """
+    for index, row in enumerate(rows):
+        for name in fields:
+            if name not in row:
+                raise GuiError(f"{what} row {index} is missing the field '{name}'")
+    return list(rows)
+
+
+def checked_delta_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return checked_rows(rows, DELTA_ROW_FIELDS, "delta")
+
+
+def checked_diff_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return checked_rows(rows, DIFF_ROW_FIELDS, "diff")

@@ -61,6 +61,7 @@ def capture(
     exclude_schemas: tuple[str, ...] = (),
     options: ConnectionOptions | None = None,
     skip_liquibase: bool = False,
+    redact_literals: bool = True,
 ) -> CaptureResult:
     """Inventory one source, converting any expected failure into a result value.
 
@@ -75,6 +76,7 @@ def capture(
                 source,
                 exclude_schemas=exclude_schemas,
                 skip_liquibase=skip_liquibase,
+                redact_literals=redact_literals,
             )
     except ComparerError as exc:
         log.warning("%s: capture failed", source.label)
@@ -191,6 +193,7 @@ def capture_all(
     targets: tuple[str, ...] | None = None,
     sequential: bool = False,
     skip_liquibase: bool = False,
+    redact_literals: bool = True,
 ) -> dict[str, CaptureResult]:
     """Capture the master and the selected targets.
 
@@ -206,6 +209,7 @@ def capture_all(
             exclude_schemas=config.exclude_schemas,
             options=options,
             skip_liquibase=skip_liquibase,
+            redact_literals=redact_literals,
         )
 
     if sequential or not config.options.parallel or len(selected) == 1:
@@ -227,6 +231,7 @@ def compare(
     ignores: IgnoreRuleSet | None = None,
     changelog_options: ChangelogOptions | None = None,
     skip_liquibase: bool = False,
+    redact_literals: bool = True,
 ) -> ComparisonReport:
     """Capture every source and compare each target against the master."""
     captures = capture_all(
@@ -235,6 +240,7 @@ def compare(
         targets=targets,
         sequential=sequential,
         skip_liquibase=skip_liquibase,
+        redact_literals=redact_literals,
     )
     return build_report(
         config,

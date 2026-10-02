@@ -234,6 +234,7 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 | `--html PATH` | Write the standalone HTML report. |
 | `--out-dir DIR` | Write all three machine-readable reports into one directory. |
 | `--sequential` | Capture one source at a time, for debugging. |
+| `--redact-literals` / `--no-redact-literals` | Mask credential-shaped string literals in definition text and in enum labels. **On by default**; see below. |
 
 ## Desktop application
 
@@ -252,6 +253,13 @@ only where each credential came from and a redacted host/database summary.
 
 **The CLI does not read the keychain.** It reads the environment and nothing else, so a credential
 stored here cannot change what a CI run does.
+
+Selecting a row on the Results tab opens a detail pane under the list: the finding's name and how
+it compares, then every attribute that differs, with the master and target values side by side, and,
+for a printed definition (a view, a routine body, a check expression), a unified diff of the two
+texts. A missing or extra object has no attributes to differ, and the pane says so rather than going
+blank. Changing the filter or a severity toggle, or starting a new run, clears the pane. The pane
+shows the same masked text as the reports.
 
 A cancelled comparison produces no report and says so: the Results banner is only ever green for a
 finished run that found nothing. Cancelling stops sources that have not started, but a capture
@@ -362,6 +370,31 @@ cumo-schema-diff compare -c config/ --out-dir build/
 
 A baseline is scoped to the report it came from, so `--baseline` belongs with a single config. Run
 each service with its own baseline when you need them.
+
+### Definition text, routine bodies and `--redact-literals`
+
+Definition text is carried in full: the inventory and every report hold a routine's body next to its
+hash, so a changed function shows what changed instead of two hashes. Two texts are kept per
+definition and they do different jobs. The *canonical* text — the tokens joined by single spaces —
+is what equality is decided on, so reformatting a view or reindenting a function body is not drift.
+The text the server printed (`pg_get_viewdef`, `prosrc`) is what a diff is drawn from, because it
+still has its line breaks: a nine-line view differing in one line renders that line against three
+lines of context, not one giant removed line against one giant added line. Both are masked, so the
+diff is as safe as the compared value. The HTML report and the GUI's Results tab draw the same diff.
+A delta whose text is short and single-line stays a plain before/after row.
+
+Because that text can contain a hardcoded connection string, `compare` and `inventory` mask
+credential-shaped string literals (column defaults, view bodies, check expressions, routine
+bodies) and enum labels at capture time, before anything is written. A mask keeps a short digest (`'***:3fa9c2d41b07'`), so
+two *different* secrets still compare as different and a rotated one still shows as drift.
+
+`--no-redact-literals` shows the real text, for inspecting a database locally. **An inventory or
+report produced that way is no longer safe to share or upload as a CI artifact.** Redaction also
+changes baseline signatures, so a baseline approved in one mode will not match the other: accepted
+findings reappear as new (nothing is hidden). Keep one mode per baseline, normally the default.
+
+The inventory and the report now write schema version 2 and still read version 1, so an existing
+capture or `--baseline` file keeps working.
 
 ### Reading the exit code in CI
 

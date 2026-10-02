@@ -1,23 +1,10 @@
-"""The shape check for a pasted credential, shared by every editor of a committed file.
+"""Credential-shape detection for the GUI.
 
-Only credential-bearing shapes are refused: a PostgreSQL URL, any URL with userinfo, or a libpq
-keyword that carries a secret. A plain link or ``host=``/``user=`` text carries none, and refusing
-them would only push people to delete useful context such as a ticket link.
+The implementation lives in :mod:`cumo_schema_comparer.literals` because build-time code
+needs it too, and no library module may import from ``gui``. This module stays so GUI callers and
+their tests keep one import path.
 """
 
-from __future__ import annotations
+from ..literals import looks_like_connection_string
 
-import re
-
-_POSTGRES_URL = re.compile(r"postgres(?:ql)?://", re.IGNORECASE)
-#: ``scheme://`` whose authority (up to the next ``/``, ``?`` or ``#``) contains ``@``.
-_USERINFO_URL = re.compile(r"[a-z][a-z0-9+.-]*://[^/?#\s]*@", re.IGNORECASE)
-_SECRET_KEYWORD = re.compile(
-    r"(?<![\w-])(?:password|passfile|sslpassword|sslkey)\s*=", re.IGNORECASE
-)
-
-
-def looks_like_connection_string(value: str) -> bool:
-    return bool(
-        _POSTGRES_URL.search(value) or _USERINFO_URL.search(value) or _SECRET_KEYWORD.search(value)
-    )
+__all__ = ["looks_like_connection_string"]

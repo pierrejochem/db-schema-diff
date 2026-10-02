@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import shutil
 
 import pytest
 
@@ -648,7 +649,34 @@ def test_the_banner_markup_consumes_the_derived_colours_only():
     assert "background: root.banner-background;" in text
     assert "color: root.banner-text-color;" in text
     assert text.count("#d1fadf") == 1
-    assert text.count("#027a48") == 1
+
+
+def window_with_token(tmp_path, token, value):
+    """A window built from a copy of the markup whose Palette ``token`` is set to ``value``."""
+    root = tmp_path / token
+    shutil.copytree(UI, root)
+    path = root / "results_tab.slint"
+    text = path.read_text()
+    marker = f"out property <color> {token}: "
+    start = text.index(marker) + len(marker)
+    path.write_text(text[:start] + value + text[text.index(";", start) :])
+    return slint.load_file(str(root / "main.slint")).MainWindow()
+
+
+@pytest.mark.parametrize(
+    ("token", "banner_level", "diff_kind"),
+    [("success", "ok", "added"), ("danger", "error", "removed")],
+)
+def test_the_banner_and_the_diff_share_one_colour_per_meaning(
+    window, tmp_path, token, banner_level, diff_kind
+):
+    # Unchanged: the banner text and the diff line agree.
+    assert banner_colours(window, banner_level)[1] == window.results_diff_colour_for(diff_kind)
+    # Mutate the single source. A consumer with its own copy of the literal would not move.
+    mutated = window_with_token(tmp_path, token, "#123456")
+    moved = mutated.results_diff_colour_for(diff_kind)
+    assert moved != window.results_diff_colour_for(diff_kind)
+    assert banner_colours(mutated, banner_level)[1] == moved
 
 
 # Shown-of-total and the hidden-rows indicator.
@@ -756,3 +784,170 @@ def test_the_run_fail_on_choices_are_the_clis(window):
     from cumo_schema_comparer.config.model import FailOn
 
     assert tuple(window.run_fail_on_choices().split(",")) == typing.get_args(FailOn)
+
+
+# --- The detail pane ---------------------------------------------------------------------------
+
+DETAIL_PROPERTIES = ["selected_heading", "selected_deltas", "selected_diff"]
+DELTA_ROW_FIELDS = ["attribute", "master", "target", "severity", "note", "is_body"]
+DIFF_LINE_FIELDS = ["attribute", "kind", "text"]
+
+
+def make_delta(**overrides):
+    row = {"attribute": "a", "master": "m", "target": "t", "severity": "error", "note": ""}
+    row.update({"is_body": False} | overrides)
+    return row
+
+
+def make_diff_line(**overrides):
+    row = {"attribute": "body", "kind": "context", "text": "x"}
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.parametrize("name", DETAIL_PROPERTIES)
+def test_every_detail_property_is_declared(window, name):
+    # Read before writing: setattr on an undeclared name shadows it, so a round trip proves nothing.
+    getattr(window, name)
+
+
+def test_select_finding_is_declared_on_the_window(window):
+    assert callable(window.select_finding)
+
+
+def test_a_click_forwards_the_identity_of_the_row_clicked(window):
+    # `select_finding` is the outward callback: no .slint handler sits behind it for the
+    # assignment to replace. The markup between the click and it is what is under test.
+    seen = []
+    window.select_finding = lambda *args: seen.append(args)
+    window.findings = slint.ListModel(
+        [
+            make_finding(target="qa", kind="column", path="public.t.x"),
+            make_finding(target="qa", kind="constraint", path="public.t.x"),
+            make_finding(target="uat", kind="trigger", path="public.t.x"),
+        ]
+    )
+    window.drive_select_row(1)
+    window.drive_select_row(2)
+    assert seen == [("qa", "constraint", "public.t.x"), ("uat", "trigger", "public.t.x")]
+
+
+def test_a_delta_row_declares_exactly_the_expected_fields():
+    assert declared_fields("DeltaRow") == set(DELTA_ROW_FIELDS)
+
+
+def test_a_diff_line_declares_exactly_the_expected_fields():
+    assert declared_fields("DiffLine") == set(DIFF_LINE_FIELDS)
+
+
+def test_the_detail_models_round_trip_every_field(window):
+    window.selected_deltas = slint.ListModel([make_delta(note="n", is_body=True)])
+    window.selected_diff = slint.ListModel([make_diff_line(kind="added", text="+y")])
+    delta = {k.replace("-", "_"): v for k, v in dict(window.selected_deltas[0]).items()}
+    line = {k.replace("-", "_"): v for k, v in dict(window.selected_diff[0]).items()}
+    assert delta == make_delta(note="n", is_body=True)
+    assert line == make_diff_line(kind="added", text="+y")
+
+
+def test_the_window_wires_the_detail_models_into_the_results_tab(window):
+    # Read the tab's own counts: `selected-deltas: []` in main.slint leaves the window's full.
+    assert window.results_delta_count() == 0
+    assert window.results_diff_count() == 0
+    window.selected_deltas = slint.ListModel([make_delta(), make_delta(attribute="b")])
+    window.selected_diff = slint.ListModel([make_diff_line()] * 3)
+    assert window.results_delta_count() == 2
+    assert window.results_diff_count() == 3
+
+
+def test_the_heading_reaches_the_rendered_pane(window):
+    assert window.results_heading_shown() == "Select a finding to see its detail."
+    window.selected_heading = "qa / column / public.t.x"
+    assert window.results_heading_shown() == "qa / column / public.t.x"
+
+
+def groups(window, attributes):
+    window.selected_diff = slint.ListModel([make_diff_line(attribute=a) for a in attributes])
+    return [window.results_starts_group(i) for i in range(len(attributes))]
+
+
+def test_a_group_label_appears_once_per_run_of_equal_attributes(window):
+    assert groups(window, ["a", "a", "b", "b", "b", "c"]) == [True, False, True, False, False, True]
+
+
+def test_the_first_line_opens_a_group_and_a_lone_run_has_one_label(window):
+    assert groups(window, ["a"]) == [True]
+    assert groups(window, ["a", "a", "a"]) == [True, False, False]
+
+
+def test_the_markup_labels_lines_through_starts_group_only():
+    # The label's `if` is pinned by text; what starts-group answers is driven above.
+    assert "if root.starts-group(i): Text {" in (UI / "results_tab.slint").read_text()
+
+
+def test_the_validator_field_lists_match_the_structs():
+    from cumo_schema_comparer.gui.results_vm import DELTA_ROW_FIELDS, DIFF_ROW_FIELDS
+
+    assert set(DELTA_ROW_FIELDS) == declared_fields("DeltaRow")
+    assert set(DIFF_ROW_FIELDS) == declared_fields("DiffLine")
+
+
+def colour_of(window, kind):
+    return window.results_diff_colour_for(kind)
+
+
+def test_diff_colours_come_from_one_ladder(window):
+    """An earlier banner duplicated its ladder and no test read it, so an error could render
+    green. One function, read here."""
+    context = colour_of(window, "context")
+    added, removed = colour_of(window, "added"), colour_of(window, "removed")
+    assert added != context
+    assert removed != context
+    assert added != removed
+    for muted in ("hunk", "elided"):
+        assert colour_of(window, muted) not in (context, added, removed)
+    assert colour_of(window, "hunk") == colour_of(window, "elided")
+    assert colour_of(window, "unknown") == context
+
+
+def test_each_finding_row_click_hands_its_own_index_to_choose_row():
+    # Python cannot click a repeated element, so the hookup itself is read from the markup; what
+    # choose-row then forwards is driven in test_a_click_forwards_the_identity_of_the_row_clicked.
+    assert "clicked => { root.choose-row(i); }" in (UI / "results_tab.slint").read_text()
+
+
+def test_the_diff_markup_reads_the_colour_function_only():
+    source = (UI / "results_tab.slint").read_text()
+    pane = source[source.index('title: "Detail"') :]
+    assert pane.count("root.diff-colour(line.kind)") == 2
+    assert "#" not in "".join(
+        line.split("//")[0] for line in pane.splitlines() if "diff-colour" not in line
+    ).replace("#344054", "")
+
+
+def shown_pane(rows):
+    """A fresh window showing ``rows``; layout only runs once shown, and not after later edits."""
+    win = slint.load_file(str(UI / "main.slint")).MainWindow()
+    win.selected_diff = slint.ListModel(rows)
+    win.show()
+    try:
+        return (
+            win.results_diff_viewport_width(),
+            win.results_diff_pane_width(),
+            win.results_diff_pane_height(),
+            win.results_tab_min_width(),
+        )
+    finally:
+        win.hide()
+
+
+def test_a_huge_single_row_scrolls_sideways_and_neither_breaks_nor_resizes_the_layout():
+    _, pane_width, _, min_width = shown_pane([make_diff_line(text="short")])
+    assert pane_width > 0
+    huge = [
+        make_diff_line(kind="added", text="select 1 from t; " * 3_000),
+        make_diff_line(text="short"),
+    ]
+    viewport, wide_pane_width, height, wide_min_width = shown_pane(huge)
+    assert viewport > 10 * wide_pane_width
+    assert (wide_pane_width, wide_min_width) == (pane_width, min_width)
+    assert height == 240

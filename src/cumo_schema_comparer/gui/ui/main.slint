@@ -7,9 +7,9 @@ import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
 import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
 import { RunTab, ProgressRow } from "run_tab.slint";
-import { ResultsTab, FindingRow } from "results_tab.slint";
+import { ResultsTab, FindingRow, DeltaRow, DiffLine } from "results_tab.slint";
 
-export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow }
+export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow, DeltaRow, DiffLine }
 
 export component MainWindow inherits Window {
     title: "cumo-schema-diff";
@@ -62,6 +62,10 @@ export component MainWindow inherits Window {
     in-out property <string> verdict-level: "";
     in property <[FindingRow]> findings;
     in property <int> total-findings;
+    in property <string> selected-heading;
+    in property <[DeltaRow]> selected-deltas;
+    in property <[DiffLine]> selected-diff;
+    callback select-finding(string, string, string);
     in-out property <string> filter-text: "";
     in-out property <bool> show-error: true;
     in-out property <bool> show-warning: true;
@@ -103,6 +107,20 @@ export component MainWindow inherits Window {
 
     public function run-progress-count() -> int { return run-tab.progress-count; }
     public function results-finding-count() -> int { return results-tab.finding-count; }
+    public function results-delta-count() -> int { return results-tab.delta-count; }
+    public function results-diff-count() -> int { return results-tab.diff-count; }
+    pure public function results-diff-colour-for(kind: string) -> color {
+        return results-tab.diff-colour-for(kind);
+    }
+    public function results-diff-viewport-width() -> length { return results-tab.diff-viewport-width; }
+    public function results-diff-pane-width() -> length { return results-tab.diff-pane-width; }
+    public function results-diff-pane-height() -> length { return results-tab.diff-pane-height; }
+    public function results-tab-min-width() -> length { return results-tab.tab-min-width; }
+    pure public function results-starts-group(index: int) -> bool {
+        return results-tab.starts-group(index);
+    }
+    public function results-heading-shown() -> string { return results-tab.heading-shown; }
+    public function drive-select-row(index: int) { results-tab.choose-row(index); }
     public function run-start-enabled() -> bool { return run-tab.start-enabled; }
     public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
     public function results-banner-kind() -> string { return results-tab.banner-kind; }
@@ -207,6 +225,9 @@ export component MainWindow inherits Window {
                     verdict-level: root.verdict-level;
                     findings: root.findings;
                     total-findings: root.total-findings;
+                    selected-heading: root.selected-heading;
+                    selected-deltas: root.selected-deltas;
+                    selected-diff: root.selected-diff;
                     filter-text <=> root.filter-text;
                     show-error <=> root.show-error;
                     show-warning <=> root.show-warning;
@@ -214,6 +235,7 @@ export component MainWindow inherits Window {
                     output-directory <=> root.output-directory;
 
                     filter-changed => { root.filter-changed(); }
+                    select-finding(t, k, p) => { root.select-finding(t, k, p); }
                     choose-output-directory => { root.choose-output-directory(); }
                     write-reports => { root.write-reports(); }
                     open-html => { root.open-html(); }

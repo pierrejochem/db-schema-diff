@@ -6,6 +6,12 @@ Two rules govern everything here.
 in every string context, and ``describe`` returns only a host/port/database/user summary. No
 connection string reaches a Slint property, a log line or a rendered string.
 
+**A backend's own words are never repeated.** A keyring backend is free to quote whatever it was
+handed — on macOS the Security framework's text, on Linux a D-Bus error that can echo the value it
+was asked to store — and none of it is under this tool's redaction. So only the exception *type*
+travels, which is what ``session.py`` and ``results_vm._render`` already do;
+``gui.app._sanitise`` stays a second line of defence rather than the only one.
+
 **The keychain wins over the environment** — inside this application only. The CLI keeps reading the
 environment and nothing else, so a credential stored on one machine can never silently override what
 a pipeline exported and make it compare the wrong database.
@@ -13,6 +19,7 @@ a pipeline exported and make it compare the wrong database.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -22,8 +29,21 @@ from typing import Any
 from ..config.secrets import Dsn, format_missing
 from ..errors import MissingCredentialsError
 
+log = logging.getLogger(__name__)
+
 #: Keychain service name. Entries are (KEYCHAIN_SERVICE, <dsn_env name>).
 KEYCHAIN_SERVICE = "cumo-schema-diff"
+
+
+def _why(operation: str, exc: BaseException) -> str:
+    """A backend failure as text safe to show: the exception type, and nothing it said.
+
+    Logged at the same time, also type-only, so a diagnosis is still possible without the message
+    reaching a property, a report or a log file.
+    """
+    name = type(exc).__name__
+    log.warning("keychain %s failed (%s)", operation, name)
+    return name
 
 
 class CredentialSource(StrEnum):
@@ -69,7 +89,7 @@ class CredentialStore:
 
             return keyring.get_keyring()
         except Exception as exc:  # pragma: no cover - platform dependent
-            self._problem = f"no keychain available: {exc}"
+            self._problem = f"no keychain available ({_why('load', exc)})"
             return None
 
     @property
@@ -124,8 +144,10 @@ class CredentialStore:
         try:
             backend.set_password(KEYCHAIN_SERVICE, env_name, dsn.strip())
         except Exception as exc:
-            self._problem = f"keychain unavailable: {exc}"
-            raise RuntimeError(self._problem) from exc
+            # `from None`, not `from exc`: a chained cause carries the backend's message into every
+            # traceback this ends up in, which is the same leak by a longer route.
+            self._problem = f"keychain unavailable ({_why('write', exc)})"
+            raise RuntimeError(self._problem) from None
 
     def forget(self, env_name: str) -> None:
         """Remove a credential from the keychain, leaving the environment untouched."""
@@ -133,8 +155,8 @@ class CredentialStore:
         try:
             backend.delete_password(KEYCHAIN_SERVICE, env_name)
         except Exception as exc:
-            self._problem = f"keychain unavailable: {exc}"
-            raise RuntimeError(self._problem) from exc
+            self._problem = f"keychain unavailable ({_why('delete', exc)})"
+            raise RuntimeError(self._problem) from None
 
     def _require_storage(self) -> Any:
         if not self.storage_available or self._backend is None:
@@ -161,7 +183,7 @@ class CredentialStore:
         try:
             value = self._backend.get_password(KEYCHAIN_SERVICE, env_name)
         except Exception as exc:
-            self._problem = f"keychain unavailable: {exc}"
+            self._problem = f"keychain unavailable ({_why('read', exc)})"
             return None
         if value is None:
             return None

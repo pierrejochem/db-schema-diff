@@ -22,11 +22,22 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from markupsafe import Markup
 
 from ..diff.changelog import ChangelogStatus
-from ..diff.model import ComparisonReport, ObjectFinding, ObjectStatus, TargetDiff
+from ..diff.model import (
+    AttributeDelta,
+    ComparisonReport,
+    ObjectFinding,
+    ObjectStatus,
+    TargetDiff,
+)
 from ..diff.severity import Severity
 from ..model.kinds import KIND_ORDER, ObjectKind
+from .textdiff import DiffLine, unified
 
 TEMPLATE = "report.html.j2"
+
+#: Rendered diff lines per delta. Past this a reader is not reading, they are scrolling; the full
+#: values stay in the embedded JSON payload.
+MAX_DIFF_LINES = 60
 
 #: Severity to CSS class. ``ok`` has no severity of its own — it is the absence of one.
 _CSS = {Severity.ERROR: "error", Severity.WARNING: "warning", Severity.INFO: "info"}
@@ -140,6 +151,7 @@ class HtmlReporter:
                 matrix=_matrix(report),
                 payload=_payload(report),
                 grouped=_grouped,
+                diff_for=_diff_for,
                 target_summary=_target_summary,
                 short_version=_short_version,
                 mark=lambda status: _MARKS.get(status, " "),
@@ -250,6 +262,24 @@ def _changelog_cell(target: TargetDiff) -> Cell:
     return Cell(
         text=changelog.status.label, css=_CSS[changelog.severity], title=changelog.status.label
     )
+
+
+def _diff_for(delta: AttributeDelta) -> tuple[DiffLine, ...]:
+    """The diff to show for a delta, or nothing when a plain before/after row says it better."""
+    if not delta.body:
+        return ()
+    # A routine is compared by its body hash, so the text to diff lives in the display fields.
+    # Everything else compares the text itself. Both or neither is guaranteed by the engine.
+    master: str | None
+    target: str | None
+    if delta.master_display is not None and delta.target_display is not None:
+        master, target = delta.master_display, delta.target_display
+    else:
+        master, target = delta.master_value, delta.target_value
+    values = (master or "", target or "")
+    if not any("\n" in value or len(value) > 120 for value in values):
+        return ()
+    return unified(master, target, max_lines=MAX_DIFF_LINES)
 
 
 def _grouped(target: TargetDiff) -> tuple[Group, ...]:

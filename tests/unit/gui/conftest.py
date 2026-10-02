@@ -37,3 +37,133 @@ def collect_on_the_thread_that_allocated() -> Iterator[None]:
         gc.collect()
         if enabled:
             gc.enable()
+
+
+def _model(*findings, ignored=()):
+    return _model_of({"qa": (findings, ignored)})
+
+
+def _model_of(targets):
+    """A report with one target per ``{label: (findings, ignored)}`` entry."""
+    from cumo_schema_comparer.diff.model import ComparisonReport, TargetDiff
+    from cumo_schema_comparer.gui.results_vm import ResultsModel
+    from tests.support.builders import source
+
+    built = tuple(
+        TargetDiff(
+            master_label="prod",
+            target_label=label,
+            master_source=source("prod"),
+            target_source=source(label),
+            findings=tuple(findings),
+            ignored=tuple(ignored),
+        )
+        for label, (findings, ignored) in targets.items()
+    )
+    report = ComparisonReport(
+        name="t",
+        master_label="prod",
+        targets=built,
+        notes=(),
+        generated_at="2026-01-15T09:30:00+00:00",
+        tool_version="0.1.0",
+        fail_on="error",
+        probe_failed=False,
+    )
+    return ResultsModel(report)
+
+
+def differing(key, *deltas):
+    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from cumo_schema_comparer.diff.severity import Severity
+
+    return ObjectFinding(
+        key=key, status=ObjectStatus.DIFFERS, severity=Severity.ERROR, deltas=tuple(deltas)
+    )
+
+
+def delta(attribute, master, target, **extra):
+    from cumo_schema_comparer.diff.model import AttributeDelta
+    from cumo_schema_comparer.diff.severity import Severity
+
+    return AttributeDelta(
+        attribute=attribute,
+        master_value=master,
+        target_value=target,
+        severity=Severity.ERROR,
+        **extra,
+    )
+
+
+def view_key(name="v_open"):
+    from cumo_schema_comparer.model.keys import ObjectKey
+    from cumo_schema_comparer.model.kinds import ObjectKind
+
+    return ObjectKey(ObjectKind.VIEW, "public", name)
+
+
+@pytest.fixture
+def model_with_a_changed_view():
+    return _model(
+        differing(
+            view_key(),
+            delta("view.definition", "SELECT a,\n b\nFROM t", "SELECT a,\n c\nFROM t", body=True),
+        )
+    )
+
+
+@pytest.fixture
+def model_with_an_added_column():
+    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from cumo_schema_comparer.diff.severity import Severity
+    from cumo_schema_comparer.model.keys import column_key
+
+    return _model(
+        ObjectFinding(
+            key=column_key("public", "t", "c"),
+            status=ObjectStatus.DIFFERS,
+            severity=Severity.ERROR,
+            deltas=(delta("column.default", None, "0"),),
+        )
+    )
+
+
+@pytest.fixture
+def model_with_a_changed_column_type():
+    from cumo_schema_comparer.model.keys import column_key
+
+    return _model(
+        differing(column_key("public", "t", "c"), delta("column.data_type", "varchar(40)", "text"))
+    )
+
+
+@pytest.fixture
+def model_with_two_findings():
+    return _model(
+        differing(view_key("first"), delta("view.definition", "a\nb", "a\nc", body=True)),
+        differing(view_key("second"), delta("view.definition", "x\ny", "x\nz", body=True)),
+    )
+
+
+def absent(key, status):
+    """A finding with no deltas: an object that exists on one side only."""
+    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from cumo_schema_comparer.diff.severity import Severity
+
+    return ObjectFinding(
+        key=key,
+        status=ObjectStatus(status),
+        severity=Severity.ERROR if status == "missing_in_target" else Severity.WARNING,
+    )
+
+
+@pytest.fixture
+def model_with_a_missing_and_an_extra_object():
+    """The commonest findings there are, and the ones that carry no attribute deltas."""
+    from cumo_schema_comparer.model.keys import column_key, table_key
+
+    return _model(
+        absent(view_key("v_gone"), "missing_in_target"),
+        absent(table_key("public", "tmp_debug"), "extra_in_target"),
+        absent(column_key("public", "tmp_debug", "note"), "extra_in_target"),
+    )
