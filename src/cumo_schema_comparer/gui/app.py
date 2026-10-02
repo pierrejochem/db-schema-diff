@@ -54,6 +54,7 @@ from ..diff.ignores import IgnoreRuleSet, load_default_ignores
 from ..diff.model import ComparisonReport
 from ..errors import ComparerError
 from ..runner import ConnectionStatus
+from . import dialogs
 from .config_vm import ConfigDocument
 from .credentials import CredentialStatus, CredentialStore
 from .errors import GuiError
@@ -168,11 +169,16 @@ def _sanitise(text: str) -> str:
 def _no_dialog(purpose: str, current: str) -> str | None:
     """The default path chooser: there is none.
 
-    The Slint Python binding has no file dialog, and starting a second GUI toolkit inside its
-    event loop to borrow one is not worth a crash. The baseline and output-directory fields are
-    editable, and a config file is named on the command line, so every path is still reachable.
+    `run` replaces this with the real pickers. The default is inert so that constructing an
+    Application never shows anything: a test that built one would otherwise open a real dialog and
+    block until a person dismissed it, which is exactly how this was first written and caught.
     """
     return None
+
+
+def _no_dialogs_available() -> bool:
+    """Agrees with :func:`_no_dialog`: with no chooser installed, there is no dialog to offer."""
+    return False
 
 
 async def _as_list(coro: Coroutine[Any, Any, ConnectionStatus]) -> list[ConnectionStatus]:
@@ -197,9 +203,15 @@ class Application:
         self.config: ConfigDocument = ConfigDocument.blank()
         self.ignores: IgnoresDocument | None = None
         self.results: ResultsModel | None = None
-        #: ``(purpose, current value) -> chosen path or None``. Replaceable by a host that has a
-        #: file dialog, and by a test.
+        #: ``(purpose, current value) -> chosen path or None``. Defaults to no picker at all,
+        #: and `run` installs the real one: an Application built in a test would otherwise open a
+        #: Finder window and sit there until someone dismissed it.
         self.choose_path: Callable[[str, str], str | None] = _no_dialog
+        #: Whether a picker exists here at all. Both a cancelled dialog and a machine with no
+        #: dialog produce no path; only the second is worth telling someone to type it instead,
+        #: so the two are told apart by this. Installed by `run` alongside `choose_path`, and the
+        #: default must agree with the default chooser.
+        self.path_dialogs_available: Callable[[], bool] = _no_dialogs_available
         #: Indirection so a test never launches a browser.
         self.open_url: Callable[[str], bool] = webbrowser.open
         self._session: Session | None = None
@@ -254,7 +266,8 @@ class Application:
     def _load_config(self) -> None:
         """The "Open…" button.
 
-        Without a file dialog the window's path is the only candidate, which makes this a reload.
+        With no picker — or with one the person cancelled — the window's own path is the only
+        candidate, which makes this a reload rather than an error.
         """
         chosen = self.choose_path("config", str(self.window.config_path)) or str(
             self.window.config_path
@@ -1013,18 +1026,26 @@ class Application:
     def _choose_baseline(self) -> None:
         chosen = self.choose_path("baseline", str(self.window.baseline_path))
         if chosen is None:
-            raise GuiError(
-                "this build has no file dialog; type the baseline report's path into the field"
-            )
+            # Cancelling is not a failure, and must not read as one. Only a machine with no
+            # picker gets told to type the path instead.
+            if not self.path_dialogs_available():
+                raise GuiError(
+                    "no file dialog on this system; type the baseline report's path into the field"
+                )
+            self._ok("No baseline chosen.")
+            return
         self.window.baseline_path = chosen
         self._ok(f"Baseline: {chosen}")
 
     def _choose_output_directory(self) -> None:
         chosen = self.choose_path("output-directory", str(self.window.output_directory))
         if chosen is None:
-            raise GuiError(
-                "this build has no file dialog; type the output directory into the field"
-            )
+            if not self.path_dialogs_available():
+                raise GuiError(
+                    "no file dialog on this system; type the output directory into the field"
+                )
+            self._ok("No output directory chosen.")
+            return
         self.window.output_directory = chosen
         self._ok(f"Reports will be written to {chosen}.")
 
@@ -1163,6 +1184,9 @@ def run(argv: Sequence[str] | None = None) -> int:
         # Must be off before any worker thread exists; see _show for why.
         gc.disable()
         application = Application()
+        # The real pickers belong to the host, not to the Application: see _no_dialog.
+        application.choose_path = dialogs.choose
+        application.path_dialogs_available = dialogs.available
         if arguments:
             application.open_config(Path(arguments[0]))
         slint.run_event_loop(_show(application.window))

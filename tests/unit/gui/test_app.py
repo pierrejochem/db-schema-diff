@@ -1204,6 +1204,40 @@ class TestResults:
         app.window.drive_choose_output_directory()
         assert app.window.output_directory.endswith("output-directory.json")
 
+    def test_cancelling_a_dialog_is_not_a_failure(self, app):
+        """Dismissing a picker is an ordinary thing to do and must not look like an error.
+
+        Both a cancelled dialog and a machine without one produce no path, so the two are told
+        apart by `path_dialogs_available` — without it, every cancel would read as a fault.
+        """
+        app.path_dialogs_available = lambda: True
+        app.choose_path = lambda purpose, current: None
+
+        app.window.drive_choose_baseline()
+        assert app.window.status_is_error is False
+        assert app.window.baseline_path == ""
+
+        app.window.drive_choose_output_directory()
+        assert app.window.status_is_error is False
+        assert app.window.output_directory == ""
+
+    def test_cancelling_leaves_a_path_already_chosen_alone(self, app, tmp_path):
+        app.path_dialogs_available = lambda: True
+        app.choose_path = lambda purpose, current: str(tmp_path / "kept.json")
+        app.window.drive_choose_baseline()
+        app.choose_path = lambda purpose, current: None
+        app.window.drive_choose_baseline()
+        assert app.window.baseline_path.endswith("kept.json")
+
+    def test_the_chooser_is_told_what_the_field_already_holds(self, app, tmp_path):
+        """So the dialog opens where the person was last looking, not at some default."""
+        asked: list[tuple[str, str]] = []
+        app.window.baseline_path = str(tmp_path / "previous.json")
+        app.choose_path = lambda purpose, current: asked.append((purpose, current)) or None
+        app.path_dialogs_available = lambda: True
+        app.window.drive_choose_baseline()
+        assert asked == [("baseline", str(tmp_path / "previous.json"))]
+
 
 class TestDetailPane:
     @staticmethod
@@ -1404,6 +1438,37 @@ class TestEntryPoint:
         ):
             assert app_module.run([str(path)]) == 0
         assert opened == [path]
+
+    def test_run_installs_the_real_pickers(self, tmp_path):
+        """The default chooser is inert, and `run` is what makes it real.
+
+        This separation is load-bearing: with the real pickers as the Application's default, every
+        test that built one opened a Finder window and blocked until someone dismissed it.
+        """
+        from cumo_schema_comparer.gui import dialogs
+
+        built: list[Application] = []
+        original = Application.__init__
+
+        def remember(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            built.append(self)
+
+        with (
+            mock.patch.object(app_module.slint, "run_event_loop", lambda coro: coro.close()),
+            mock.patch.object(Application, "__init__", remember),
+        ):
+            assert app_module.run([]) == 0
+
+        assert built, "run did not build an application"
+        assert built[0].choose_path is dialogs.choose
+        assert built[0].path_dialogs_available is dialogs.available
+
+    def test_a_freshly_built_application_opens_no_dialog(self):
+        """The guard on the above: a default that shows a dialog cannot be unit tested at all."""
+        fresh = Application()
+        assert fresh.choose_path("config", "/nowhere") is None
+        assert fresh.path_dialogs_available() is False
 
     def test_the_collector_is_disabled_while_the_application_runs(self):
         """A Slint value freed by a worker thread's collection aborts the process.
