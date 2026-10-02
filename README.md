@@ -254,11 +254,12 @@ only where each credential came from and a redacted host/database summary.
 **The CLI does not read the keychain.** It reads the environment and nothing else, so a credential
 stored here cannot change what a CI run does.
 
-Selecting a row on the Results tab opens a detail pane under the list: every attribute that
-differs, with the master and target values side by side, and, for a printed definition (a view, a
-routine body, a check expression), a unified diff of the two texts. Changing the filter or a
-severity toggle, or starting a new run, clears the pane. The pane shows the same masked text as the
-reports.
+Selecting a row on the Results tab opens a detail pane under the list: the finding's name and how
+it compares, then every attribute that differs, with the master and target values side by side, and,
+for a printed definition (a view, a routine body, a check expression), a unified diff of the two
+texts. A missing or extra object has no attributes to differ, and the pane says so rather than going
+blank. Changing the filter or a severity toggle, or starting a new run, clears the pane. The pane
+shows the same masked text as the reports.
 
 A cancelled comparison produces no report and says so: the Results banner is only ever green for a
 finished run that found nothing. Cancelling stops sources that have not started, but a capture

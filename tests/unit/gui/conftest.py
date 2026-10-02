@@ -143,3 +143,27 @@ def model_with_two_findings():
         differing(view_key("first"), delta("view.definition", "a\nb", "a\nc", body=True)),
         differing(view_key("second"), delta("view.definition", "x\ny", "x\nz", body=True)),
     )
+
+
+def absent(key, status):
+    """A finding with no deltas: an object that exists on one side only."""
+    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from cumo_schema_comparer.diff.severity import Severity
+
+    return ObjectFinding(
+        key=key,
+        status=ObjectStatus(status),
+        severity=Severity.ERROR if status == "missing_in_target" else Severity.WARNING,
+    )
+
+
+@pytest.fixture
+def model_with_a_missing_and_an_extra_object():
+    """The commonest findings there are, and the ones that carry no attribute deltas."""
+    from cumo_schema_comparer.model.keys import column_key, table_key
+
+    return _model(
+        absent(view_key("v_gone"), "missing_in_target"),
+        absent(table_key("public", "tmp_debug"), "extra_in_target"),
+        absent(column_key("public", "tmp_debug", "note"), "extra_in_target"),
+    )

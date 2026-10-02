@@ -443,3 +443,37 @@ class TestChangelogLinesCompleteness:
         lines = ResultsModel(report).changelog_lines("dev")
         assert "FAILED on prod" in lines[0]
         assert any(line.endswith("recorded as FAILED on prod") for line in lines)
+
+
+class TestFindingStatus:
+    """Telling "this finding has no deltas" from "there is no such finding".
+
+    ``delta_rows`` returns an empty list for both, and the detail pane treating them alike made
+    clicking a missing or extra object — the commonest finding there is — read as a no-op.
+    """
+
+    MISSING = ("qa", "table", "cumo-invoicing.DunningLevel")
+    EXTRA = ("qa", "table", "public.tmp_debug")
+    DIFFERS = ("qa", "column", "cumo-invoicing.invoice.number")
+
+    def test_a_missing_object_resolves_with_no_deltas(self, model):
+        assert model.finding_status(*self.MISSING) == "missing in target"
+        assert model.delta_rows(*self.MISSING) == []
+
+    def test_an_extra_object_resolves_with_no_deltas(self, model):
+        assert model.finding_status(*self.EXTRA) == "extra in target"
+        assert model.delta_rows(*self.EXTRA) == []
+
+    def test_a_differing_object_resolves_and_has_deltas(self, model):
+        assert model.finding_status(*self.DIFFERS) == "differs"
+        assert model.delta_rows(*self.DIFFERS) != []
+
+    def test_an_unknown_identity_does_not_resolve(self, model):
+        assert model.finding_status("qa", "table", "public.nope") is None
+        assert model.finding_status("nope", "table", "public.tmp_debug") is None
+        assert model.finding_status("qa", "view", "public.tmp_debug") is None
+
+    def test_an_identity_the_filter_hides_does_not_resolve(self, model):
+        assert model.finding_status(*self.MISSING, needle="tmp_debug") is None
+        assert model.finding_status(*self.MISSING, severities=frozenset({"warning"})) is None
+        assert model.finding_status(*self.MISSING, severities=frozenset({"error"})) is not None

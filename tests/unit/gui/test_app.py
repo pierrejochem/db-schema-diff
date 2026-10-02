@@ -1303,6 +1303,43 @@ class TestDetailPane:
         assert app.window.selected_heading == ""
         assert len(app.window.selected_deltas) == 0
 
+    def test_clicking_a_missing_object_names_it_instead_of_clearing_the_pane(
+        self, app, model_with_a_missing_and_an_extra_object
+    ):
+        # Three rows out of four used to read as a no-op: a finding with no deltas returned
+        # through the same clear-the-pane path as one that does not exist. A missing object has
+        # no attribute differences because there is no second version of it to differ from.
+        self.show(app, model_with_a_missing_and_an_extra_object)
+        for position in range(len(app.window.findings)):
+            row = self.click(app, position)
+            heading = app.window.selected_heading
+            assert row["path"] in heading, heading
+            assert row["target"] in heading, heading
+            assert "no attribute differences" in heading, heading
+            assert app.window.status_is_error is False, app.window.status_message
+            assert len(app.window.selected_deltas) == 0
+            assert len(app.window.selected_diff) == 0
+
+    def test_the_heading_says_how_the_object_differs(
+        self, app, model_with_a_missing_and_an_extra_object
+    ):
+        self.show(app, model_with_a_missing_and_an_extra_object)
+        headings = []
+        for position in range(len(app.window.findings)):
+            self.click(app, position)
+            headings.append(app.window.selected_heading)
+        assert any("missing in target" in h for h in headings), headings
+        assert any("extra in target" in h for h in headings), headings
+
+    def test_a_differing_object_still_says_so_and_lists_its_deltas(
+        self, app, model_with_a_changed_view
+    ):
+        self.show(app, model_with_a_changed_view)
+        self.click(app)
+        assert "differs" in app.window.selected_heading
+        assert "no attribute differences" not in app.window.selected_heading
+        assert len(app.window.selected_deltas) == 1
+
     def test_a_partial_row_becomes_a_status_error_not_a_crash(
         self, app, model_with_a_changed_view, monkeypatch
     ):

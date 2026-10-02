@@ -949,6 +949,11 @@ class Application:
         accepts a row dict with a key missing and then aborts the process at the next repaint
         (exit 134, no Python exception); the validator raises a ``GuiError`` instead, which the
         guard turns into the status line.
+
+        An empty delta list is not an empty selection. A missing or extra object has no attribute
+        differences — there is no second version of it to differ from — and it is the commonest
+        finding there is; clearing the pane for it made three clicks out of four read as a no-op.
+        Whether the finding resolves at all is asked separately, and only that clears the pane.
         """
         target, kind, path = str(target), str(kind), str(path)
         results = self.results
@@ -956,14 +961,18 @@ class Application:
             self._clear_selection()
             return
         needle, severities = str(self.window.filter_text), self._severities()
-        deltas = results.delta_rows(target, kind, path, needle=needle, severities=severities)
-        diff = results.diff_rows(target, kind, path, needle=needle, severities=severities)
-        if not deltas:
+        status = results.finding_status(target, kind, path, needle=needle, severities=severities)
+        if status is None:
             self._clear_selection()
             return
+        deltas = results.delta_rows(target, kind, path, needle=needle, severities=severities)
+        diff = results.diff_rows(target, kind, path, needle=needle, severities=severities)
         deltas_checked = checked_delta_rows(deltas)
         diff_checked = checked_diff_rows(diff)
-        self.window.selected_heading = _one_line(f"{kind} {path} on {target}")
+        heading = f"{kind} {path} on {target}: {status}"
+        if not deltas:
+            heading = f"{heading}; no attribute differences"
+        self.window.selected_heading = _one_line(heading)
         self.window.selected_deltas = slint.ListModel(deltas_checked)
         self.window.selected_diff = slint.ListModel(diff_checked)
 

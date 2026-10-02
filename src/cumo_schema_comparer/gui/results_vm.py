@@ -147,6 +147,27 @@ class ResultsModel:
             for delta in finding.deltas
         ]
 
+    def finding_status(
+        self,
+        target: str,
+        kind: str,
+        path: str,
+        *,
+        needle: str = "",
+        severities: frozenset[str] | None = None,
+    ) -> str | None:
+        """How the named finding compares (``"missing in target"``), or ``None`` if it is not there.
+
+        The distinction a caller cannot otherwise make: :meth:`delta_rows` returns an empty list
+        both for a finding that is not in the filtered list and for one that legitimately has no
+        attribute differences. A missing or extra object is in the second group — there is no
+        second version of it to differ from — and that is the commonest finding there is, so
+        treating the two alike makes clicking most rows read as a no-op. Resolution is as in
+        :meth:`delta_rows`.
+        """
+        finding = self._selected(target, kind, path, needle=needle, severities=severities)
+        return None if finding is None else finding.status.label
+
     def diff_rows(
         self,
         target: str,
