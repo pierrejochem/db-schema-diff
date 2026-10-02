@@ -110,18 +110,20 @@ class ResultsModel:
 
     def delta_rows(
         self,
-        index: int,
+        target: str,
+        path: str,
         *,
         needle: str = "",
         severities: frozenset[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """The selected finding's deltas, as complete dicts for a Slint model.
+        """The deltas of the finding at ``path`` on ``target``, as complete dicts for Slint.
 
-        ``index`` is into the filtered rows, because that is what the user clicked. An index that
-        no longer resolves yields nothing rather than describing the wrong finding. ``master`` and
-        ``target`` are the compared values; the body text belongs in :meth:`diff_rows`.
+        The finding is named by identity, not position, so a selection cannot go stale: it is
+        looked up in the same filtered list :meth:`finding_rows` builds. A finding that moved still
+        resolves to itself; one the filter now hides, or that never existed, yields nothing.
+        ``master`` and ``target`` are the compared values; body text belongs in :meth:`diff_rows`.
         """
-        finding = self._selected(index, needle=needle, severities=severities)
+        finding = self._selected(target, path, needle=needle, severities=severities)
         if finding is None:
             return []
         return [
@@ -138,17 +140,21 @@ class ResultsModel:
 
     def diff_rows(
         self,
-        index: int,
+        target: str,
+        path: str,
         *,
         needle: str = "",
         severities: frozenset[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """The diff lines for the selected finding's body deltas, as complete dicts."""
-        finding = self._selected(index, needle=needle, severities=severities)
+        """Diff lines for the finding's body deltas, each labelled with its delta's attribute.
+
+        Rows are grouped in delta order. Resolution is as in :meth:`delta_rows`.
+        """
+        finding = self._selected(target, path, needle=needle, severities=severities)
         if finding is None:
             return []
         return [
-            {"kind": line.kind.value, "text": line.text}
+            {"attribute": delta.attribute, "kind": line.kind.value, "text": line.text}
             for delta in finding.deltas
             for line in diff_for(delta)
         ]
@@ -169,12 +175,12 @@ class ResultsModel:
         return rows
 
     def _selected(
-        self, index: int, *, needle: str, severities: frozenset[str] | None
+        self, target: str, path: str, *, needle: str, severities: frozenset[str] | None
     ) -> ObjectFinding | None:
-        rows = self._filtered(needle=needle, severities=severities)
-        if not 0 <= index < len(rows):
-            return None
-        return rows[index][1]
+        for candidate, finding in self._filtered(needle=needle, severities=severities):
+            if candidate.target_label == target and finding.key.path == path:
+                return finding
+        return None
 
     def changelog_lines(self, target: str) -> list[str]:
         """The Liquibase section for one target, headline first."""

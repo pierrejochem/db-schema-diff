@@ -39,22 +39,31 @@ def collect_on_the_thread_that_allocated() -> Iterator[None]:
             gc.enable()
 
 
-def _model(*findings):
+def _model(*findings, ignored=()):
+    return _model_of({"qa": (findings, ignored)})
+
+
+def _model_of(targets):
+    """A report with one target per ``{label: (findings, ignored)}`` entry."""
     from cumo_schema_comparer.diff.model import ComparisonReport, TargetDiff
     from cumo_schema_comparer.gui.results_vm import ResultsModel
     from tests.support.builders import source
 
-    target = TargetDiff(
-        master_label="prod",
-        target_label="qa",
-        master_source=source("prod"),
-        target_source=source("qa"),
-        findings=tuple(findings),
+    built = tuple(
+        TargetDiff(
+            master_label="prod",
+            target_label=label,
+            master_source=source("prod"),
+            target_source=source(label),
+            findings=tuple(findings),
+            ignored=tuple(ignored),
+        )
+        for label, (findings, ignored) in targets.items()
     )
     report = ComparisonReport(
         name="t",
         master_label="prod",
-        targets=(target,),
+        targets=built,
         notes=(),
         generated_at="2026-01-15T09:30:00+00:00",
         tool_version="0.1.0",

@@ -7,48 +7,70 @@ interface is shaped to avoid. The diff must also agree with the HTML report's.
 
 from __future__ import annotations
 
+from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+from cumo_schema_comparer.diff.severity import Severity
 from cumo_schema_comparer.report.html import MAX_DIFF_LINES
 from cumo_schema_comparer.report.html import _diff_for as html_diff_for
 
-from .conftest import _model, delta, differing, view_key
+from .conftest import _model, _model_of, delta, differing, view_key
+
+
+def ident(model, position=0, **filters):
+    """The (target, path) of the row at ``position`` in the filtered list."""
+    row = model.finding_rows(**filters)[position]
+    return row.target, row.path
 
 
 class TestDeltaRows:
     def test_each_delta_becomes_a_row(self, model_with_a_changed_view):
-        rows = model_with_a_changed_view.delta_rows(0)
+        rows = model_with_a_changed_view.delta_rows(*ident(model_with_a_changed_view))
         assert [r["attribute"] for r in rows] == ["view.definition"]
 
     def test_every_field_is_present_on_every_row(self, model_with_a_changed_view):
         # Slint neither defaults nor rejects a partial row dict: a missing key is simply absent.
         expected = {"attribute", "master", "target", "severity", "note", "is_body"}
-        for row in model_with_a_changed_view.delta_rows(0):
+        for row in model_with_a_changed_view.delta_rows(*ident(model_with_a_changed_view)):
             assert set(row) == expected
 
     def test_a_none_value_becomes_an_empty_string_not_the_word_none(
         self, model_with_an_added_column
     ):
-        rows = model_with_an_added_column.delta_rows(0)
+        rows = model_with_an_added_column.delta_rows(*ident(model_with_an_added_column))
         assert rows[0]["master"] == ""
         assert rows[0]["target"] == "0"
 
     def test_a_body_delta_is_flagged(self, model_with_a_changed_view):
-        assert model_with_a_changed_view.delta_rows(0)[0]["is_body"] is True
+        assert (
+            model_with_a_changed_view.delta_rows(*ident(model_with_a_changed_view))[0]["is_body"]
+            is True
+        )
 
     def test_a_scalar_delta_is_not(self, model_with_a_changed_column_type):
-        assert model_with_a_changed_column_type.delta_rows(0)[0]["is_body"] is False
+        assert (
+            model_with_a_changed_column_type.delta_rows(*ident(model_with_a_changed_column_type))[
+                0
+            ]["is_body"]
+            is False
+        )
 
 
 class TestDiffRows:
     def test_a_body_delta_produces_diff_lines(self, model_with_a_changed_view):
-        kinds = {r["kind"] for r in model_with_a_changed_view.diff_rows(0)}
+        kinds = {
+            r["kind"]
+            for r in model_with_a_changed_view.diff_rows(*ident(model_with_a_changed_view))
+        }
         assert "added" in kinds and "removed" in kinds
 
     def test_a_scalar_delta_produces_none(self, model_with_a_changed_column_type):
-        assert model_with_a_changed_column_type.diff_rows(0) == []
+        assert (
+            model_with_a_changed_column_type.diff_rows(*ident(model_with_a_changed_column_type))
+            == []
+        )
 
     def test_every_field_is_present(self, model_with_a_changed_view):
-        for row in model_with_a_changed_view.diff_rows(0):
-            assert set(row) == {"kind", "text"}
+        for row in model_with_a_changed_view.diff_rows(*ident(model_with_a_changed_view)):
+            assert set(row) == {"attribute", "kind", "text"}
 
     def test_master_only_lines_are_removed_and_target_only_lines_added(self):
         model = _model(
@@ -57,14 +79,14 @@ class TestDiffRows:
                 delta("view.definition", "keep\nonly_master", "keep\nonly_target", body=True),
             )
         )
-        rows = model.diff_rows(0)
-        assert {"kind": "removed", "text": "only_master"} in rows
-        assert {"kind": "added", "text": "only_target"} in rows
-        assert {"kind": "added", "text": "only_master"} not in rows
+        rows = model.diff_rows(*ident(model))
+        assert {"attribute": "view.definition", "kind": "removed", "text": "only_master"} in rows
+        assert {"attribute": "view.definition", "kind": "added", "text": "only_target"} in rows
+        assert all(r["text"] != "only_master" or r["kind"] == "removed" for r in rows)
 
     def test_a_non_body_delta_with_newlines_produces_no_diff(self):
         model = _model(differing(view_key(), delta("column.default", "a\nb", "a\nc")))
-        assert model.diff_rows(0) == []
+        assert model.diff_rows(*ident(model)) == []
 
     def test_a_routine_diffs_its_display_text_not_its_hashes(self):
         model = _model(
@@ -80,18 +102,18 @@ class TestDiffRows:
                 ),
             )
         )
-        texts = [r["text"] for r in model.diff_rows(0)]
+        texts = [r["text"] for r in model.diff_rows(*ident(model))]
         assert "select 2;" in texts and "select 3;" in texts
         assert "a" * 64 not in texts
-        row = model.delta_rows(0)[0]
+        row = model.delta_rows(*ident(model))[0]
         assert (row["master"], row["target"]) == ("a" * 64, "b" * 64)
 
     def test_a_routine_without_a_captured_body_renders_no_diff_but_shows_hashes(self):
         model = _model(
             differing(view_key("fn"), delta("routine.body", "a" * 64, "b" * 64, body=True))
         )
-        assert model.diff_rows(0) == []
-        assert model.delta_rows(0)[0]["master"] == "a" * 64
+        assert model.diff_rows(*ident(model)) == []
+        assert model.delta_rows(*ident(model))[0]["master"] == "a" * 64
 
     def test_a_masked_pair_renders_normally(self):
         model = _model(
@@ -105,42 +127,119 @@ class TestDiffRows:
                 ),
             )
         )
-        texts = [r["text"] for r in model.diff_rows(0)]
+        texts = [r["text"] for r in model.diff_rows(*ident(model))]
         assert "'***:a3f1c2'" in texts and "'***:b7c2d9'" in texts
 
     def test_it_agrees_with_the_html_report(self, model_with_a_changed_view):
-        finding = model_with_a_changed_view._selected(0, needle="", severities=None)
+        finding = model_with_a_changed_view._selected(
+            *ident(model_with_a_changed_view), needle="", severities=None
+        )
         expected = [
-            {"kind": line.kind.value, "text": line.text}
+            {"attribute": d.attribute, "kind": line.kind.value, "text": line.text}
             for d in finding.deltas
             for line in html_diff_for(d)
         ]
-        assert model_with_a_changed_view.diff_rows(0) == expected
+        assert model_with_a_changed_view.diff_rows(*ident(model_with_a_changed_view)) == expected
 
     def test_a_long_diff_is_capped_at_the_html_limit(self):
         before = "\n".join(f"old{i}" for i in range(200))
         after = "\n".join(f"new{i}" for i in range(200))
         model = _model(differing(view_key(), delta("view.definition", before, after, body=True)))
-        rows = model.diff_rows(0)
+        rows = model.diff_rows(*ident(model))
         assert len(rows) == MAX_DIFF_LINES + 1
         assert rows[-1]["kind"] == "elided"
 
 
-class TestSelectionAgainstTheFilter:
-    def test_an_out_of_range_index_is_empty_not_an_error(self, model_with_a_changed_view):
-        assert model_with_a_changed_view.delta_rows(99) == []
-        assert model_with_a_changed_view.diff_rows(99) == []
+class TestMoreShapes:
+    def test_each_body_delta_is_labelled_and_grouped_in_delta_order(self):
+        model = _model(
+            differing(
+                view_key(),
+                delta("check.one", "a\nb", "a\nc", body=True),
+                delta("check.two", "x\ny", "x\nz", body=True),
+            )
+        )
+        rows = model.diff_rows(*ident(model))
+        assert all(set(r) == {"attribute", "kind", "text"} for r in rows)
+        labels = [r["attribute"] for r in rows]
+        assert set(labels) == {"check.one", "check.two"}
+        assert labels == sorted(labels)  # one then two: grouped, never interleaved
+        assert labels.index("check.two") == labels.count("check.one")
+        assert [r["attribute"] for r in model.delta_rows(*ident(model))] == [
+            "check.one",
+            "check.two",
+        ]
 
-    def test_a_negative_index_is_empty(self, model_with_a_changed_view):
-        assert model_with_a_changed_view.delta_rows(-1) == []
-        assert model_with_a_changed_view.diff_rows(-1) == []
+    def test_a_none_note_is_an_empty_string(self, model_with_a_changed_view):
+        assert (
+            model_with_a_changed_view.delta_rows(*ident(model_with_a_changed_view))[0]["note"] == ""
+        )
 
-    def test_the_index_follows_the_filter(self, model_with_two_findings):
-        """Index 0 under a filter must describe the filtered row, not the unfiltered first one."""
-        unfiltered = model_with_two_findings.diff_rows(0)
-        filtered = model_with_two_findings.diff_rows(0, needle="second")
-        assert unfiltered != filtered
-        assert {"kind": "added", "text": "z"} in filtered
+    def test_a_note_keeps_its_value(self):
+        model = _model(differing(view_key(), delta("column.data_type", "a", "b", note="why")))
+        assert model.delta_rows(*ident(model))[0]["note"] == "why"
 
-    def test_the_filter_can_leave_nothing_to_select(self, model_with_two_findings):
-        assert model_with_two_findings.delta_rows(0, needle="nope") == []
+    def test_a_suppressed_finding_resolves(self):
+        ignored = ObjectFinding(
+            key=view_key("quiet"),
+            status=ObjectStatus.DIFFERS,
+            severity=Severity.WARNING,
+            deltas=(delta("view.definition", "a\nb", "a\nc", body=True),),
+            ignored_by="rule-1",
+        )
+        model = _model(ignored=(ignored,))
+        assert model.finding_rows()[0].suppressed_by == "rule-1"
+        assert [r["attribute"] for r in model.delta_rows(*ident(model))] == ["view.definition"]
+        assert model.diff_rows(*ident(model)) != []
+
+    def test_an_empty_severity_set_hides_everything_but_none_hides_nothing(
+        self, model_with_a_changed_view
+    ):
+        who = ident(model_with_a_changed_view)
+        assert model_with_a_changed_view.delta_rows(*who, severities=frozenset()) == []
+        assert model_with_a_changed_view.diff_rows(*who, severities=frozenset()) == []
+        assert model_with_a_changed_view.delta_rows(*who, severities=None) != []
+        assert model_with_a_changed_view.diff_rows(*who, severities=None) != []
+
+
+class TestSelectionByIdentity:
+    def test_a_finding_that_moved_still_resolves_to_itself(self, model_with_two_findings):
+        beta = ("qa", model_with_two_findings.finding_rows()[1].path)
+        before = model_with_two_findings.diff_rows(*beta)
+        assert before != []
+        # Under this needle beta is index 0; under none it is index 1. Same detail either way.
+        needle = beta[1].split(".")[-1]
+        assert ident(model_with_two_findings, 0, needle=needle) == beta
+        assert model_with_two_findings.diff_rows(*beta, needle=needle) == before
+        assert model_with_two_findings.delta_rows(*beta, needle=needle) == (
+            model_with_two_findings.delta_rows(*beta)
+        )
+
+    def test_a_filtered_out_identity_is_empty(self, model_with_two_findings):
+        first = ident(model_with_two_findings, 0)
+        second_needle = ident(model_with_two_findings, 1)[1].split(".")[-1]
+        assert model_with_two_findings.delta_rows(*first, needle=second_needle) == []
+        assert model_with_two_findings.diff_rows(*first, needle=second_needle) == []
+
+    def test_an_unknown_target_or_path_is_empty(self, model_with_a_changed_view):
+        target, path = ident(model_with_a_changed_view)
+        assert model_with_a_changed_view.delta_rows("nope", path) == []
+        assert model_with_a_changed_view.delta_rows(target, "nope") == []
+        assert model_with_a_changed_view.diff_rows("nope", path) == []
+        assert model_with_a_changed_view.diff_rows(target, "nope") == []
+
+    def test_the_same_path_on_two_targets_resolves_to_each(self):
+        def finding(master, target):
+            return differing(view_key(), delta("view.definition", master, target, body=True))
+
+        model = _model_of(
+            {
+                "qa": ((finding("a\nb", "a\nQA"),), ()),
+                "dev": ((finding("a\nb", "a\nDEV"),), ()),
+            }
+        )
+        path = model.finding_rows()[0].path
+        qa = [r["text"] for r in model.diff_rows("qa", path)]
+        dev = [r["text"] for r in model.diff_rows("dev", path)]
+        assert "QA" in qa and "DEV" not in qa
+        assert "DEV" in dev and "QA" not in dev
