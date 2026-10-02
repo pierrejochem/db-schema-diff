@@ -4,8 +4,8 @@
 // "captured" and the run still end cancelled, so nothing here may be coloured or worded as a
 // success. The verdict lives on the Results tab and comes from the run, not from these rows.
 
-import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
-import { LabelledCheck } from "widgets.slint";
+import { LineEdit, ComboBox, Button, ScrollView } from "std-widgets.slint";
+import { LabelledCheck, Card, FormRow, ColumnHead } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 
 export struct ProgressRow {
@@ -17,8 +17,12 @@ export struct ProgressRow {
 export component ProgressLine inherits Rectangle {
     in property <ProgressRow> data;
 
+    height: Tokens.row-height;
+    border-radius: Tokens.radius-subtle;
+
     HorizontalLayout {
-        padding: Tokens.space-2;
+        padding-left: Tokens.space-2;
+        padding-right: Tokens.space-2;
         spacing: Tokens.space-3;
         Text {
             text: root.data.label;
@@ -34,7 +38,12 @@ export component ProgressLine inherits Rectangle {
             font-family: Tokens.family-mono;
             color: root.data.state == "failed" ? Tokens.danger : Tokens.body;
         }
-        Text { text: root.data.detail; vertical-alignment: center; color: Tokens.muted; }
+        Text {
+            text: root.data.detail;
+            vertical-alignment: center;
+            overflow: elide;
+            color: Tokens.muted;
+        }
     }
 }
 
@@ -79,51 +88,56 @@ export component RunTab inherits ScrollView {
     }
 
     VerticalLayout {
-        padding: Tokens.space-3;
-        spacing: Tokens.space-3;
+        padding: Tokens.space-5;
+        spacing: Tokens.space-4;
+        alignment: start;
 
-        GroupBox {
-            title: "Options";
+        Card {
+            title: "RUN OPTIONS";
             VerticalLayout {
-                spacing: Tokens.space-2;
-                HorizontalLayout {
-                    spacing: Tokens.space-2;
-                    Text {
-                        text: "fail on";
-                        width: 140px;
-                        vertical-alignment: center;
-                        color: Tokens.muted;
-                    }
+                spacing: Tokens.space-1;
+                FormRow {
+                    label: "fail on";
                     ComboBox {
                         model: root.fail-on-choices;
                         current-value <=> root.run-fail-on;
+                        max-width: 200px;
                     }
+                    Rectangle { }
                 }
-                HorizontalLayout {
-                    spacing: Tokens.space-2;
-                    Text {
-                        text: "baseline";
-                        width: 140px;
-                        vertical-alignment: center;
-                        color: Tokens.muted;
-                    }
+                FormRow {
+                    label: "baseline";
                     baseline-edit := LineEdit {
                         text <=> root.baseline-path;
                         placeholder-text: "(none)";
+                        max-width: Tokens.field-max;
                     }
                     Button { text: "Choose…"; clicked => { root.request-choose-baseline(); } }
+                    Rectangle { }
                 }
-                LabelledCheck { label: "show cosmetic"; value <=> root.show-cosmetic; }
-                LabelledCheck { label: "skip liquibase"; value <=> root.skip-liquibase; }
-                LabelledCheck { label: "strict changelog"; value <=> root.strict-changelog; }
-                LabelledCheck { label: "no default ignores"; value <=> root.no-default-ignores; }
-                LabelledCheck { label: "allow unreachable"; value <=> root.allow-unreachable; }
-                LabelledCheck { label: "sequential"; value <=> root.sequential; }
+                FormRow {
+                    label: "";
+                    LabelledCheck { label: "show cosmetic"; value <=> root.show-cosmetic; }
+                    LabelledCheck { label: "skip liquibase"; value <=> root.skip-liquibase; }
+                    LabelledCheck { label: "strict changelog"; value <=> root.strict-changelog; }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "";
+                    LabelledCheck {
+                        label: "no default ignores";
+                        value <=> root.no-default-ignores;
+                    }
+                    LabelledCheck { label: "allow unreachable"; value <=> root.allow-unreachable; }
+                    LabelledCheck { label: "sequential"; value <=> root.sequential; }
+                    Rectangle { }
+                }
             }
         }
 
         HorizontalLayout {
             spacing: Tokens.space-2;
+            alignment: start;
             Button {
                 text: root.running ? "Running…" : "Run comparison";
                 primary: true;
@@ -137,10 +151,19 @@ export component RunTab inherits ScrollView {
             }
         }
 
-        GroupBox {
-            title: "Sources";
+        Card {
+            title: "PROGRESS";
             VerticalLayout {
                 spacing: Tokens.space-1;
+                HorizontalLayout {
+                    padding-left: Tokens.space-2;
+                    padding-right: Tokens.space-2;
+                    spacing: Tokens.space-3;
+                    height: Tokens.space-5;
+                    ColumnHead { text: "SOURCE"; width: 180px; }
+                    ColumnHead { text: "STATE"; width: 110px; }
+                    ColumnHead { text: "DETAIL"; }
+                }
                 for row[i] in root.progress: ProgressLine {
                     background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;

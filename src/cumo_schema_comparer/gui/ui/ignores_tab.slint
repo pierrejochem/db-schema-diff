@@ -1,7 +1,7 @@
 // Ignore rules: the user's own rules are editable, the bundled defaults are shown read-only.
 
-import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
-import { LabelledCheck } from "widgets.slint";
+import { LineEdit, ComboBox, Button, ScrollView } from "std-widgets.slint";
+import { LabelledCheck, Card, FormRow, ColumnHead } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 
 // kinds, names, attributes, targets and statuses are comma-separated; the view model splits them.
@@ -32,6 +32,8 @@ export component RuleLine inherits Rectangle {
         + (remove-button.enabled ? 1 : 0);
     // What the action ComboBox actually offers.
     out property <[string]> action-choices: action-box.model;
+
+    border-radius: Tokens.radius-subtle;
 
     VerticalLayout {
         padding: Tokens.space-2;
@@ -116,36 +118,51 @@ export component IgnoresTab inherits ScrollView {
     out property <int> default-rule-count: root.default-rules.length;
 
     VerticalLayout {
-        padding: Tokens.space-3;
-        spacing: Tokens.space-3;
+        padding: Tokens.space-5;
+        spacing: Tokens.space-4;
+        alignment: start;
 
-        GroupBox {
-            title: "Ignore rules";
+        Card {
+            title: "IGNORE RULES";
             VerticalLayout {
                 spacing: Tokens.space-2;
+                HorizontalLayout {
+                    padding-left: Tokens.space-2;
+                    spacing: Tokens.space-2;
+                    height: Tokens.space-5;
+                    ColumnHead { text: "ID"; }
+                    ColumnHead { text: "REASON"; }
+                    ColumnHead { text: "ACTION"; width: 120px; }
+                    ColumnHead { text: ""; width: 90px; }
+                }
                 for row[i] in root.rules: RuleLine {
                     background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
                     changed(f, v) => { root.rule-changed(row.id, f, v); }
                     remove => { root.remove-rule(row.id); }
                 }
-                LabelledCheck {
-                    label: "case_insensitive_globs";
-                    value <=> root.case-insensitive-globs;
-                    toggled(v) => {
-                        root.rule-changed("", "case_insensitive_globs", v ? "true" : "false");
+                FormRow {
+                    label: "";
+                    LabelledCheck {
+                        label: "case insensitive globs";
+                        value <=> root.case-insensitive-globs;
+                        toggled(v) => {
+                            root.rule-changed("", "case_insensitive_globs", v ? "true" : "false");
+                        }
                     }
+                    Rectangle { }
                 }
                 HorizontalLayout {
                     spacing: Tokens.space-2;
+                    alignment: start;
                     Button { text: "Add rule"; clicked => { root.add-rule(); } }
                     Button { text: "Save"; primary: true; clicked => { root.save-ignores(); } }
                 }
             }
         }
 
-        GroupBox {
-            title: "bundled defaults";
+        Card {
+            title: "BUNDLED DEFAULTS";
             VerticalLayout {
                 spacing: Tokens.space-2;
                 for row[i] in root.default-rules: RuleLine {

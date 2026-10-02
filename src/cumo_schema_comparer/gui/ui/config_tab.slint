@@ -1,7 +1,11 @@
 // Every field of ComparerConfig, SourceRef and Options.
+//
+// Every field is labelled from the shared label column, so nothing here depends on a placeholder
+// the user has already typed over. Each source is its own card rather than a row in a striped
+// block: a source carries nine fields and a connection result, which is a record, not a row.
 
-import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
-import { LabelledField, LabelledNumber, LabelledCheck } from "widgets.slint";
+import { LineEdit, ComboBox, Button, ScrollView } from "std-widgets.slint";
+import { LabelledCheck, Card, FormRow, Eyebrow } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 
 export struct SourceRow {
@@ -45,202 +49,340 @@ export component ConfigTab inherits ScrollView {
     callback save-config();
 
     VerticalLayout {
-        padding: Tokens.space-3;
-        spacing: Tokens.space-3;
+        padding: Tokens.space-5;
+        spacing: Tokens.space-4;
+        alignment: start;
 
-        LabelledField {
-            label: "name";
-            value <=> root.config-name;
-            placeholder: "invoicing";
-            edited(v) => { root.source-changed("", "name", v); }
+        Card {
+            title: "CONFIGURATION";
+            FormRow {
+                label: "name";
+                LineEdit {
+                    text <=> root.config-name;
+                    placeholder-text: "invoicing";
+                    max-width: Tokens.field-max;
+                    edited(v) => { root.source-changed("", "name", v); }
+                }
+                Rectangle { }
+            }
+            FormRow {
+                label: "exclude schemas";
+                LineEdit {
+                    text <=> root.exclude-schemas-text;
+                    placeholder-text: "quartz, audit_archive";
+                    max-width: Tokens.field-max;
+                    edited(v) => { root.source-changed("", "exclude_schemas", v); }
+                }
+                Rectangle { }
+            }
         }
 
-        GroupBox {
-            title: "Sources";
-            VerticalLayout {
-                spacing: Tokens.space-2;
-                for row[i] in root.sources: Rectangle {
-                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
-                    VerticalLayout {
-                        padding: Tokens.space-2;
-                        spacing: Tokens.space-1;
-                        HorizontalLayout {
-                            spacing: Tokens.space-2;
-                            Text {
-                                text: row.is_master ? "master" : "target";
-                                width: 60px;
-                                font-weight: row.is_master ? Tokens.weight-bold
-                                    : Tokens.weight-regular;
-                                color: row.is_master ? Tokens.heading : Tokens.muted;
-                                vertical-alignment: center;
-                            }
-                            LineEdit {
-                                text: row.label;
-                                edited(v) => { root.source-changed(row.label, "label", v); }
-                            }
-                            LineEdit {
-                                text: row.dsn_env;
-                                placeholder-text: "PROD_DSN";
-                                edited(v) => { root.source-changed(row.label, "dsn_env", v); }
-                            }
-                            Text {
-                                text: row.credential_source;
-                                width: 90px;
-                                vertical-alignment: center;
-                                font-family: Tokens.family-mono;
-                                color: Tokens.muted;
-                            }
-                            Button {
-                                text: "Check connection";
-                                clicked => { root.check-connection(row.label); }
-                            }
-                            Button {
-                                text: "Remove";
-                                enabled: !row.is_master;
-                                clicked => { root.remove-target(row.label); }
+        // One card per source, with its own heading, rather than one card holding striped rows:
+        // cards do not nest, and the master needs a marker of its own.
+        VerticalLayout {
+            spacing: Tokens.space-2;
+            Eyebrow { text: "SOURCES"; }
+
+            for row[i] in root.sources: Rectangle {
+                background: Tokens.card;
+                border-radius: Tokens.radius-card;
+                border-width: Tokens.hairline-width;
+                border-color: row.is_master ? Tokens.heading : Tokens.hairline;
+                // The master is the reference every target is read against, so it carries the
+                // accent edge as well as the word.
+                Rectangle {
+                    x: 0;
+                    width: row.is_master ? Tokens.space-1 : 0px;
+                    background: Tokens.lime;
+                }
+                VerticalLayout {
+                    padding: Tokens.space-4;
+                    spacing: Tokens.space-2;
+
+                    HorizontalLayout {
+                        spacing: Tokens.space-2;
+                        Text {
+                            text: row.is_master ? "MASTER" : "TARGET";
+                            font-size: Tokens.text-eyebrow;
+                            font-weight: Tokens.weight-bold;
+                            letter-spacing: Tokens.tracking-caps;
+                            color: row.is_master ? Tokens.heading : Tokens.muted;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { }
+                        Button {
+                            text: "Check connection";
+                            clicked => { root.check-connection(row.label); }
+                        }
+                        Button {
+                            text: "Remove";
+                            enabled: !row.is_master;
+                            clicked => { root.remove-target(row.label); }
+                        }
+                    }
+
+                    FormRow {
+                        label: "label";
+                        LineEdit {
+                            text: row.label;
+                            max-width: Tokens.field-max;
+                            edited(v) => { root.source-changed(row.label, "label", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "dsn variable";
+                        LineEdit {
+                            text: row.dsn_env;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "PROD_DSN";
+                            edited(v) => { root.source-changed(row.label, "dsn_env", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "credential";
+                        Text {
+                            text: row.credential_source;
+                            vertical-alignment: center;
+                            font-family: Tokens.family-mono;
+                            color: Tokens.muted;
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "host";
+                        LineEdit {
+                            text: row.host;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "documentation only";
+                            edited(v) => { root.source-changed(row.label, "host", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "database";
+                        LineEdit {
+                            text: row.database;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "documentation only";
+                            edited(v) => { root.source-changed(row.label, "database", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "schemas";
+                        LineEdit {
+                            text: row.schemas;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "comma separated";
+                            edited(v) => { root.source-changed(row.label, "schemas", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "schema map";
+                        LineEdit {
+                            text: row.schema_map;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "master=target, master=target";
+                            edited(v) => { root.source-changed(row.label, "schema_map", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "liquibase schema";
+                        LineEdit {
+                            text: row.liquibase_schema;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "optional";
+                            edited(v) => {
+                                root.source-changed(row.label, "liquibase_schema", v);
                             }
                         }
-                        HorizontalLayout {
-                            spacing: Tokens.space-2;
-                            LineEdit {
-                                text: row.host;
-                                placeholder-text: "host (documentation only)";
-                                edited(v) => { root.source-changed(row.label, "host", v); }
-                            }
-                            LineEdit {
-                                text: row.database;
-                                placeholder-text: "database (documentation only)";
-                                edited(v) => { root.source-changed(row.label, "database", v); }
-                            }
-                            LineEdit {
-                                text: row.schemas;
-                                placeholder-text: "schemas, comma separated";
-                                edited(v) => { root.source-changed(row.label, "schemas", v); }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "liquibase table";
+                        LineEdit {
+                            text: row.liquibase_table;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "DATABASECHANGELOG";
+                            edited(v) => {
+                                root.source-changed(row.label, "liquibase_table", v);
                             }
                         }
-                        HorizontalLayout {
-                            spacing: Tokens.space-2;
-                            LineEdit {
-                                text: row.schema_map;
-                                placeholder-text: "schema_map: master=target, master=target";
-                                edited(v) => { root.source-changed(row.label, "schema_map", v); }
-                            }
-                            LineEdit {
-                                text: row.liquibase_schema;
-                                placeholder-text: "liquibase schema (optional)";
-                                edited(v) => {
-                                    root.source-changed(row.label, "liquibase_schema", v);
-                                }
-                            }
-                            LineEdit {
-                                text: row.liquibase_table;
-                                placeholder-text: "DATABASECHANGELOG";
-                                edited(v) => {
-                                    root.source-changed(row.label, "liquibase_table", v);
-                                }
-                            }
-                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "";
                         Text {
                             text: row.connection_status;
+                            vertical-alignment: center;
                             font-weight: Tokens.weight-bold;
                             color: row.connection_ok ? Tokens.success : Tokens.danger;
                             visible: row.connection_status != "";
+                            height: row.connection_status == "" ? 0px : Tokens.space-5;
                         }
+                        Rectangle { }
                     }
                 }
-                HorizontalLayout {
-                    spacing: Tokens.space-2;
-                    Button { text: "Add target"; clicked => { root.add-target(); } }
-                    Button { text: "Check all"; clicked => { root.check-all(); } }
+            }
+
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+                alignment: start;
+                Button { text: "Add target"; clicked => { root.add-target(); } }
+                Button { text: "Check all"; clicked => { root.check-all(); } }
+            }
+        }
+
+        // The options are grouped by what they govern. One flat list of ten controls is what made
+        // this view hard to read.
+        Card {
+            title: "TIMEOUTS";
+            VerticalLayout {
+                spacing: Tokens.space-1;
+                FormRow {
+                    label: "connect";
+                    LineEdit {
+                        text: root.connect-timeout-seconds;
+                        input-type: number;
+                        width: 90px;
+                        edited(v) => {
+                            root.connect-timeout-seconds = v.to-float();
+                            root.source-changed("", "connect_timeout_seconds", v);
+                        }
+                    }
+                    Text {
+                        text: "seconds";
+                        vertical-alignment: center;
+                        font-size: Tokens.text-body;
+                        color: Tokens.muted;
+                    }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "statement";
+                    LineEdit {
+                        text: root.statement-timeout-seconds;
+                        input-type: number;
+                        width: 90px;
+                        edited(v) => {
+                            root.statement-timeout-seconds = v.to-float();
+                            root.source-changed("", "statement_timeout_seconds", v);
+                        }
+                    }
+                    Text {
+                        text: "seconds";
+                        vertical-alignment: center;
+                        font-size: Tokens.text-body;
+                        color: Tokens.muted;
+                    }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "lock";
+                    LineEdit {
+                        text: root.lock-timeout-seconds;
+                        input-type: number;
+                        width: 90px;
+                        edited(v) => {
+                            root.lock-timeout-seconds = v.to-float();
+                            root.source-changed("", "lock_timeout_seconds", v);
+                        }
+                    }
+                    Text {
+                        text: "seconds";
+                        vertical-alignment: center;
+                        font-size: Tokens.text-body;
+                        color: Tokens.muted;
+                    }
+                    Rectangle { }
                 }
             }
         }
 
-        LabelledField {
-            label: "exclude_schemas";
-            value <=> root.exclude-schemas-text;
-            placeholder: "quartz, audit_archive";
-            edited(v) => { root.source-changed("", "exclude_schemas", v); }
-        }
-
-        GroupBox {
-            title: "Options";
+        Card {
+            title: "EXECUTION";
             VerticalLayout {
                 spacing: Tokens.space-1;
-                LabelledNumber {
-                    label: "connect_timeout_seconds";
-                    value <=> root.connect-timeout-seconds;
-                    edited(v) => { root.source-changed("", "connect_timeout_seconds", v); }
-                }
-                LabelledNumber {
-                    label: "statement_timeout_seconds";
-                    value <=> root.statement-timeout-seconds;
-                    edited(v) => { root.source-changed("", "statement_timeout_seconds", v); }
-                }
-                LabelledNumber {
-                    label: "lock_timeout_seconds";
-                    value <=> root.lock-timeout-seconds;
-                    edited(v) => { root.source-changed("", "lock_timeout_seconds", v); }
-                }
-                LabelledNumber {
-                    label: "max_workers";
-                    value <=> root.max-workers;
-                    edited(v) => { root.source-changed("", "max_workers", v); }
-                }
-                HorizontalLayout {
-                    spacing: Tokens.space-2;
-                    Text {
-                        text: "fail_on";
-                        width: 220px;
-                        vertical-alignment: center;
-                        color: Tokens.muted;
+                FormRow {
+                    label: "max workers";
+                    LineEdit {
+                        text: root.max-workers;
+                        input-type: number;
+                        width: 90px;
+                        edited(v) => {
+                            root.max-workers = v.to-float();
+                            root.source-changed("", "max_workers", v);
+                        }
                     }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "fail on";
                     ComboBox {
                         model: ["error", "warning", "any", "never"];
                         current-value <=> root.fail-on;
+                        max-width: 200px;
                         selected(v) => { root.source-changed("", "fail_on", v); }
                     }
+                    Rectangle { }
                 }
-                LabelledCheck {
-                    label: "parallel";
-                    value <=> root.parallel;
-                    toggled(v) => {
-                        root.source-changed("", "parallel", v ? "true" : "false");
+                FormRow {
+                    label: "";
+                    LabelledCheck {
+                        label: "parallel";
+                        value <=> root.parallel;
+                        toggled(v) => {
+                            root.source-changed("", "parallel", v ? "true" : "false");
+                        }
                     }
-                }
-                LabelledCheck {
-                    label: "ignore_column_order";
-                    value <=> root.ignore-column-order;
-                    toggled(v) => {
-                        root.source-changed("", "ignore_column_order", v ? "true" : "false");
+                    LabelledCheck {
+                        label: "ignore column order";
+                        value <=> root.ignore-column-order;
+                        toggled(v) => {
+                            root.source-changed("", "ignore_column_order", v ? "true" : "false");
+                        }
                     }
+                    Rectangle { }
                 }
+            }
+        }
+
+        Card {
+            title: "INCLUDE";
+            FormRow {
+                label: "compare";
                 LabelledCheck {
-                    label: "include_owners";
+                    label: "owners";
                     value <=> root.include-owners;
                     toggled(v) => {
                         root.source-changed("", "include_owners", v ? "true" : "false");
                     }
                 }
                 LabelledCheck {
-                    label: "include_comments";
+                    label: "comments";
                     value <=> root.include-comments;
                     toggled(v) => {
                         root.source-changed("", "include_comments", v ? "true" : "false");
                     }
                 }
                 LabelledCheck {
-                    label: "include_grants";
+                    label: "grants";
                     value <=> root.include-grants;
                     toggled(v) => {
                         root.source-changed("", "include_grants", v ? "true" : "false");
                     }
                 }
+                Rectangle { }
             }
         }
 
         HorizontalLayout {
             spacing: Tokens.space-2;
+            alignment: start;
             Button { text: "Validate"; clicked => { root.validate-config(); } }
             Button { text: "Save"; primary: true; clicked => { root.save-config(); } }
         }

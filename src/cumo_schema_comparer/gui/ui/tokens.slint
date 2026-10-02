@@ -22,6 +22,17 @@
 // Nothing unused lives here. A token no consumer reads is a decision nobody made, and the suite
 // rejects one, so the file stays a record of what this UI actually does.
 export global Tokens {
+    // The navy foundation. The navigation rail is a navy surface, so what sits on it is the
+    // inverse ink and the rail's own selected and hover states are steps of the same hue.
+    out property <color> navy: #132c5c;
+    out property <color> navy-rail: #0f2449;
+    out property <color> navy-selected: #1d3f78;
+    out property <color> inverse: #ffffff;
+    // Caution, lightened for the navy rail: the light-scheme amber is unreadable on it.
+    out property <color> caution-inverse: #f5cf6b;
+    // Lime is the signature accent: here it marks the selected view and the master source.
+    out property <color> lime: #aadc23;
+
     // The interactive blue. Nothing in this markup draws with it — std-widgets own their own
     // chrome — but the HTML report's focus ring and links read it, and the two are held equal.
     out property <color> blue: #2f6fc4;
@@ -64,22 +75,40 @@ export global Tokens {
     out property <int> weight-bold: 700;
 
     // Type scale.
+    // 11px uppercase with the caps tracking: the section label above every card.
+    out property <length> text-eyebrow: 11px;
+    out property <length> text-small: 12px;
     out property <length> text-body: 13px;
     out property <length> text-control: 15px;
     out property <length> text-lead: 17px;
+    out property <length> text-title: 20px;
 
     // Tracking. Absolute rather than em-relative because Slint's letter-spacing is a length; these
     // are tuned for the two sizes that use them — eyebrows at 11px and titles at 20px.
     out property <length> tracking-tight: -0.4px;
+    // Tuned for text-eyebrow: 0.12em of 11px.
+    out property <length> tracking-caps: 1.3px;
 
     // Shape.
     out property <length> radius-subtle: 4px;
     out property <length> radius-card: 12px;
+    out property <length> radius-pill: 999px;
     out property <length> hairline-width: 1px;
+
+    // Layout. The content column is capped so a wide window gives wide margins rather than
+    // 900px-wide text fields, and the label column is one width for every form in every view —
+    // which is what makes fields line up when you move between them.
+    out property <length> container-max: 1200px;
+    out property <length> rail-width: 184px;
+    out property <length> label-column: 180px;
+    out property <length> field-max: 420px;
+    out property <length> row-height: 36px;
+    out property <length> pill-height: 20px;
 
     // Spacing, on a 4px grid.
     out property <length> space-1: 4px;
     out property <length> space-2: 8px;
     out property <length> space-3: 12px;
     out property <length> space-4: 16px;
+    out property <length> space-5: 24px;
 }
