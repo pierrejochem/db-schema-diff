@@ -130,6 +130,32 @@ def test_every_slint_file_compiles(path):
         pytest.skip("no component to instantiate; compiled through its importers")
 
 
+@pytest.mark.parametrize("markup", sorted(p.name for p in UI.glob("*.slint")))
+def test_type_is_named_by_token_and_never_by_literal(markup):
+    """A family Slint cannot resolve renders the default face without raising.
+
+    So a typo'd family name — "Mulish Regular", "IBM Plex mono" — is invisible at run time: the
+    window still draws, in the wrong face. Naming families only through the tokens means there is
+    exactly one spelling to get right, and test_the_tokens_name_the_bundled_families checks it
+    against the files that ship.
+    """
+    code = "\n".join(line.split("//")[0] for line in (UI / markup).read_text().splitlines())
+    for attribute in ("font-family", "font-size", "font-weight", "letter-spacing"):
+        for value in re.findall(rf"\b{attribute}:\s*([^;]+);", code):
+            if markup == "tokens.slint":
+                continue
+            assert "Tokens." in value, f"{markup}: {attribute}: {value.strip()} is not a token"
+
+
+def test_the_window_sets_the_brand_defaults():
+    # std-widgets expose font-size but not font-family, so a LineEdit's face can only be set
+    # through the window's default. Without this, controls render in the system face while the
+    # Text around them renders in Mulish.
+    shell = (UI / "main.slint").read_text()
+    assert "default-font-family: Tokens.family-body;" in shell
+    assert "default-font-size: Tokens.text-body;" in shell
+
+
 def test_every_component_file_imports_the_tokens():
     """A file that skips the import is a file free to invent its own colours.
 

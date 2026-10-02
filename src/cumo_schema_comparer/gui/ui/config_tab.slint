@@ -69,7 +69,9 @@ export component ConfigTab inherits ScrollView {
                             Text {
                                 text: row.is_master ? "master" : "target";
                                 width: 60px;
-                                color: Tokens.muted;
+                                font-weight: row.is_master ? Tokens.weight-bold
+                                    : Tokens.weight-regular;
+                                color: row.is_master ? Tokens.heading : Tokens.muted;
                                 vertical-alignment: center;
                             }
                             LineEdit {
@@ -85,6 +87,8 @@ export component ConfigTab inherits ScrollView {
                                 text: row.credential_source;
                                 width: 90px;
                                 vertical-alignment: center;
+                                font-family: Tokens.family-mono;
+                                color: Tokens.muted;
                             }
                             Button {
                                 text: "Check connection";
@@ -138,6 +142,7 @@ export component ConfigTab inherits ScrollView {
                         }
                         Text {
                             text: row.connection_status;
+                            font-weight: Tokens.weight-bold;
                             color: row.connection_ok ? Tokens.success : Tokens.danger;
                             visible: row.connection_status != "";
                         }
@@ -184,7 +189,12 @@ export component ConfigTab inherits ScrollView {
                 }
                 HorizontalLayout {
                     spacing: 8px;
-                    Text { text: "fail_on"; width: 220px; vertical-alignment: center; }
+                    Text {
+                        text: "fail_on";
+                        width: 220px;
+                        vertical-alignment: center;
+                        color: Tokens.muted;
+                    }
                     ComboBox {
                         model: ["error", "warning", "any", "never"];
                         current-value <=> root.fail-on;

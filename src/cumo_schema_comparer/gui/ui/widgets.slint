@@ -10,7 +10,13 @@ export component LabelledField inherits HorizontalLayout {
     callback edited(string);
 
     spacing: 8px;
-    Text { text: root.label; width: 140px; vertical-alignment: center; }
+    Text {
+        text: root.label;
+        width: 140px;
+        vertical-alignment: center;
+        font-size: Tokens.text-body;
+        color: Tokens.muted;
+    }
     LineEdit {
         text <=> root.value;
         placeholder-text: root.placeholder;
@@ -24,7 +30,13 @@ export component LabelledNumber inherits HorizontalLayout {
     callback edited(int);
 
     spacing: 8px;
-    Text { text: root.label; width: 220px; vertical-alignment: center; }
+    Text {
+        text: root.label;
+        width: 220px;
+        vertical-alignment: center;
+        font-size: Tokens.text-body;
+        color: Tokens.muted;
+    }
     LineEdit {
         text: root.value;
         input-type: number;
@@ -42,7 +54,12 @@ export component LabelledCheck inherits HorizontalLayout {
 
     spacing: 8px;
     CheckBox { checked <=> root.value; toggled => { root.toggled(self.checked); } }
-    Text { text: root.label; vertical-alignment: center; }
+    Text {
+        text: root.label;
+        vertical-alignment: center;
+        font-size: Tokens.text-body;
+        color: Tokens.body;
+    }
 }
 
 export component StatusLine inherits Rectangle {
@@ -55,6 +72,8 @@ export component StatusLine inherits Rectangle {
         text: root.message;
         color: root.is-error ? Tokens.danger : Tokens.success;
         vertical-alignment: center;
-        x: 8px;
+        font-size: Tokens.text-body;
+        font-weight: Tokens.weight-bold;
+        x: Tokens.space-3;
     }
 }

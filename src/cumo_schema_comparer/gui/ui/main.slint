@@ -17,6 +17,11 @@ export component MainWindow inherits Window {
     preferred-width: 1100px;
     preferred-height: 760px;
     background: Tokens.page;
+    // Set once, inherited by every widget: std-widgets expose font-size but not font-family,
+    // so a LineEdit can only be reached through the window's default.
+    default-font-family: Tokens.family-body;
+    default-font-size: Tokens.text-body;
+    default-font-weight: Tokens.weight-regular;
 
     in-out property <string> config-name;
     in-out property <string> config-path;

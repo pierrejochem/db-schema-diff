@@ -43,14 +43,39 @@ export component FindingLine inherits Rectangle {
     HorizontalLayout {
         padding: 4px;
         spacing: 8px;
-        Text { text: root.data.target; width: 90px; vertical-alignment: center; }
-        Text { text: root.data.kind; width: 80px; vertical-alignment: center; }
-        Text { text: root.data.path; width: 280px; vertical-alignment: center; overflow: elide; }
-        Text { text: root.data.status; width: 110px; vertical-alignment: center; }
+        Text {
+            text: root.data.target;
+            width: 90px;
+            vertical-alignment: center;
+            color: Tokens.body;
+        }
+        Text {
+            text: root.data.kind;
+            width: 80px;
+            vertical-alignment: center;
+            font-family: Tokens.family-mono;
+            color: Tokens.muted;
+        }
+        Text {
+            text: root.data.path;
+            width: 280px;
+            vertical-alignment: center;
+            overflow: elide;
+            font-family: Tokens.family-mono;
+            color: Tokens.heading;
+        }
+        Text {
+            text: root.data.status;
+            width: 110px;
+            vertical-alignment: center;
+            font-family: Tokens.family-mono;
+            color: Tokens.muted;
+        }
         Text {
             text: root.data.severity;
             width: 70px;
             vertical-alignment: center;
+            font-weight: Tokens.weight-bold;
             color: root.data.severity == "error" ? Tokens.danger
                 : root.data.severity == "warning" ? Tokens.caution : Tokens.body;
         }
@@ -59,6 +84,7 @@ export component FindingLine inherits Rectangle {
                 : root.data.detail + "  [ignored by " + root.data.suppressed_by + "]";
             vertical-alignment: center;
             overflow: elide;
+            color: Tokens.muted;
         }
     }
 }
@@ -207,6 +233,10 @@ export component ResultsTab inherits ScrollView {
                     : root.verdict == "" ? "No comparison has finished yet." : root.verdict;
                 vertical-alignment: center;
                 wrap: word-wrap;
+                font-family: Tokens.family-display;
+                font-size: Tokens.text-lead;
+                font-weight: Tokens.weight-bold;
+                letter-spacing: Tokens.tracking-tight;
                 color: root.banner-text-color;
             }
         }
@@ -242,7 +272,7 @@ export component ResultsTab inherits ScrollView {
                 x: 8px;
                 text: root.findings-summary;
                 vertical-alignment: center;
-                font-weight: root.filter-hides-rows ? 700 : 400;
+                font-weight: root.filter-hides-rows ? Tokens.weight-bold : Tokens.weight-regular;
                 color: root.filter-hides-rows ? Tokens.caution : Tokens.body;
             }
         }
@@ -266,25 +296,43 @@ export component ResultsTab inherits ScrollView {
                 heading-text := Text {
                     text: root.selected-heading == "" ? "Select a finding to see its detail."
                         : root.selected-heading;
-                    font-weight: 700;
-                    color: Tokens.body;
+                    font-family: Tokens.family-display;
+                    font-size: Tokens.text-control;
+                    font-weight: Tokens.weight-bold;
+                    letter-spacing: Tokens.tracking-tight;
+                    color: root.selected-heading == "" ? Tokens.muted : Tokens.heading;
                     overflow: elide;
                 }
                 for d in root.selected-deltas: HorizontalLayout {
                     spacing: 8px;
-                    Text { text: d.attribute; width: 160px; overflow: elide; }
+                    Text {
+                        text: d.attribute;
+                        width: 160px;
+                        overflow: elide;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.heading;
+                    }
                     Text {
                         text: d.is_body ? "(see diff below)" : d.master;
                         width: 200px;
                         overflow: elide;
+                        font-family: d.is_body ? Tokens.family-body : Tokens.family-mono;
+                        color: d.is_body ? Tokens.muted : Tokens.body;
                     }
                     Text {
                         text: d.is_body ? "" : d.target;
                         width: 200px;
                         overflow: elide;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.body;
                     }
-                    Text { text: d.severity; width: 70px; }
-                    Text { text: d.note; overflow: elide; }
+                    Text {
+                        text: d.severity;
+                        width: 70px;
+                        color: d.severity == "error" ? Tokens.danger
+                            : d.severity == "warning" ? Tokens.caution : Tokens.muted;
+                    }
+                    Text { text: d.note; overflow: elide; color: Tokens.muted; }
                 }
                 // Horizontal scrolling: a routine body is one line and may be tens of KB, which
                 // must scroll rather than wrap or size the window.
@@ -295,15 +343,16 @@ export component ResultsTab inherits ScrollView {
                         for line[i] in root.selected-diff: VerticalLayout {
                             if root.starts-group(i): Text {
                                 text: line.attribute;
-                                font-weight: 700;
-                                color: Tokens.body;
+                                font-family: Tokens.family-mono;
+                                font-weight: Tokens.weight-bold;
+                                color: Tokens.heading;
                             }
                             Rectangle {
                                 background: line.kind == "added" || line.kind == "removed"
                                     ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
                                 Text {
                                     text: line.text;
-                                    font-family: "monospace";
+                                    font-family: Tokens.family-mono;
                                     wrap: no-wrap;
                                     color: root.diff-colour(line.kind);
                                 }
@@ -316,7 +365,7 @@ export component ResultsTab inherits ScrollView {
 
         HorizontalLayout {
             spacing: 8px;
-            Text { text: "reports to"; vertical-alignment: center; }
+            Text { text: "reports to"; vertical-alignment: center; color: Tokens.muted; }
             output-edit := LineEdit { text <=> root.output-directory; placeholder-text: "output directory"; }
             Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }
             Button {

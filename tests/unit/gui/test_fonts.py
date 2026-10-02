@@ -8,10 +8,14 @@ machine.
 from __future__ import annotations
 
 import os
+import re
+from pathlib import Path
 
 import pytest
 
 from cumo_schema_comparer.gui import fonts
+
+TOKENS = Path(fonts.__file__).with_name("ui") / "tokens.slint"
 
 EXPECTED_FACES = (
     "Archivo-Bold.ttf",
@@ -106,3 +110,17 @@ def test_the_entry_point_installs_fonts_before_importing_the_application():
     install_at = source.index("fonts.install()")
     app_import_at = source.index("from .app import run")
     assert install_at < app_import_at, "fonts.install() must precede the app import"
+
+
+def test_the_tokens_name_the_bundled_families():
+    """The one join between the markup and the files that ship.
+
+    The markup names families through `Tokens.family-*`; those tokens hold the strings Slint
+    resolves. If either side is edited alone the UI silently renders the default face, so the two
+    are compared here rather than left to agree by convention.
+    """
+    declared = dict(
+        re.findall(r'out property <string> family-(\S+): "([^"]+)";', TOKENS.read_text())
+    )
+    assert set(declared.values()) == set(fonts.BUNDLED_FAMILIES)
+    assert declared == {"display": "Archivo", "body": "Mulish", "mono": "IBM Plex Mono"}
