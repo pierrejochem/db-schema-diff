@@ -51,6 +51,27 @@ python3.11 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 ```
 
+### Standalone executables
+
+For a machine with no Python at all, Nuitka compiles either entry point into a single file:
+
+```sh
+make exe        # build/cumo-schema-diff-gui — the desktop application
+make exe-cli    # build/cumo-schema-diff     — the command-line tool
+```
+
+Each target installs Nuitka on demand (the `exe` extra, deliberately out of `dev`: no test or CI
+job compiles anything) and needs a C toolchain — Xcode command line tools on macOS. A build takes
+several minutes.
+
+The build passes `--include-package-data=cumo_schema_comparer`, which is not optional. Everything
+this program reads at run time is package data loaded through `importlib.resources`: the catalog
+queries, the report templates, the bundled ignore ruleset, the `.slint` markup and the typefaces.
+Nuitka ships none of it by default, so without that flag the build succeeds and the binary fails on
+the first query it tries to load. There are two entry scripts rather than one because Nuitka
+compiles a script into a binary, and the two programs differ: the GUI needs Python 3.12 or newer
+for Slint, while the command-line tool keeps its 3.11 floor.
+
 ## Credentials
 
 Credentials **only** come from the environment. The YAML config names targets and points at

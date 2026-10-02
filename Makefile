@@ -2,7 +2,7 @@
 PY := .venv/bin/python
 
 .PHONY: help venv venv-gui test test-integration test-all test-gui test-gui-cov lint fmt typecheck build \
-	gui clean
+	gui exe exe-cli clean
 
 # The GUI needs 3.12+ (the Slint binding's floor); the CLI still supports 3.11, so the two
 # environments are separate and only this one has the gui extra.
@@ -54,6 +54,29 @@ typecheck: ## Type check only.
 
 build: ## Build the wheel and sdist.
 	$(PY) -m build
+
+# --include-package-data is not optional here, whatever the Nuitka tutorials show. Everything this
+# program reads at run time is package data loaded through importlib.resources -- the 14 catalog
+# queries, the report templates, the default ignore ruleset, the .slint markup and the bundled
+# typefaces -- and Nuitka ships none of it by default. Without the flag the build succeeds and the
+# binary dies on the first query it tries to load.
+#
+# mypy is excluded because pydantic ships a mypy plugin, so following imports reaches the whole of
+# mypy -- forty-odd modules of a dev dependency, in a shipped binary, and it fails to compile.
+NUITKA_FLAGS := --onefile --output-dir=build --assume-yes-for-downloads \
+	--include-package-data=cumo_schema_comparer --nofollow-import-to=mypy
+
+# -e is not a detail. Installing this project non-editably into a development environment puts a
+# *copy* of the package in site-packages, which then shadows src/ -- Nuitka compiles the copy and
+# the tests exercise the copy, both silently stale. That is exactly how the first working build
+# came out missing a module that had been added minutes earlier.
+exe: ## Build a standalone GUI executable (needs a C toolchain; takes minutes).
+	$(PY_GUI) -m pip install -q --pre -e '.[gui,exe]'
+	$(PY_GUI) -m nuitka $(NUITKA_FLAGS) --output-filename=cumo-schema-diff-gui main.py
+
+exe-cli: ## Build a standalone CLI executable. Runs on the 3.11 environment, like the CLI itself.
+	$(PY) -m pip install -q -e '.[exe]'
+	$(PY) -m nuitka $(NUITKA_FLAGS) --output-filename=cumo-schema-diff main_cli.py
 
 clean:
 	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage
