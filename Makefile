@@ -68,21 +68,47 @@ build: ## Build the wheel and sdist.
 # as an attempt to re-execute itself the way `python -c` would. `-c` is this CLI's short form of
 # --config, so without this the binary refuses its own primary invocation:
 #     Error, the program tried to call itself with '-c' argument: 'config.example.yaml'.
-NUITKA_FLAGS := --onefile --output-dir=build --assume-yes-for-downloads \
+NUITKA_FLAGS := --output-dir=build --assume-yes-for-downloads \
 	--include-package-data=cumo_schema_comparer --nofollow-import-to=mypy \
 	--no-deployment-flag=self-execution
+
+UNAME_S := $(shell uname -s)
+
+# How each program is packaged, which is not the same question for the two of them.
+#
+# On macOS the GUI becomes a real .app: that is the only way to get NSHighResolutionCapable, which
+# a Slint window visibly wants, and it is what you drag to /Applications. It has to be --standalone
+# and not --onefile -- with --onefile, Nuitka 4.2.2 writes Info.plist *beside* the bundle instead
+# of inside Contents/ and names a CFBundleExecutable that is not in there, so the bundle does not
+# launch. Nuitka also names the bundle after the compiled script, so `main.app` gets renamed below;
+# --macos-app-name only sets the display name inside the plist.
+#
+# Everywhere else, and for the command-line tool on every platform, --onefile is right: one file to
+# copy onto a machine that has no Python.
+ifeq ($(UNAME_S),Darwin)
+GUI_PACKAGING := --standalone --macos-create-app-bundle --macos-app-name="CUMO Schema Diff"
+GUI_ARTIFACT := build/cumo-schema-diff-gui.app
+else
+GUI_PACKAGING := --onefile --output-filename=cumo-schema-diff-gui
+GUI_ARTIFACT := build/cumo-schema-diff-gui
+endif
 
 # -e is not a detail. Installing this project non-editably into a development environment puts a
 # *copy* of the package in site-packages, which then shadows src/ -- Nuitka compiles the copy and
 # the tests exercise the copy, both silently stale. That is exactly how the first working build
 # came out missing a module that had been added minutes earlier.
-exe: ## Build a standalone GUI executable (needs a C toolchain; takes minutes).
+exe: ## Build the GUI: a .app bundle on macOS, one file elsewhere. Needs a C toolchain; minutes.
 	$(PY_GUI) -m pip install -q --pre -e '.[gui,exe]'
-	$(PY_GUI) -m nuitka $(NUITKA_FLAGS) --output-filename=cumo-schema-diff-gui main.py
+	$(PY_GUI) -m nuitka $(NUITKA_FLAGS) $(GUI_PACKAGING) main.py
+ifeq ($(UNAME_S),Darwin)
+	rm -rf '$(GUI_ARTIFACT)'
+	mv build/main.app '$(GUI_ARTIFACT)'
+endif
+	@echo "built $(GUI_ARTIFACT)"
 
-exe-cli: ## Build a standalone CLI executable. Runs on the 3.11 environment, like the CLI itself.
+exe-cli: ## Build a single-file CLI executable. Runs on the 3.11 environment, like the CLI itself.
 	$(PY) -m pip install -q -e '.[exe]'
-	$(PY) -m nuitka $(NUITKA_FLAGS) --output-filename=cumo-schema-diff main_cli.py
+	$(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=cumo-schema-diff main_cli.py
 
 clean:
 	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage
