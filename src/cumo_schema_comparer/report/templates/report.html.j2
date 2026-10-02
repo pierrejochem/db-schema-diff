@@ -135,6 +135,13 @@ dl.deltas dd { margin: 0; }
 dl.deltas .from { color: var(--muted); }
 dl.deltas .to { color: var(--text); font-weight: 600; }
 dl.deltas .arrow { color: var(--muted); }
+dl.deltas .diffwrap { grid-column: 1 / -1; min-width: 0; }
+pre.diff { margin: .3rem 0; padding: .4rem .6rem; overflow-x: auto; font-family: var(--mono); font-size: .8rem; line-height: 1.45; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; }
+pre.diff span { display: block; white-space: pre; }
+.diff-added { color: var(--ok); background: var(--ok-bg); }
+.diff-removed { color: var(--error); background: var(--error-bg); }
+.diff-hunk { color: var(--muted); }
+.diff-elided { color: var(--muted); font-style: italic; }
 dl.deltas .why { display: block; color: var(--muted); font-style: italic; }
 
 .notes { margin: .5rem 0 0; padding: 0; list-style: none; font-size: .85rem; }
@@ -323,6 +330,10 @@ pre.payload { display: none; }
               <span class="to">{{ delta.target_value if delta.target_value is not none else '—' }}</span>
               {%- if delta.note %}<span class="why">{{ delta.note }}</span>{% endif %}
             </dd>
+            {%- set diff = diff_for(delta) %}
+            {%- if diff %}
+            <dd class="diffwrap"><pre class="diff">{% for line in diff %}<span class="diff-{{ line.kind.value }}">{{ line.text }}</span>{% endfor %}</pre></dd>
+            {%- endif %}
             {%- endfor %}
           </dl>
           {%- endif %}
