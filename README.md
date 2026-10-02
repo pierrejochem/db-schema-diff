@@ -56,9 +56,17 @@ python3.11 -m venv .venv
 For a machine with no Python at all, Nuitka compiles either entry point into a single file:
 
 ```sh
-make exe        # build/cumo-schema-diff-gui — the desktop application
-make exe-cli    # build/cumo-schema-diff     — the command-line tool
+make exe        # the desktop application
+make exe-cli    # build/cumo-schema-diff — the command-line tool, one file
 ```
+
+On macOS `make exe` produces `build/cumo-schema-diff-gui.app`, a real bundle: that is the only way
+to get `NSHighResolutionCapable`, without which a Slint window renders non-retina, and it is what
+you drag to `/Applications`. The bundle is built `--standalone` rather than `--onefile` because with
+`--onefile` Nuitka 4.2 writes `Info.plist` beside the bundle instead of inside `Contents/` and names
+a `CFBundleExecutable` that is not there, so the result does not launch. It is **not** code signed
+or notarized, so Gatekeeper will warn anyone who did not build it themselves. On other platforms,
+and for the command-line tool everywhere, the output is a single file.
 
 Each target installs Nuitka on demand (the `exe` extra, deliberately out of `dev`: no test or CI
 job compiles anything) and needs a C toolchain — Xcode command line tools on macOS. A build takes

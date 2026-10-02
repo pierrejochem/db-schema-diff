@@ -87,12 +87,6 @@ def test_no_entry_script_imports_a_module_named_dunder_main(script):
     assert offenders == [], f"{script} imports {offenders}, which collides with its own __main__"
 
 
-def test_the_cli_entry_script_pulls_in_no_gui():
-    """The command-line binary keeps the 3.11 floor, which the GUI dependency would break."""
-    names = imported_names((ROOT / "main_cli.py").read_text(encoding="utf-8"))
-    assert not any("gui" in name for name in names)
-
-
 class TestBuildFlags:
     def flags(self) -> str:
         start = MAKEFILE.index("NUITKA_FLAGS :=")
@@ -107,10 +101,13 @@ class TestBuildFlags:
         """
         assert "--include-package-data=cumo_schema_comparer" in self.flags()
 
-    def test_it_is_a_single_file_in_the_build_directory(self):
-        flags = self.flags()
-        assert "--onefile" in flags
-        assert "--output-dir=build" in flags
+    def test_everything_is_built_into_the_build_directory(self):
+        assert "--output-dir=build" in self.flags()
+
+    def test_the_command_line_tool_is_always_one_file(self):
+        # The point of it: one file to copy onto a machine with no Python.
+        cli = next(line for line in MAKEFILE.splitlines() if "main_cli.py" in line)
+        assert "--onefile" in cli
 
     def test_mypy_is_kept_out_of_the_binary(self):
         """pydantic ships a mypy plugin, so following imports reaches the whole of mypy.
@@ -147,8 +144,14 @@ class TestBuildFlags:
     def test_each_target_builds_on_the_interpreter_its_program_supports(self):
         """The GUI needs 3.12+ for Slint; the CLI keeps 3.11. Compiling on the wrong one either
         fails outright or produces a binary with the wrong floor baked in."""
-        gui = next(line for line in MAKEFILE.splitlines() if "cumo-schema-diff-gui main.py" in line)
-        cli = next(line for line in MAKEFILE.splitlines() if "cumo-schema-diff main_cli.py" in line)
+        gui = next(
+            line
+            for line in MAKEFILE.splitlines()
+            if "nuitka" in line and line.rstrip().endswith("main.py")
+        )
+        cli = next(
+            line for line in MAKEFILE.splitlines() if "main_cli.py" in line and "nuitka" in line
+        )
         assert "$(PY_GUI)" in gui
         assert "$(PY)" in cli and "$(PY_GUI)" not in cli
 
@@ -201,3 +204,54 @@ class TestDeclaredDependency:
     def test_the_build_directory_is_ignored(self):
         # Both `python -m build` and Nuitka write here; a committed binary would be a 40MB blob.
         assert "/build/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
+
+
+class TestMacosAppBundle:
+    """The GUI is packaged differently per platform, and the difference is not cosmetic."""
+
+    def section(self) -> str:
+        """The Darwin branch only — cut at `else`, or it swallows the other platforms' branch."""
+        start = MAKEFILE.index("ifeq ($(UNAME_S),Darwin)")
+        return MAKEFILE[start : MAKEFILE.index("else", start)]
+
+    def test_macos_gets_a_real_app_bundle(self):
+        """A .app is the only way to get NSHighResolutionCapable, which a Slint window wants."""
+        assert "--macos-create-app-bundle" in self.section()
+
+    def test_the_bundle_is_standalone_and_never_onefile(self):
+        """With --onefile, Nuitka 4.2.2 builds a bundle that cannot launch.
+
+        It writes Info.plist beside the bundle instead of inside Contents/, and the plist names a
+        CFBundleExecutable that is not in there. Verified by building both ways: --standalone put
+        the plist in Contents/ with a CFBundleExecutable that matches, --onefile left an empty
+        .app and a stray plist.
+        """
+        darwin = self.section()
+        assert "--standalone" in darwin
+        assert "--onefile" not in darwin
+
+    def test_the_bundle_is_renamed_off_the_script_name(self):
+        """Nuitka names the bundle after the compiled script, which would make it `main.app`.
+
+        --macos-app-name does not rename it; it only sets the display name inside the plist.
+        """
+        assert "mv build/main.app" in MAKEFILE
+        assert "--macos-app-name=" in self.section()
+
+    def test_other_platforms_still_get_one_file(self):
+        first = MAKEFILE.index("ifeq ($(UNAME_S),Darwin)")
+        start = MAKEFILE.index("else", first)
+        other = MAKEFILE[start : MAKEFILE.index("endif", start)]
+        assert "--onefile" in other
+        assert "--macos" not in other
+
+    def test_the_bundle_flags_never_reach_a_non_macos_build(self):
+        # A --macos flag in the shared set would be passed on Linux, where it is not understood.
+        assert "--macos" not in TestBuildFlags().flags()
+
+
+class TestEntryScriptImports:
+    def test_the_cli_entry_script_pulls_in_no_gui(self):
+        """The command-line binary keeps the 3.11 floor, which the GUI dependency would break."""
+        names = imported_names((ROOT / "main_cli.py").read_text(encoding="utf-8"))
+        assert not any("gui" in name for name in names)
