@@ -18,24 +18,24 @@
 // Slint starts. A family Slint cannot resolve falls back silently, so the names here must match the
 // bundled faces exactly — Archivo is bundled at 700 only and IBM Plex Mono at 400 only, which is
 // why `weight-bold` always accompanies `family-display`.
+//
+// Nothing unused lives here. A token no consumer reads is a decision nobody made, and the suite
+// rejects one, so the file stays a record of what this UI actually does.
 export global Tokens {
-    // Brand foundation.
-    out property <color> navy: #132c5c;
-    out property <color> navy-deep: #0b1c3d;
+    // The interactive blue. Nothing in this markup draws with it — std-widgets own their own
+    // chrome — but the HTML report's focus ring and links read it, and the two are held equal.
     out property <color> blue: #2f6fc4;
-    out property <color> lime: #aadc23;
 
     // Text.
     out property <color> heading: #132c5c;
     out property <color> body: #334155;
-    out property <color> muted: #64748b;
-    out property <color> inverse: #ffffff;
+    out property <color> muted: #5b6a80;
     // Lime is a light accent: what sits on it is navy, never white.
-    out property <color> on-accent: #132c5c;
 
     // Surfaces and lines.
     out property <color> page: #f5f5f5;
     out property <color> card: #ffffff;
+    // Likewise reached only through the report, as its panel surface.
     out property <color> sunken: #f1f4f8;
     // Zebra striping. Translucent on purpose: a row stripe tints whatever surface is beneath it.
     out property <color> stripe: #132c5c0a;
@@ -64,31 +64,22 @@ export global Tokens {
     out property <int> weight-bold: 700;
 
     // Type scale.
-    out property <length> text-eyebrow: 11px;
-    out property <length> text-small: 12px;
     out property <length> text-body: 13px;
     out property <length> text-control: 15px;
     out property <length> text-lead: 17px;
-    out property <length> text-title: 20px;
-    out property <length> text-display: 24px;
 
     // Tracking. Absolute rather than em-relative because Slint's letter-spacing is a length; these
     // are tuned for the two sizes that use them — eyebrows at 11px and titles at 20px.
-    out property <length> tracking-caps: 1.3px;
     out property <length> tracking-tight: -0.4px;
 
     // Shape.
     out property <length> radius-subtle: 4px;
-    out property <length> radius-control: 8px;
     out property <length> radius-card: 12px;
-    out property <length> radius-pill: 999px;
     out property <length> hairline-width: 1px;
-    out property <length> focus-width: 3px;
 
     // Spacing, on a 4px grid.
     out property <length> space-1: 4px;
     out property <length> space-2: 8px;
     out property <length> space-3: 12px;
     out property <length> space-4: 16px;
-    out property <length> space-5: 24px;
 }

@@ -162,6 +162,22 @@ def test_spacing_and_shape_come_from_the_grid(markup):
             assert "Tokens." in value, f"{markup}: {attribute}: {value.strip()} is not a token"
 
 
+def test_no_token_is_dead():
+    """A token nothing reads is a decision nobody made.
+
+    Colour tokens may be consumed by the markup or by the HTML report — the two renderers share
+    this palette — so a colour counts as used if its value appears in the template. Everything else
+    has to be read by a component, which keeps the file a record of the UI rather than a wish list.
+    """
+    tokens = (UI / "tokens.slint").read_text()
+    markup = "\n".join(p.read_text() for p in UI.glob("*.slint") if p.name != "tokens.slint")
+    template = (UI.parent.parent / "report" / "templates" / "report.html.j2").read_text()
+    for kind, name, value in re.findall(r"out property <(\w+)> (\S+): ([^;]+);", tokens):
+        if f"Tokens.{name}" in markup:
+            continue
+        assert kind == "color" and value.strip() in template, f"{name} is read by nothing"
+
+
 def test_the_window_sets_the_brand_defaults():
     # std-widgets expose font-size but not font-family, so a LineEdit's face can only be set
     # through the window's default. Without this, controls render in the system face while the
