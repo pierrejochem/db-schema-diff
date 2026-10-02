@@ -25,6 +25,18 @@ def test_a_scalar_delta_renders_no_diff(a_report_with_changed_column_type):
     assert 'class="diff"' not in html
 
 
+def test_the_cap_is_sixty_lines():
+    """Pinned in this suite, which needs no Docker.
+
+    The cap only became reachable once a diff could have more than two lines, and until this
+    existed, changing it from 60 to 5 passed 1482 tests in .venv and 629 in .venv-gui — only the
+    Docker-gated rendered-diff tests noticed. Same gap class as the unpinned defaults.
+    """
+    from cumo_schema_comparer.report.html import MAX_DIFF_LINES
+
+    assert MAX_DIFF_LINES == 60
+
+
 def test_the_diff_is_capped_with_a_count(a_report_with_a_huge_body_change):
     html = render(a_report_with_a_huge_body_change)
     assert re.search(r"… \d+ more lines", html)
