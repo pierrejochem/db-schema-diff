@@ -46,7 +46,7 @@ def test_every_released_version_stays_readable():
 def test_an_unknown_version_is_refused_by_name():
     with pytest.raises(
         ValueError,
-        match=r"unsupported report schema_version 99; this build reads \[1\] and writes 1",
+        match=r"unsupported report schema_version 99; this build reads \[1, 2\] and writes 2",
     ):
         ComparisonReport.from_json_dict({"schema_version": 99})
 
@@ -54,7 +54,7 @@ def test_an_unknown_version_is_refused_by_name():
 def test_a_missing_version_is_refused():
     with pytest.raises(
         ValueError,
-        match=r"unsupported report schema_version None; this build reads \[1\] and writes 1",
+        match=r"unsupported report schema_version None; this build reads \[1, 2\] and writes 2",
     ):
         ComparisonReport.from_json_dict({})
 
@@ -116,3 +116,27 @@ def test_version_1_loads_when_version_2_is_readable(monkeypatch):
     report = ComparisonReport.from_json_dict(v1_payload)
     assert report.name == "test-report"
     assert report.master_label == "production"
+
+
+def test_the_writer_emits_version_2():
+    assert REPORT_SCHEMA_VERSION == 2
+    from cumo_schema_comparer.diff.model import READABLE_REPORT_VERSIONS
+
+    assert frozenset({1, 2}) == READABLE_REPORT_VERSIONS
+
+
+def test_a_version_1_report_keeps_its_content():
+    payload = {
+        "schema_version": 1,
+        "name": "old",
+        "master": "prod",
+        "generated_at": "2024-01-01T00:00:00",
+        "tool_version": "1.0.0",
+        "fail_on": "error",
+        "probe_failed": False,
+        "worst_severity": None,
+        "notes": [],
+        "targets": [],
+    }
+    report = ComparisonReport.from_json_dict(payload)
+    assert (report.name, report.master_label, report.tool_version) == ("old", "prod", "1.0.0")

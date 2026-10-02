@@ -311,6 +311,7 @@ def _compare_one(
         note=spec.note,
         master_display=spec.render(display_master),
         target_display=spec.render(display_target),
+        body=spec.body,
     )
 
 
