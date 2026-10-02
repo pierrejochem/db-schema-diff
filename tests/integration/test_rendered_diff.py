@@ -21,6 +21,7 @@ import pytest
 from cumo_schema_comparer.diff.model import ComparisonReport
 from cumo_schema_comparer.report.html import HtmlReporter, _diff_for
 from cumo_schema_comparer.report.textdiff import DiffKind, unified
+from tests.integration.conftest import apply_sql
 from tests.integration.test_no_drift import compare
 
 pytestmark = pytest.mark.integration
@@ -107,3 +108,117 @@ class TestARoutineBodyToo:
         assert DiffKind.CONTEXT in kinds, kinds
         assert kinds.count(DiffKind.REMOVED) > 1, kinds
         assert kinds.count(DiffKind.ADDED) >= 1, kinds
+
+
+COMPUTED = "cumo-invoicing.column_flavours.computed"
+SERIAL = "cumo-invoicing.column_flavours.small_serial"
+
+
+class TestAGeneratedColumnIsNotADefault:
+    """A stored generated column's expression lives in the same catalog slot as a default.
+
+    Which made the raw text land under ``default`` while the value compared as ``default`` was
+    ``None`` — so the pane printed a generation expression beside an empty compared value. Now that
+    the display reads the raw text, the key the text is filed under is what a reader sees.
+    """
+
+    @staticmethod
+    def deltas(databases):
+        result = one_changed_line(databases, "drift_generated_expression")
+        finding = next(f for f in result.findings if f.key.path == COMPUTED)
+        return result, {d.attribute: d for d in finding.deltas}
+
+    def test_the_expression_is_shown_under_generated_and_not_under_default(self, databases):
+        _, deltas = self.deltas(databases)
+        assert "column.generated" in deltas
+        assert "column.default" not in deltas, sorted(deltas)
+        generated = deltas["column.generated"]
+        assert "amount_scaled" in (generated.master_display or "")
+        assert "amount_scaled" in (generated.target_display or "")
+
+    def test_the_html_renders_the_generated_expression(self, databases):
+        result, _ = self.deltas(databases)
+        report = ComparisonReport(name="invoicing", master_label="prod", targets=(result,))
+        out = io.StringIO()
+        HtmlReporter().render(report, out)
+        html = out.getvalue()
+        assert "column.generated" in html
+        assert "column.default" not in html, "no column in this fixture differs by its default"
+
+    def test_a_serial_column_still_shows_its_nextval_default(self, databases):
+        # The benign variant: the compared value is a sentinel, so the raw nextval(...) is the only
+        # text a reader can see, and it is a real default.
+        from cumo_schema_comparer.model.objects import SERIAL_SENTINEL
+        from tests.integration.test_no_drift import inventory_of
+
+        databases.setup("base")
+        objects = {k.path: v for k, v in inventory_of(databases.master_dsn, "prod").objects.items()}
+        column = objects[SERIAL]
+        assert column.default == SERIAL_SENTINEL
+        assert "nextval(" in (column.raw.get("default") or "")
+        assert column.raw.get("generated") is None
+
+    def test_the_servers_own_generation_expression_is_filed_under_generated(self, databases):
+        from tests.integration.test_no_drift import inventory_of
+
+        databases.setup("base")
+        objects = {k.path: v for k, v in inventory_of(databases.master_dsn, "prod").objects.items()}
+        column = objects[COMPUTED]
+        assert column.default is None
+        assert "amount_scaled" in (column.raw.get("generated") or "")
+        assert column.raw.get("default") is None, "the slot a default would be read from"
+
+
+LONG = "cumo-invoicing.column_flavours.computed_long"
+
+
+class TestAGenerationExpressionIsNeverDiffedAsADefault:
+    """The sharp case: one side generated, the other plainly defaulted, same column.
+
+    ``column.default`` then really does differ — absent against ``7.5`` — so it gets a display pair,
+    and with the expression filed under ``default`` that pair held a generation expression on a side
+    whose compared default is empty. The fixture's expression is over 120 characters, which is what
+    makes the renderer draw a diff of it rather than a one-line row.
+    """
+
+    @staticmethod
+    def deltas(databases):
+        databases.setup("base", drift="drift_generated_to_default")
+        apply_sql(databases.master_dsn, "generated_long_master")
+        result = compare(databases)
+        finding = next(f for f in result.findings if f.key.path == LONG)
+        return result, {d.attribute: d for d in finding.deltas}
+
+    def test_the_default_delta_carries_no_generation_expression(self, databases):
+        _, deltas = self.deltas(databases)
+        default = deltas["column.default"]
+        assert default.master_value is None and default.target_value is not None
+        # Both or neither: the master has no default text at all, so there is nothing to show.
+        assert default.master_display is None, default.master_display
+        assert default.target_display is None
+        assert _diff_for(default) == ()
+
+    def test_the_generation_expression_is_on_the_generated_delta(self, databases):
+        _, deltas = self.deltas(databases)
+        generated = deltas["column.generated"]
+        assert "amount_scaled" in (generated.master_value or "")
+        assert generated.target_value is None
+
+    def test_no_rendered_diff_anywhere_holds_the_expression_under_default(self, databases):
+        result, _ = self.deltas(databases)
+        report = ComparisonReport(name="invoicing", master_label="prod", targets=(result,))
+        out = io.StringIO()
+        HtmlReporter().render(report, out)
+        html = out.getvalue()
+        # Scoped to this delta's own region — up to the end of the finding's <dl> — because the
+        # page also embeds the whole JSON payload, and because `column.generated` legitimately
+        # renders a diff of the same expression a few lines further up.
+        assert "<dt>column.default</dt>" in html
+        region = html.split("<dt>column.default</dt>", 1)[1].split("</dl>", 1)[0]
+        assert "amount_scaled" not in region, region[:400]
+        assert 'class="diff"' not in region, region[:400]
+
+    def test_the_payload_does_not_file_the_expression_under_default(self, databases):
+        _, deltas = self.deltas(databases)
+        payload = deltas["column.default"].to_json_dict()
+        assert "master_display" not in payload, payload

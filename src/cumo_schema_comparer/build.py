@@ -330,20 +330,28 @@ def _columns(rows: list[dict[str, Any]]) -> dict[ObjectKey, Column]:
         owned_sequence = _text(row.get("owned_sequence"))
         generated_kind = _text(row.get("generated_kind"))
 
-        # A stored generated column's expression lives in the same catalog slot as a default,
-        # but the two are not the same thing and must not be compared as one.
+        raw_values = {"data_type": raw_type}
+        # A stored generated column's expression lives in the same catalog slot as a default, but
+        # the two are not the same thing and must not be compared as one — nor filed as one. Both
+        # `default_expr` and `generated_expr` are the same `pg_get_expr(adbin)` text, so the raw
+        # entry goes under whichever attribute the value was compared as. Filing it under
+        # "default" unconditionally made the report and the GUI pane print a generation expression
+        # beside an empty `column.default`, and made `--show-cosmetic` attribute it there too.
         if generated_kind == "s":
             default = None
-            generated = canonical_expr(_text(row.get("generated_expr")), column_type=data_type)
+            raw_generated = _text(row.get("generated_expr")) or raw_default
+            generated = canonical_expr(raw_generated, column_type=data_type)
+            if raw_generated is not None:
+                raw_values["generated"] = raw_generated
         else:
             default = canonical_default(
                 raw_default, column_type=data_type, owned_sequence=owned_sequence
             )
             generated = None
-
-        raw_values = {"data_type": raw_type}
-        if raw_default is not None:
-            raw_values["default"] = raw_default
+            # A serial column's default canonicalises to a sentinel, so its raw `nextval(...)` is
+            # the only text a reader can see. It is a real default and still belongs here.
+            if raw_default is not None:
+                raw_values["default"] = raw_default
 
         out[key] = Column(
             key=key,
