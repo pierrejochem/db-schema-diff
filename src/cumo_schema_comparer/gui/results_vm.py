@@ -111,19 +111,22 @@ class ResultsModel:
     def delta_rows(
         self,
         target: str,
+        kind: str,
         path: str,
         *,
         needle: str = "",
         severities: frozenset[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """The deltas of the finding at ``path`` on ``target``, as complete dicts for Slint.
+        """The deltas of the ``kind`` finding at ``path`` on ``target``, as dicts for Slint.
 
         The finding is named by identity, not position, so a selection cannot go stale: it is
-        looked up in the same filtered list :meth:`finding_rows` builds. A finding that moved still
+        named by ``(target, kind, path)``, which is unique (a column, a constraint and a trigger can
+        share a path) and is exactly the three fields of a :class:`FindingRow`. It is looked up in
+        the same filtered list :meth:`finding_rows` builds. A finding that moved still
         resolves to itself; one the filter now hides, or that never existed, yields nothing.
         ``master`` and ``target`` are the compared values; body text belongs in :meth:`diff_rows`.
         """
-        finding = self._selected(target, path, needle=needle, severities=severities)
+        finding = self._selected(target, kind, path, needle=needle, severities=severities)
         if finding is None:
             return []
         return [
@@ -141,6 +144,7 @@ class ResultsModel:
     def diff_rows(
         self,
         target: str,
+        kind: str,
         path: str,
         *,
         needle: str = "",
@@ -150,7 +154,7 @@ class ResultsModel:
 
         Rows are grouped in delta order. Resolution is as in :meth:`delta_rows`.
         """
-        finding = self._selected(target, path, needle=needle, severities=severities)
+        finding = self._selected(target, kind, path, needle=needle, severities=severities)
         if finding is None:
             return []
         return [
@@ -175,10 +179,14 @@ class ResultsModel:
         return rows
 
     def _selected(
-        self, target: str, path: str, *, needle: str, severities: frozenset[str] | None
+        self, target: str, kind: str, path: str, *, needle: str, severities: frozenset[str] | None
     ) -> ObjectFinding | None:
         for candidate, finding in self._filtered(needle=needle, severities=severities):
-            if candidate.target_label == target and finding.key.path == path:
+            if (
+                candidate.target_label == target
+                and finding.kind.value == kind
+                and finding.key.path == path
+            ):
                 return finding
         return None
 

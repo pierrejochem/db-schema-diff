@@ -18,7 +18,7 @@ from .conftest import _model, _model_of, delta, differing, view_key
 def ident(model, position=0, **filters):
     """The (target, path) of the row at ``position`` in the filtered list."""
     row = model.finding_rows(**filters)[position]
-    return row.target, row.path
+    return row.target, row.kind, row.path
 
 
 class TestDeltaRows:
@@ -204,11 +204,11 @@ class TestMoreShapes:
 
 class TestSelectionByIdentity:
     def test_a_finding_that_moved_still_resolves_to_itself(self, model_with_two_findings):
-        beta = ("qa", model_with_two_findings.finding_rows()[1].path)
+        beta = ident(model_with_two_findings, 1)
         before = model_with_two_findings.diff_rows(*beta)
         assert before != []
         # Under this needle beta is index 0; under none it is index 1. Same detail either way.
-        needle = beta[1].split(".")[-1]
+        needle = beta[2].split(".")[-1]
         assert ident(model_with_two_findings, 0, needle=needle) == beta
         assert model_with_two_findings.diff_rows(*beta, needle=needle) == before
         assert model_with_two_findings.delta_rows(*beta, needle=needle) == (
@@ -217,16 +217,16 @@ class TestSelectionByIdentity:
 
     def test_a_filtered_out_identity_is_empty(self, model_with_two_findings):
         first = ident(model_with_two_findings, 0)
-        second_needle = ident(model_with_two_findings, 1)[1].split(".")[-1]
+        second_needle = ident(model_with_two_findings, 1)[2].split(".")[-1]
         assert model_with_two_findings.delta_rows(*first, needle=second_needle) == []
         assert model_with_two_findings.diff_rows(*first, needle=second_needle) == []
 
     def test_an_unknown_target_or_path_is_empty(self, model_with_a_changed_view):
-        target, path = ident(model_with_a_changed_view)
-        assert model_with_a_changed_view.delta_rows("nope", path) == []
-        assert model_with_a_changed_view.delta_rows(target, "nope") == []
-        assert model_with_a_changed_view.diff_rows("nope", path) == []
-        assert model_with_a_changed_view.diff_rows(target, "nope") == []
+        target, kind, path = ident(model_with_a_changed_view)
+        assert model_with_a_changed_view.delta_rows("nope", kind, path) == []
+        assert model_with_a_changed_view.delta_rows(target, kind, "nope") == []
+        assert model_with_a_changed_view.diff_rows("nope", kind, path) == []
+        assert model_with_a_changed_view.diff_rows(target, kind, "nope") == []
 
     def test_the_same_path_on_two_targets_resolves_to_each(self):
         def finding(master, target):
@@ -238,8 +238,61 @@ class TestSelectionByIdentity:
                 "dev": ((finding("a\nb", "a\nDEV"),), ()),
             }
         )
-        path = model.finding_rows()[0].path
-        qa = [r["text"] for r in model.diff_rows("qa", path)]
-        dev = [r["text"] for r in model.diff_rows("dev", path)]
+        kind, path = model.finding_rows()[0].kind, model.finding_rows()[0].path
+        qa = [r["text"] for r in model.diff_rows("qa", kind, path)]
+        dev = [r["text"] for r in model.diff_rows("dev", kind, path)]
         assert "QA" in qa and "DEV" not in qa
         assert "DEV" in dev and "QA" not in dev
+
+
+class TestKindsSharingAPath:
+    """A column, a constraint and a trigger on one table share ``schema.table.name``."""
+
+    @staticmethod
+    def _model():
+        from cumo_schema_comparer.model.keys import ObjectKey
+        from cumo_schema_comparer.model.kinds import ObjectKind
+
+        def finding(kind, marker):
+            return differing(
+                ObjectKey(kind, "public", "t", "x"),
+                delta("view.definition", f"same\n{marker}1", f"same\n{marker}2", body=True),
+            )
+
+        return _model(
+            finding(ObjectKind.COLUMN, "col"),
+            finding(ObjectKind.CONSTRAINT, "con"),
+            finding(ObjectKind.TRIGGER, "trg"),
+        )
+
+    def test_the_fixture_really_collides(self):
+        rows = self._model().finding_rows()
+        assert len({r.path for r in rows}) == 1
+        assert {r.kind for r in rows} == {"column", "constraint", "trigger"}
+
+    def test_each_identity_resolves_to_its_own_deltas_and_diff(self):
+        model = self._model()
+        for row in model.finding_rows():
+            marker = {"column": "col", "constraint": "con", "trigger": "trg"}[row.kind]
+            texts = {
+                r["text"]
+                for r in model.diff_rows(row.target, row.kind, row.path)
+                if r["kind"] != "hunk"
+            }
+            assert texts == {"same", f"{marker}1", f"{marker}2"}
+            assert model.delta_rows(row.target, row.kind, row.path)[0]["master"].endswith(
+                f"{marker}1"
+            )
+
+    def test_every_row_round_trips_under_several_filters(self, model_with_two_findings):
+        for model in (self._model(), model_with_two_findings):
+            for filters in (
+                {},
+                {"needle": "x"},
+                {"needle": "second"},
+                {"severities": frozenset({"error"})},
+                {"severities": None},
+            ):
+                for row in model.finding_rows(**filters):
+                    got = model.delta_rows(row.target, row.kind, row.path, **filters)
+                    assert [d["attribute"] for d in got] != []
