@@ -32,7 +32,22 @@ targets:
 """
 
 #: Applied to the target only. Each produces a finding of a known severity.
-DRIFT = ("drift_column_type", "drift_nullable", "drift_extra_table")
+DRIFT = ("drift_column_type", "drift_nullable", "drift_extra_table", "drift_secret_default")
+
+#: Applied to the master only, so the secret-bearing column default *differs* rather than matching.
+#: Only a finding carries definition text into a report, so a matching default would prove nothing.
+MASTER_ONLY = ("secret_default_master",)
+
+#: The credential planted in the fixture schema: a connection string in a column default, a routine
+#: body, an index expression, a routine SET value, a view body and an enum label.
+#:
+#: Scanned for here because this is the job that *uploads* the artifacts. Until this existed the
+#: whole "no credential reaches a report" claim rested on the Docker-gated integration suite, which
+#: does not publish anything — so nothing checked the files a reviewer downloads.
+PLANTED_LITERAL = "s3cret"
+
+#: Every file the `dogfood` job uploads.
+ARTIFACTS = ("report.json", "junit.xml", "report.html", "console.txt")
 
 
 def main() -> int:
@@ -66,7 +81,7 @@ def _prepare(base: str) -> tuple[str, str]:
 
     master_dsn = dsn_for(base, "dogfood_master")
     target_dsn = dsn_for(base, "dogfood_target")
-    apply_sql(master_dsn, "base")
+    apply_sql(master_dsn, "base", *MASTER_ONLY)
     apply_sql(target_dsn, "base", *DRIFT)
     return master_dsn, target_dsn
 
@@ -118,6 +133,19 @@ def _compare(master_dsn: str, target_dsn: str) -> int:
             print("::error::a credential appeared in the tool's output", file=sys.stderr)
             return 1
 
+    # The schema literal, in every file this job uploads. The DSN password above is checked in the
+    # console only: it comes from the container and is a short common word, which would match the
+    # JUnit XML's own vocabulary. The planted literal is distinctive, so it is checked everywhere.
+    for name in ARTIFACTS:
+        if PLANTED_LITERAL in (BUILD / name).read_text(encoding="utf-8"):
+            print(f"::error::{name} carries the credential planted in the schema", file=sys.stderr)
+            return 1
+    if "***:" not in (BUILD / "report.json").read_text(encoding="utf-8"):
+        # Absence of the secret is not enough: it would also be absent if the drift that carries
+        # it had stopped being reported at all.
+        print("::error::no masked literal in report.json; the leak path is not exercised")
+        return 1
+
     # The reports are uploaded as CI artifacts, so they must exist and be well-formed.
     from xml.etree import ElementTree
 
@@ -138,8 +166,9 @@ def _compare(master_dsn: str, target_dsn: str) -> int:
             return 1
 
     print(
-        f"dogfood run reported {len(failures)} JUnit failure(s), leaked no credential, and wrote a "
-        f"self-contained {len(html) // 1024} KiB HTML report"
+        f"dogfood run reported {len(failures)} JUnit failure(s), leaked neither the DSN password "
+        f"nor the credential planted in the schema into any of {len(ARTIFACTS)} artifact(s), and "
+        f"wrote a self-contained {len(html) // 1024} KiB HTML report"
     )
     return 0
 
