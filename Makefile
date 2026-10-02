@@ -63,8 +63,14 @@ build: ## Build the wheel and sdist.
 #
 # mypy is excluded because pydantic ships a mypy plugin, so following imports reaches the whole of
 # mypy -- forty-odd modules of a dev dependency, in a shipped binary, and it fails to compile.
+#
+# --no-deployment-flag=self-execution because a compiled binary inherits a guard that treats `-c`
+# as an attempt to re-execute itself the way `python -c` would. `-c` is this CLI's short form of
+# --config, so without this the binary refuses its own primary invocation:
+#     Error, the program tried to call itself with '-c' argument: 'config.example.yaml'.
 NUITKA_FLAGS := --onefile --output-dir=build --assume-yes-for-downloads \
-	--include-package-data=cumo_schema_comparer --nofollow-import-to=mypy
+	--include-package-data=cumo_schema_comparer --nofollow-import-to=mypy \
+	--no-deployment-flag=self-execution
 
 # -e is not a detail. Installing this project non-editably into a development environment puts a
 # *copy* of the package in site-packages, which then shadows src/ -- Nuitka compiles the copy and
