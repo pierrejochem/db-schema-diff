@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import re
 import shutil
 
 import pytest
@@ -119,7 +120,27 @@ def test_there_are_slint_files_to_check():
 @pytest.mark.parametrize("path", slint_files(), ids=lambda p: p.name)
 def test_every_slint_file_compiles(path):
     # A syntax error in an unopened tab would otherwise surface only at run time.
-    slint.load_file(str(path))
+    #
+    # A file that declares no component — the token file — cannot be loaded on its own: Slint
+    # needs something to instantiate and raises "No component found". Its compilation is covered
+    # instead by every file that imports it, which the next test holds to be all of them.
+    if "export component" in path.read_text():
+        slint.load_file(str(path))
+    else:
+        pytest.skip("no component to instantiate; compiled through its importers")
+
+
+def test_every_component_file_imports_the_tokens():
+    """A file that skips the import is a file free to invent its own colours.
+
+    The literal ban in test_only_the_token_file_carries_colour_literals is what stops a file
+    hard-coding a tint; this is what stops it reading a colour from nowhere at all.
+    """
+    for path in slint_files():
+        text = path.read_text()
+        if "export component" not in text:
+            continue
+        assert 'from "tokens.slint"' in text, f"{path.name} does not import the design tokens"
 
 
 def test_the_main_window_instantiates(window):
@@ -648,14 +669,28 @@ def test_the_banner_markup_consumes_the_derived_colours_only():
     text = (UI / "results_tab.slint").read_text()
     assert "background: root.banner-background;" in text
     assert "color: root.banner-text-color;" in text
-    assert text.count("#d1fadf") == 1
+
+
+@pytest.mark.parametrize("markup", sorted(p.name for p in UI.glob("*.slint")))
+def test_only_the_token_file_carries_colour_literals(markup):
+    """Every tint in this UI has to come from Tokens, or one meaning drifts from another.
+
+    The banner, the diff and the status line all stand for success and failure; the suite proves
+    they move together by mutating a token, which only works while none of them owns a literal.
+    """
+    code = "\n".join(line.split("//")[0] for line in (UI / markup).read_text().splitlines())
+    literals = re.findall(r"#[0-9a-fA-F]{3,8}\b", code)
+    if markup == "tokens.slint":
+        assert literals, "the token file is where the literals live"
+    else:
+        assert literals == [], f"{markup} should read Tokens instead of {literals}"
 
 
 def window_with_token(tmp_path, token, value):
-    """A window built from a copy of the markup whose Palette ``token`` is set to ``value``."""
+    """A window built from a copy of the markup whose ``Tokens`` ``token`` is set to ``value``."""
     root = tmp_path / token
     shutil.copytree(UI, root)
-    path = root / "results_tab.slint"
+    path = root / "tokens.slint"
     text = path.read_text()
     marker = f"out property <color> {token}: "
     start = text.index(marker) + len(marker)
@@ -921,7 +956,7 @@ def test_the_diff_markup_reads_the_colour_function_only():
     assert pane.count("root.diff-colour(line.kind)") == 2
     assert "#" not in "".join(
         line.split("//")[0] for line in pane.splitlines() if "diff-colour" not in line
-    ).replace("#344054", "")
+    )
 
 
 def shown_pane(rows):

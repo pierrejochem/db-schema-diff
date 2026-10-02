@@ -6,6 +6,7 @@
 
 import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
 import { LabelledCheck } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 
 export struct ProgressRow {
     label: string,
@@ -25,7 +26,7 @@ export component ProgressLine inherits Rectangle {
             text: root.data.state;
             width: 110px;
             vertical-alignment: center;
-            color: root.data.state == "failed" ? #b42318 : #344054;
+            color: root.data.state == "failed" ? Tokens.danger : Tokens.body;
         }
         Text { text: root.data.detail; vertical-alignment: center; }
     }
@@ -125,7 +126,7 @@ export component RunTab inherits ScrollView {
             VerticalLayout {
                 spacing: 2px;
                 for row[i] in root.progress: ProgressLine {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
                 }
             }

@@ -2,6 +2,7 @@
 
 import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
 import { LabelledField, LabelledNumber, LabelledCheck } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 
 export struct SourceRow {
     label: string,
@@ -59,7 +60,7 @@ export component ConfigTab inherits ScrollView {
             VerticalLayout {
                 spacing: 6px;
                 for row[i] in root.sources: Rectangle {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     VerticalLayout {
                         padding: 6px;
                         spacing: 4px;
@@ -68,7 +69,7 @@ export component ConfigTab inherits ScrollView {
                             Text {
                                 text: row.is_master ? "master" : "target";
                                 width: 60px;
-                                color: #5b6672;
+                                color: Tokens.muted;
                                 vertical-alignment: center;
                             }
                             LineEdit {
@@ -137,7 +138,7 @@ export component ConfigTab inherits ScrollView {
                         }
                         Text {
                             text: row.connection_status;
-                            color: row.connection_ok ? #027a48 : #b42318;
+                            color: row.connection_ok ? Tokens.success : Tokens.danger;
                             visible: row.connection_status != "";
                         }
                     }

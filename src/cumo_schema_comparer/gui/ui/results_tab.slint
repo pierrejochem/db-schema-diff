@@ -7,6 +7,7 @@
 
 import { LineEdit, Button, ScrollView, GroupBox } from "std-widgets.slint";
 import { LabelledCheck } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 
 export struct FindingRow {
     target: string,
@@ -16,16 +17,6 @@ export struct FindingRow {
     severity: string,
     detail: string,
     suppressed_by: string,
-}
-
-// One name per meaning. Every tint that stands for success, failure, warning or de-emphasis in
-// this tab reads one of these, so the banner and the diff cannot disagree.
-global Palette {
-    out property <color> success: #027a48;
-    out property <color> danger: #b42318;
-    out property <color> caution: #b54708;
-    out property <color> body: #344054;
-    out property <color> muted: #667085;
 }
 
 export struct DeltaRow {
@@ -60,8 +51,8 @@ export component FindingLine inherits Rectangle {
             text: root.data.severity;
             width: 70px;
             vertical-alignment: center;
-            color: root.data.severity == "error" ? Palette.danger
-                : root.data.severity == "warning" ? Palette.caution : Palette.body;
+            color: root.data.severity == "error" ? Tokens.danger
+                : root.data.severity == "warning" ? Tokens.caution : Tokens.body;
         }
         Text {
             text: root.data.suppressed_by == "" ? root.data.detail
@@ -109,27 +100,27 @@ export component ResultsTab inherits ScrollView {
     out property <bool> banner-is-success: root.banner-kind == "ok";
     // The only place a kind becomes a colour. The markup consumes these and nothing else.
     out property <color> banner-background:
-        root.banner-kind == "ok" ? #d1fadf
-        : root.banner-kind == "info" ? #d1e9ff
-        : root.banner-kind == "warning" ? #fef0c7
-        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #fee4e2
-        : #eaecf0;
+        root.banner-kind == "ok" ? Tokens.success-surface
+        : root.banner-kind == "info" ? Tokens.info-surface
+        : root.banner-kind == "warning" ? Tokens.caution-surface
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Tokens.danger-surface
+        : Tokens.neutral-surface;
     out property <color> banner-text-color:
-        root.banner-kind == "ok" ? Palette.success
-        : root.banner-kind == "info" ? #175cd3
-        : root.banner-kind == "warning" ? Palette.caution
-        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Palette.danger
-        : Palette.body;
+        root.banner-kind == "ok" ? Tokens.success
+        : root.banner-kind == "info" ? Tokens.info
+        : root.banner-kind == "warning" ? Tokens.caution
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Tokens.danger
+        : Tokens.body;
     out property <int> finding-count: root.findings.length;
     out property <int> delta-count: root.selected-deltas.length;
     out property <int> diff-count: root.selected-diff.length;
 
     // The only place a diff line kind becomes a colour; text and tint both read it.
     pure function diff-colour(kind: string) -> color {
-        return kind == "added" ? Palette.success
-            : kind == "removed" ? Palette.danger
-            : kind == "hunk" || kind == "elided" ? Palette.muted
-            : Palette.body;
+        return kind == "added" ? Tokens.success
+            : kind == "removed" ? Tokens.danger
+            : kind == "hunk" || kind == "elided" ? Tokens.muted
+            : Tokens.body;
     }
     // A diff line opens a group when its attribute differs from the line before it. The pane
     // relies on the view model emitting rows grouped by attribute: for a, b, a it labels all three.
@@ -246,13 +237,13 @@ export component ResultsTab inherits ScrollView {
 
         Rectangle {
             height: root.findings-summary == "" ? 0px : 28px;
-            background: root.filter-hides-rows ? #fef0c7 : transparent;
+            background: root.filter-hides-rows ? Tokens.caution-surface : transparent;
             Text {
                 x: 8px;
                 text: root.findings-summary;
                 vertical-alignment: center;
                 font-weight: root.filter-hides-rows ? 700 : 400;
-                color: root.filter-hides-rows ? Palette.caution : Palette.body;
+                color: root.filter-hides-rows ? Tokens.caution : Tokens.body;
             }
         }
 
@@ -261,7 +252,7 @@ export component ResultsTab inherits ScrollView {
             VerticalLayout {
                 spacing: 2px;
                 for row[i] in root.findings: FindingLine {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
                     clicked => { root.choose-row(i); }
                 }
@@ -276,7 +267,7 @@ export component ResultsTab inherits ScrollView {
                     text: root.selected-heading == "" ? "Select a finding to see its detail."
                         : root.selected-heading;
                     font-weight: 700;
-                    color: Palette.body;
+                    color: Tokens.body;
                     overflow: elide;
                 }
                 for d in root.selected-deltas: HorizontalLayout {
@@ -305,7 +296,7 @@ export component ResultsTab inherits ScrollView {
                             if root.starts-group(i): Text {
                                 text: line.attribute;
                                 font-weight: 700;
-                                color: Palette.body;
+                                color: Tokens.body;
                             }
                             Rectangle {
                                 background: line.kind == "added" || line.kind == "removed"

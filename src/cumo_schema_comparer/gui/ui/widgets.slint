@@ -1,6 +1,7 @@
 // Shared building blocks. Kept in one file because they are small and always change together.
 
 import { LineEdit, CheckBox } from "std-widgets.slint";
+import { Tokens } from "tokens.slint";
 
 export component LabelledField inherits HorizontalLayout {
     in property <string> label;
@@ -49,10 +50,10 @@ export component StatusLine inherits Rectangle {
     in property <bool> is-error;
 
     height: root.message == "" ? 0px : 28px;
-    background: root.is-error ? #fee4e2 : #d1fadf;
+    background: root.is-error ? Tokens.danger-surface : Tokens.success-surface;
     Text {
         text: root.message;
-        color: root.is-error ? #b42318 : #027a48;
+        color: root.is-error ? Tokens.danger : Tokens.success;
         vertical-alignment: center;
         x: 8px;
     }
