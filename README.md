@@ -98,8 +98,10 @@ cumo-schema-diff compare -c config/invoicing.yaml \
 Point GitHub Actions at `junit.xml` and drift shows up in the Checks tab as ordinary test
 failures, naming the schema, table and column.
 
-`report.html` is a **single self-contained file**: inline CSS, inline SVG, no fonts, no CDN, nothing
-fetched at all. Upload it as a CI artifact and it opens correctly on a machine with no outbound
+`report.html` is a **single self-contained file**: inline CSS, inline SVG, no font files, no CDN,
+nothing fetched at all. It asks for the brand faces by name and falls back to the system stack, so it
+carries the same palette and type as the desktop application without adding font files to every
+artifact. Upload it as a CI artifact and it opens correctly on a machine with no outbound
 network. It leads with the verdict, then an object-kind-by-target matrix, then per-target detail; it
 supports dark mode and prints cleanly. Expanding uses `<details>`, so every finding is reachable with
 JavaScript disabled — the script only filters by name and severity.
@@ -265,6 +267,21 @@ A cancelled comparison produces no report and says so: the Results banner is onl
 finished run that found nothing. Cancelling stops sources that have not started, but a capture
 already connected is abandoned rather than interrupted — PostgreSQL work in flight ends on its own
 `statement_timeout`, which at the defaults can be minutes.
+
+The application follows the Cubic design system. Every colour, size, radius and spacing step comes
+from `gui/ui/tokens.slint`, and the HTML report holds the same palette — a test compares the two
+files colour by colour, so a report and the window that produced it cannot disagree about what
+"error" looks like. Catalog text — object paths, statuses, attribute names, source states — is set
+in IBM Plex Mono; prose is Mulish; the verdict and the detail heading are Archivo.
+
+The three faces ship with the package under the SIL Open Font License, and the application points
+Slint at them before the renderer starts. Set `SLINT_FONT_PATH` yourself to use your own licensed
+cut instead: an existing value is always left alone. With neither, the UI falls back to the system
+faces and the tokens carry the design on their own.
+
+Buttons, text fields and drop-downs keep their native look: Slint's widget set exposes its palette
+read-only, so the signature lime pill and a focus ring cannot be set from the markup without
+replacing those widgets by hand and losing the keyboard focus and activation they provide.
 
 The GUI is an optional extra: installing the CLI alone keeps its Python 3.11 floor and its five
 dependencies.
