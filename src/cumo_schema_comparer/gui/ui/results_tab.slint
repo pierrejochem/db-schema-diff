@@ -7,6 +7,7 @@
 
 import { LineEdit, Button, ScrollView, GroupBox } from "std-widgets.slint";
 import { LabelledCheck } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 
 export struct FindingRow {
     target: string,
@@ -16,16 +17,6 @@ export struct FindingRow {
     severity: string,
     detail: string,
     suppressed_by: string,
-}
-
-// One name per meaning. Every tint that stands for success, failure, warning or de-emphasis in
-// this tab reads one of these, so the banner and the diff cannot disagree.
-global Palette {
-    out property <color> success: #027a48;
-    out property <color> danger: #b42318;
-    out property <color> caution: #b54708;
-    out property <color> body: #344054;
-    out property <color> muted: #667085;
 }
 
 export struct DeltaRow {
@@ -50,24 +41,50 @@ export component FindingLine inherits Rectangle {
     TouchArea { clicked => { root.clicked(); } }
 
     HorizontalLayout {
-        padding: 4px;
-        spacing: 8px;
-        Text { text: root.data.target; width: 90px; vertical-alignment: center; }
-        Text { text: root.data.kind; width: 80px; vertical-alignment: center; }
-        Text { text: root.data.path; width: 280px; vertical-alignment: center; overflow: elide; }
-        Text { text: root.data.status; width: 110px; vertical-alignment: center; }
+        padding: Tokens.space-1;
+        spacing: Tokens.space-2;
+        Text {
+            text: root.data.target;
+            width: 90px;
+            vertical-alignment: center;
+            color: Tokens.body;
+        }
+        Text {
+            text: root.data.kind;
+            width: 80px;
+            vertical-alignment: center;
+            font-family: Tokens.family-mono;
+            color: Tokens.muted;
+        }
+        Text {
+            text: root.data.path;
+            width: 280px;
+            vertical-alignment: center;
+            overflow: elide;
+            font-family: Tokens.family-mono;
+            color: Tokens.heading;
+        }
+        Text {
+            text: root.data.status;
+            width: 110px;
+            vertical-alignment: center;
+            font-family: Tokens.family-mono;
+            color: Tokens.muted;
+        }
         Text {
             text: root.data.severity;
             width: 70px;
             vertical-alignment: center;
-            color: root.data.severity == "error" ? Palette.danger
-                : root.data.severity == "warning" ? Palette.caution : Palette.body;
+            font-weight: Tokens.weight-bold;
+            color: root.data.severity == "error" ? Tokens.danger
+                : root.data.severity == "warning" ? Tokens.caution : Tokens.body;
         }
         Text {
             text: root.data.suppressed_by == "" ? root.data.detail
                 : root.data.detail + "  [ignored by " + root.data.suppressed_by + "]";
             vertical-alignment: center;
             overflow: elide;
+            color: Tokens.muted;
         }
     }
 }
@@ -109,27 +126,27 @@ export component ResultsTab inherits ScrollView {
     out property <bool> banner-is-success: root.banner-kind == "ok";
     // The only place a kind becomes a colour. The markup consumes these and nothing else.
     out property <color> banner-background:
-        root.banner-kind == "ok" ? #d1fadf
-        : root.banner-kind == "info" ? #d1e9ff
-        : root.banner-kind == "warning" ? #fef0c7
-        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #fee4e2
-        : #eaecf0;
+        root.banner-kind == "ok" ? Tokens.success-surface
+        : root.banner-kind == "info" ? Tokens.info-surface
+        : root.banner-kind == "warning" ? Tokens.caution-surface
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Tokens.danger-surface
+        : Tokens.neutral-surface;
     out property <color> banner-text-color:
-        root.banner-kind == "ok" ? Palette.success
-        : root.banner-kind == "info" ? #175cd3
-        : root.banner-kind == "warning" ? Palette.caution
-        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Palette.danger
-        : Palette.body;
+        root.banner-kind == "ok" ? Tokens.success
+        : root.banner-kind == "info" ? Tokens.info
+        : root.banner-kind == "warning" ? Tokens.caution
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Tokens.danger
+        : Tokens.body;
     out property <int> finding-count: root.findings.length;
     out property <int> delta-count: root.selected-deltas.length;
     out property <int> diff-count: root.selected-diff.length;
 
     // The only place a diff line kind becomes a colour; text and tint both read it.
     pure function diff-colour(kind: string) -> color {
-        return kind == "added" ? Palette.success
-            : kind == "removed" ? Palette.danger
-            : kind == "hunk" || kind == "elided" ? Palette.muted
-            : Palette.body;
+        return kind == "added" ? Tokens.success
+            : kind == "removed" ? Tokens.danger
+            : kind == "hunk" || kind == "elided" ? Tokens.muted
+            : Tokens.body;
     }
     // A diff line opens a group when its attribute differs from the line before it. The pane
     // relies on the view model emitting rows grouped by attribute: for a, b, a it labels all three.
@@ -202,26 +219,32 @@ export component ResultsTab inherits ScrollView {
     }
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 12px;
+        padding: Tokens.space-3;
+        spacing: Tokens.space-3;
 
         Rectangle {
-            height: 44px;
-            border-radius: 4px;
+            height: 56px;
+            border-radius: Tokens.radius-card;
+            border-width: Tokens.hairline-width;
+            border-color: root.banner-text-color;
             background: root.banner-background;
             Text {
-                x: 12px;
-                width: parent.width - 24px;
+                x: Tokens.space-4;
+                width: parent.width - 2 * Tokens.space-4;
                 text: root.running ? "Run in progress…"
                     : root.verdict == "" ? "No comparison has finished yet." : root.verdict;
                 vertical-alignment: center;
                 wrap: word-wrap;
+                font-family: Tokens.family-display;
+                font-size: Tokens.text-lead;
+                font-weight: Tokens.weight-bold;
+                letter-spacing: Tokens.tracking-tight;
                 color: root.banner-text-color;
             }
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             filter-edit := LineEdit {
                 text <=> root.filter-text;
                 placeholder-text: "filter by object path, e.g. invoice";
@@ -246,24 +269,32 @@ export component ResultsTab inherits ScrollView {
 
         Rectangle {
             height: root.findings-summary == "" ? 0px : 28px;
-            background: root.filter-hides-rows ? #fef0c7 : transparent;
+            border-radius: Tokens.radius-subtle;
+            background: root.filter-hides-rows ? Tokens.caution-surface : transparent;
             Text {
-                x: 8px;
+                x: Tokens.space-3;
                 text: root.findings-summary;
                 vertical-alignment: center;
-                font-weight: root.filter-hides-rows ? 700 : 400;
-                color: root.filter-hides-rows ? Palette.caution : Palette.body;
+                font-weight: root.filter-hides-rows ? Tokens.weight-bold : Tokens.weight-regular;
+                color: root.filter-hides-rows ? Tokens.caution : Tokens.body;
             }
         }
 
         GroupBox {
             title: "Findings";
-            VerticalLayout {
-                spacing: 2px;
-                for row[i] in root.findings: FindingLine {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
-                    data: row;
-                    clicked => { root.choose-row(i); }
+            Rectangle {
+                background: Tokens.card;
+                border-radius: Tokens.radius-card;
+                border-width: Tokens.hairline-width;
+                border-color: Tokens.hairline;
+                VerticalLayout {
+                    padding: Tokens.space-1;
+                    spacing: Tokens.space-1;
+                    for row[i] in root.findings: FindingLine {
+                        background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
+                        data: row;
+                        clicked => { root.choose-row(i); }
+                    }
                 }
             }
         }
@@ -271,29 +302,47 @@ export component ResultsTab inherits ScrollView {
         GroupBox {
             title: "Detail";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 heading-text := Text {
                     text: root.selected-heading == "" ? "Select a finding to see its detail."
                         : root.selected-heading;
-                    font-weight: 700;
-                    color: Palette.body;
+                    font-family: Tokens.family-display;
+                    font-size: Tokens.text-control;
+                    font-weight: Tokens.weight-bold;
+                    letter-spacing: Tokens.tracking-tight;
+                    color: root.selected-heading == "" ? Tokens.muted : Tokens.heading;
                     overflow: elide;
                 }
                 for d in root.selected-deltas: HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: d.attribute; width: 160px; overflow: elide; }
+                    spacing: Tokens.space-2;
+                    Text {
+                        text: d.attribute;
+                        width: 160px;
+                        overflow: elide;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.heading;
+                    }
                     Text {
                         text: d.is_body ? "(see diff below)" : d.master;
                         width: 200px;
                         overflow: elide;
+                        font-family: d.is_body ? Tokens.family-body : Tokens.family-mono;
+                        color: d.is_body ? Tokens.muted : Tokens.body;
                     }
                     Text {
                         text: d.is_body ? "" : d.target;
                         width: 200px;
                         overflow: elide;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.body;
                     }
-                    Text { text: d.severity; width: 70px; }
-                    Text { text: d.note; overflow: elide; }
+                    Text {
+                        text: d.severity;
+                        width: 70px;
+                        color: d.severity == "error" ? Tokens.danger
+                            : d.severity == "warning" ? Tokens.caution : Tokens.muted;
+                    }
+                    Text { text: d.note; overflow: elide; color: Tokens.muted; }
                 }
                 // Horizontal scrolling: a routine body is one line and may be tens of KB, which
                 // must scroll rather than wrap or size the window.
@@ -304,15 +353,17 @@ export component ResultsTab inherits ScrollView {
                         for line[i] in root.selected-diff: VerticalLayout {
                             if root.starts-group(i): Text {
                                 text: line.attribute;
-                                font-weight: 700;
-                                color: Palette.body;
+                                font-family: Tokens.family-mono;
+                                font-weight: Tokens.weight-bold;
+                                color: Tokens.heading;
                             }
                             Rectangle {
+                                border-radius: Tokens.radius-subtle;
                                 background: line.kind == "added" || line.kind == "removed"
                                     ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
                                 Text {
                                     text: line.text;
-                                    font-family: "monospace";
+                                    font-family: Tokens.family-mono;
                                     wrap: no-wrap;
                                     color: root.diff-colour(line.kind);
                                 }
@@ -324,8 +375,8 @@ export component ResultsTab inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 8px;
-            Text { text: "reports to"; vertical-alignment: center; }
+            spacing: Tokens.space-2;
+            Text { text: "reports to"; vertical-alignment: center; color: Tokens.muted; }
             output-edit := LineEdit { text <=> root.output-directory; placeholder-text: "output directory"; }
             Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }
             Button {

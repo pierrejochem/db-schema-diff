@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
 import re
 
 import pytest
@@ -391,3 +392,63 @@ class TestFilterWiring:
     def test_a_severity_checkbox_exists_for_each_level(self, html):
         for level in ("error", "warning", "info"):
             assert f'class="sev" value="{level}"' in html
+
+
+# The report and the GUI are one design system, so they are held to one palette.
+TOKEN_TO_CSS_VARIABLE = {
+    "success": "ok",
+    "success-surface": "ok-bg",
+    "danger": "error",
+    "danger-surface": "error-bg",
+    "caution": "warning",
+    "caution-surface": "warning-bg",
+    "info": "info",
+    "info-surface": "info-bg",
+    "body": "text",
+    "muted": "muted",
+    "hairline": "border",
+    "card": "bg",
+    "sunken": "panel",
+    "heading": "heading",
+    "blue": "accent",
+}
+
+
+def design_tokens() -> dict[str, str]:
+    """The GUI's colour tokens, read as text — this runs where Slint is not installed."""
+    import cumo_schema_comparer
+
+    source = (
+        pathlib.Path(cumo_schema_comparer.__file__).parent / "gui" / "ui" / "tokens.slint"
+    ).read_text(encoding="utf-8")
+    return dict(re.findall(r"out property <color> (\S+): (#[0-9a-fA-F]+);", source))
+
+
+def light_scheme() -> dict[str, str]:
+    """The template's light `:root` block. The dark overrides live inside a media query."""
+    source = load_template_source()
+    block = source[source.index(":root {") : source.index("}", source.index(":root {"))]
+    return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]+);", block))
+
+
+@pytest.mark.parametrize(("token", "variable"), sorted(TOKEN_TO_CSS_VARIABLE.items()))
+def test_the_report_and_the_gui_agree_on_every_colour(token, variable):
+    """One palette, two renderers.
+
+    A report says "error" in the same breath as the window that produced it, and a reader moving
+    between them should not have to learn two colour languages. Nothing stops the two drifting
+    except this, because each side renders correctly on its own.
+    """
+    tokens = design_tokens()
+    assert token in tokens, f"{token} is no longer a GUI token; update the mapping"
+    assert light_scheme()[variable] == tokens[token]
+
+
+def test_the_brand_faces_are_named_but_never_fetched(html):
+    # The report may ask for the brand faces; it may not ship or download them. The no-external-URL
+    # test covers the fetch; this pins the naming, so a reader who has them sees them.
+    assert "Mulish" in html
+    assert "Archivo" in html
+    assert "IBM Plex Mono" in html
+    assert "@font-face" not in html
+    assert "base64" not in html

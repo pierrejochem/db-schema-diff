@@ -1,0 +1,85 @@
+// The design system, in one place. Every colour, size, radius and spacing step in this UI comes
+// from here; no other `.slint` file may carry a colour literal or a bare font size.
+//
+// Why a global rather than a set of constants per file: a global is a singleton Slint shares across
+// every file that imports it, so one edit here moves every consumer. The suite proves that by
+// setting a token to an absurd value in a copy of the markup and asserting the consumers follow —
+// a consumer holding its own copy of a literal would not move, and would be caught.
+//
+// Two colour families, deliberately separate:
+//
+//   * the signal names (`success`, `caution`, `danger`, `info`) are **ink** — text and icon colours,
+//     darkened from the design system's traffic-signal palette (go #23b26d, caution #f5a623,
+//     stop #e5484d, info #2f6fc4) so they clear 4.5:1 against their own surface. The signal values
+//     themselves are tuned for fills and indicators and are unreadable as small text on a tint.
+//   * the `-surface` names are the tints those inks sit on.
+//
+// Fonts: the three families are bundled with the package and installed by `gui/fonts.py` before
+// Slint starts. A family Slint cannot resolve falls back silently, so the names here must match the
+// bundled faces exactly — Archivo is bundled at 700 only and IBM Plex Mono at 400 only, which is
+// why `weight-bold` always accompanies `family-display`.
+//
+// Nothing unused lives here. A token no consumer reads is a decision nobody made, and the suite
+// rejects one, so the file stays a record of what this UI actually does.
+export global Tokens {
+    // The interactive blue. Nothing in this markup draws with it — std-widgets own their own
+    // chrome — but the HTML report's focus ring and links read it, and the two are held equal.
+    out property <color> blue: #2f6fc4;
+
+    // Text.
+    out property <color> heading: #132c5c;
+    out property <color> body: #334155;
+    out property <color> muted: #5b6a80;
+    // Lime is a light accent: what sits on it is navy, never white.
+
+    // Surfaces and lines.
+    out property <color> page: #f5f5f5;
+    out property <color> card: #ffffff;
+    // Likewise reached only through the report, as its panel surface.
+    out property <color> sunken: #f1f4f8;
+    // Zebra striping. Translucent on purpose: a row stripe tints whatever surface is beneath it.
+    out property <color> stripe: #132c5c0a;
+    out property <color> hairline: #dbe2ec;
+
+    // Signal ink.
+    out property <color> success: #15794a;
+    out property <color> caution: #8a5a00;
+    out property <color> danger: #b02a30;
+    out property <color> info: #1f4e8c;
+
+    // Signal surfaces.
+    out property <color> success-surface: #dcf6e8;
+    out property <color> caution-surface: #fdf0d8;
+    out property <color> danger-surface: #fce4e5;
+    out property <color> info-surface: #e3edfb;
+    out property <color> neutral-surface: #eaeff5;
+
+    // Type families.
+    out property <string> family-display: "Archivo";
+    out property <string> family-body: "Mulish";
+    out property <string> family-mono: "IBM Plex Mono";
+
+    // Weights. Only these two are bundled; anything between them is synthesised by the renderer.
+    out property <int> weight-regular: 400;
+    out property <int> weight-bold: 700;
+
+    // Type scale.
+    out property <length> text-body: 13px;
+    out property <length> text-control: 15px;
+    out property <length> text-lead: 17px;
+
+    // Tracking. Absolute rather than em-relative because Slint's letter-spacing is a length; these
+    // are tuned for the two sizes that use them — eyebrows at 11px and titles at 20px.
+    out property <length> tracking-tight: -0.4px;
+
+    // Shape.
+    out property <length> radius-subtle: 4px;
+    out property <length> radius-card: 12px;
+    out property <length> hairline-width: 1px;
+
+    // Spacing, on a 4px grid.
+    out property <length> space-1: 4px;
+    out property <length> space-2: 8px;
+    out property <length> space-3: 12px;
+    out property <length> space-4: 16px;
+}

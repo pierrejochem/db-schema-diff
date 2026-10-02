@@ -6,6 +6,7 @@
 
 import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
 import { LabelledCheck } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 
 export struct ProgressRow {
     label: string,
@@ -17,17 +18,23 @@ export component ProgressLine inherits Rectangle {
     in property <ProgressRow> data;
 
     HorizontalLayout {
-        padding: 6px;
-        spacing: 12px;
-        Text { text: root.data.label; width: 180px; vertical-alignment: center; }
+        padding: Tokens.space-2;
+        spacing: Tokens.space-3;
+        Text {
+            text: root.data.label;
+            width: 180px;
+            vertical-alignment: center;
+            color: Tokens.heading;
+        }
         // Neutral for every state except failure; "captured" is deliberately not green.
         Text {
             text: root.data.state;
             width: 110px;
             vertical-alignment: center;
-            color: root.data.state == "failed" ? #b42318 : #344054;
+            font-family: Tokens.family-mono;
+            color: root.data.state == "failed" ? Tokens.danger : Tokens.body;
         }
-        Text { text: root.data.detail; vertical-alignment: center; }
+        Text { text: root.data.detail; vertical-alignment: center; color: Tokens.muted; }
     }
 }
 
@@ -72,24 +79,34 @@ export component RunTab inherits ScrollView {
     }
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 12px;
+        padding: Tokens.space-3;
+        spacing: Tokens.space-3;
 
         GroupBox {
             title: "Options";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "fail on"; width: 140px; vertical-alignment: center; }
+                    spacing: Tokens.space-2;
+                    Text {
+                        text: "fail on";
+                        width: 140px;
+                        vertical-alignment: center;
+                        color: Tokens.muted;
+                    }
                     ComboBox {
                         model: root.fail-on-choices;
                         current-value <=> root.run-fail-on;
                     }
                 }
                 HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "baseline"; width: 140px; vertical-alignment: center; }
+                    spacing: Tokens.space-2;
+                    Text {
+                        text: "baseline";
+                        width: 140px;
+                        vertical-alignment: center;
+                        color: Tokens.muted;
+                    }
                     baseline-edit := LineEdit {
                         text <=> root.baseline-path;
                         placeholder-text: "(none)";
@@ -106,7 +123,7 @@ export component RunTab inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             Button {
                 text: root.running ? "Running…" : "Run comparison";
                 primary: true;
@@ -123,9 +140,9 @@ export component RunTab inherits ScrollView {
         GroupBox {
             title: "Sources";
             VerticalLayout {
-                spacing: 2px;
+                spacing: Tokens.space-1;
                 for row[i] in root.progress: ProgressLine {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
                 }
             }

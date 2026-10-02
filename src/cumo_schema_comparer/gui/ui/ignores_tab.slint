@@ -2,6 +2,7 @@
 
 import { LineEdit, ComboBox, Button, ScrollView, GroupBox } from "std-widgets.slint";
 import { LabelledCheck } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 
 // kinds, names, attributes, targets and statuses are comma-separated; the view model splits them.
 export struct RuleRow {
@@ -33,10 +34,10 @@ export component RuleLine inherits Rectangle {
     out property <[string]> action-choices: action-box.model;
 
     VerticalLayout {
-        padding: 6px;
-        spacing: 4px;
+        padding: Tokens.space-2;
+        spacing: Tokens.space-1;
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             id-edit := LineEdit {
                 text: root.data.id;
                 placeholder-text: "id";
@@ -62,7 +63,7 @@ export component RuleLine inherits Rectangle {
             }
         }
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             kinds-edit := LineEdit {
                 text: root.data.kinds;
                 placeholder-text: "kinds, comma separated";
@@ -83,7 +84,7 @@ export component RuleLine inherits Rectangle {
             }
         }
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Tokens.space-2;
             targets-edit := LineEdit {
                 text: root.data.targets;
                 placeholder-text: "targets, comma separated";
@@ -115,15 +116,15 @@ export component IgnoresTab inherits ScrollView {
     out property <int> default-rule-count: root.default-rules.length;
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 12px;
+        padding: Tokens.space-3;
+        spacing: Tokens.space-3;
 
         GroupBox {
             title: "Ignore rules";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 for row[i] in root.rules: RuleLine {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
                     changed(f, v) => { root.rule-changed(row.id, f, v); }
                     remove => { root.remove-rule(row.id); }
@@ -136,7 +137,7 @@ export component IgnoresTab inherits ScrollView {
                     }
                 }
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: Tokens.space-2;
                     Button { text: "Add rule"; clicked => { root.add-rule(); } }
                     Button { text: "Save"; primary: true; clicked => { root.save-ignores(); } }
                 }
@@ -146,9 +147,9 @@ export component IgnoresTab inherits ScrollView {
         GroupBox {
             title: "bundled defaults";
             VerticalLayout {
-                spacing: 6px;
+                spacing: Tokens.space-2;
                 for row[i] in root.default-rules: RuleLine {
-                    background: mod(i, 2) == 0 ? transparent : #00000008;
+                    background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                     data: row;
                 }
             }

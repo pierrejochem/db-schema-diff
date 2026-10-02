@@ -3,6 +3,7 @@
 
 import { TabWidget, Button } from "std-widgets.slint";
 import { StatusLine } from "widgets.slint";
+import { Tokens } from "tokens.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
 import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
@@ -15,6 +16,12 @@ export component MainWindow inherits Window {
     title: "cumo-schema-diff";
     preferred-width: 1100px;
     preferred-height: 760px;
+    background: Tokens.page;
+    // Set once, inherited by every widget: std-widgets expose font-size but not font-family,
+    // so a LineEdit can only be reached through the window's default.
+    default-font-family: Tokens.family-body;
+    default-font-size: Tokens.text-body;
+    default-font-weight: Tokens.weight-regular;
 
     in-out property <string> config-name;
     in-out property <string> config-path;
@@ -155,16 +162,34 @@ export component MainWindow inherits Window {
     public function drive-open-html() { results-tab.request-open-html(); }
 
     VerticalLayout {
-        HorizontalLayout {
-            padding: 8px;
-            spacing: 8px;
-            Text {
-                text: root.config-path == "" ? "(unsaved)" : root.config-path;
-                vertical-alignment: center;
+        // The header is a surface of its own, separated by a hairline rather than a shadow: the
+        // path it carries is machine text and is set in the mono face so a long path stays legible.
+        Rectangle {
+            background: Tokens.card;
+            VerticalLayout {
+                HorizontalLayout {
+                    padding: Tokens.space-3;
+                    spacing: Tokens.space-3;
+                    Text {
+                        text: root.config-path == "" ? "(unsaved)" : root.config-path;
+                        font-family: Tokens.family-mono;
+                        font-size: Tokens.text-body;
+                        color: root.config-path == "" ? Tokens.muted : Tokens.heading;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: root.dirty ? "• modified" : "";
+                        font-family: Tokens.family-body;
+                        font-size: Tokens.text-body;
+                        color: Tokens.caution;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { }
+                    Button { text: "Open…"; clicked => { root.load-config(); } }
+                }
+                Rectangle { height: Tokens.hairline-width; background: Tokens.hairline; }
             }
-            Text { text: root.dirty ? "• modified" : ""; vertical-alignment: center; }
-            Rectangle { }
-            Button { text: "Open…"; clicked => { root.load-config(); } }
         }
 
         StatusLine { message: root.status-message; is-error: root.status-is-error; }
