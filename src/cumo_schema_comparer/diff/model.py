@@ -100,6 +100,14 @@ class AttributeDelta:
     """
     note: str | None = None
     """Why this matters, when the attribute name alone does not say it."""
+    master_display: str | None = None
+    target_display: str | None = None
+    """What to *show* instead of the compared values, when there is something better to show.
+
+    A routine is compared by its body hash, which is also what identifies the finding in a
+    baseline; these carry the body text for a reader. Both or neither, and purely additive:
+    ``master_value`` and ``target_value`` remain the compared values.
+    """
 
     def to_json_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -112,6 +120,9 @@ class AttributeDelta:
             payload["cosmetic"] = True
         if self.note:
             payload["note"] = self.note
+        if self.master_display is not None and self.target_display is not None:
+            payload["master_display"] = self.master_display
+            payload["target_display"] = self.target_display
         return payload
 
     @classmethod
@@ -123,6 +134,8 @@ class AttributeDelta:
             severity=_severity(data["severity"]),
             cosmetic=bool(data.get("cosmetic", False)),
             note=data.get("note"),
+            master_display=data.get("master_display"),
+            target_display=data.get("target_display"),
         )
 
 

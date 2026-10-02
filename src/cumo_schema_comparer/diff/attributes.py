@@ -35,7 +35,8 @@ class AttributeSpec:
 
     The comparison always uses :attr:`getter`. A routine is compared by its body hash — stable,
     cheap, and independent of how the server prints the body — but a reader needs the text, so the
-    text is shown when both sides have one. Nothing about equality changes.
+    text is carried alongside for display when both sides have one. Nothing about equality or
+    identity changes.
     """
 
     @property
@@ -321,11 +322,10 @@ ROUTINE_SPECS: tuple[AttributeSpec, ...] = (
     ),
     _spec(
         ObjectKind.ROUTINE,
-        "body",
+        "body_hash",
         Severity.WARNING,
         note="the routine does something different",
         body=True,
-        getter=_attrgetter("body_hash"),
         display_getter=_attrgetter("body"),
     ),
     _spec(

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from typing import Any
 
 from ..model.inventory import Inventory
 from ..model.keys import ObjectKey
@@ -292,20 +293,24 @@ def _compare_one(
     if spec.body and options.downgrade_bodies:
         severity = Severity.INFO
 
-    shown_master, shown_target = master_value, target_value
+    display_master: Any = None
+    display_target: Any = None
     if spec.display_getter is not None:
-        display_master = spec.display_getter(master_object)
-        display_target = spec.display_getter(target_object)
-        # Both or neither: showing text against a hash would read as a difference in kind.
-        if display_master is not None and display_target is not None:
-            shown_master, shown_target = display_master, display_target
+        candidate_master = spec.display_getter(master_object)
+        candidate_target = spec.display_getter(target_object)
+        # Both or neither: showing text against a hash would read as a difference in kind. An
+        # empty string is a real body, so this must be `is not None`, not truthiness.
+        if candidate_master is not None and candidate_target is not None:
+            display_master, display_target = candidate_master, candidate_target
 
     return AttributeDelta(
         attribute=spec.name,
-        master_value=spec.render(shown_master),
-        target_value=spec.render(shown_target),
+        master_value=spec.render(master_value),
+        target_value=spec.render(target_value),
         severity=severity,
         note=spec.note,
+        master_display=spec.render(display_master),
+        target_display=spec.render(display_target),
     )
 
 

@@ -263,7 +263,7 @@ class TestRoutineDrift:
         result = compare(databases)
         path = "cumo-invoicing.invoice_gross(p_invoice_id integer)"
         assert summary(result) == {(path, "differs", "warning")}
-        assert attributes_of(result, path) == {"routine.body"}
+        assert attributes_of(result, path) == {"routine.body_hash"}
 
     def test_losing_security_definer_is_an_error(self, databases):
         databases.setup("base", drift="drift_function_security")
