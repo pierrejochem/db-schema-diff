@@ -1,0 +1,34 @@
+// A test-only probe. Text advance width depends on the face actually in use, so comparing these
+// four measurements is the only way to prove a bundled font was loaded — Slint falls back silently
+// when a family cannot be resolved, so nothing raises and nothing looks wrong.
+export component FontMetrics inherits Window {
+    width: 600px;
+    height: 200px;
+
+    out property <length> body-width: body-text.preferred-width;
+    out property <length> display-width: display-text.preferred-width;
+    out property <length> mono-width: mono-text.preferred-width;
+    out property <length> fallback-width: fallback-text.preferred-width;
+
+    VerticalLayout {
+        body-text := Text {
+            text: "Handgloves 0123456789";
+            font-family: "Mulish";
+            font-size: 15px;
+        }
+        display-text := Text {
+            text: "Handgloves 0123456789";
+            font-family: "Archivo";
+            font-size: 15px;
+        }
+        mono-text := Text {
+            text: "Handgloves 0123456789";
+            font-family: "IBM Plex Mono";
+            font-size: 15px;
+        }
+        fallback-text := Text {
+            text: "Handgloves 0123456789";
+            font-size: 15px;
+        }
+    }
+}

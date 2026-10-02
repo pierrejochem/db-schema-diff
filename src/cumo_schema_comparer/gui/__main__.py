@@ -23,6 +23,13 @@ def main() -> int:
         )
         return 2
 
+    # Before the next line, and only before it: Slint reads SLINT_FONT_PATH when the renderer
+    # starts, and `.app` imports slint at module level. Installing the fonts after that import is
+    # measurably a no-op, so this call cannot move below it.
+    from . import fonts
+
+    fonts.install()
+
     from .app import run
 
     return run()
