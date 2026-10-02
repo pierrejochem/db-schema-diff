@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import shutil
 
 import pytest
 
@@ -648,7 +649,34 @@ def test_the_banner_markup_consumes_the_derived_colours_only():
     assert "background: root.banner-background;" in text
     assert "color: root.banner-text-color;" in text
     assert text.count("#d1fadf") == 1
-    assert text.count("#027a48") == 1
+
+
+def window_with_token(tmp_path, token, value):
+    """A window built from a copy of the markup whose Palette ``token`` is set to ``value``."""
+    root = tmp_path / token
+    shutil.copytree(UI, root)
+    path = root / "results_tab.slint"
+    text = path.read_text()
+    marker = f"out property <color> {token}: "
+    start = text.index(marker) + len(marker)
+    path.write_text(text[:start] + value + text[text.index(";", start) :])
+    return slint.load_file(str(root / "main.slint")).MainWindow()
+
+
+@pytest.mark.parametrize(
+    ("token", "banner_level", "diff_kind"),
+    [("success", "ok", "added"), ("danger", "error", "removed")],
+)
+def test_the_banner_and_the_diff_share_one_colour_per_meaning(
+    window, tmp_path, token, banner_level, diff_kind
+):
+    # Unchanged: the banner text and the diff line agree.
+    assert banner_colours(window, banner_level)[1] == window.results_diff_colour_for(diff_kind)
+    # Mutate the single source. A consumer with its own copy of the literal would not move.
+    mutated = window_with_token(tmp_path, token, "#123456")
+    moved = mutated.results_diff_colour_for(diff_kind)
+    assert moved != window.results_diff_colour_for(diff_kind)
+    assert banner_colours(mutated, banner_level)[1] == moved
 
 
 # Shown-of-total and the hidden-rows indicator.

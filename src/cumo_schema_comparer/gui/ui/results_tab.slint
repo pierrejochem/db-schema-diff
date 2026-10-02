@@ -18,6 +18,16 @@ export struct FindingRow {
     suppressed_by: string,
 }
 
+// One name per meaning. Every tint that stands for success, failure, warning or de-emphasis in
+// this tab reads one of these, so the banner and the diff cannot disagree.
+global Palette {
+    out property <color> success: #027a48;
+    out property <color> danger: #b42318;
+    out property <color> caution: #b54708;
+    out property <color> body: #344054;
+    out property <color> muted: #667085;
+}
+
 export struct DeltaRow {
     attribute: string,
     master: string,
@@ -50,8 +60,8 @@ export component FindingLine inherits Rectangle {
             text: root.data.severity;
             width: 70px;
             vertical-alignment: center;
-            color: root.data.severity == "error" ? #b42318
-                : root.data.severity == "warning" ? #b54708 : #344054;
+            color: root.data.severity == "error" ? Palette.danger
+                : root.data.severity == "warning" ? Palette.caution : Palette.body;
         }
         Text {
             text: root.data.suppressed_by == "" ? root.data.detail
@@ -105,21 +115,21 @@ export component ResultsTab inherits ScrollView {
         : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #fee4e2
         : #eaecf0;
     out property <color> banner-text-color:
-        root.banner-kind == "ok" ? #027a48
+        root.banner-kind == "ok" ? Palette.success
         : root.banner-kind == "info" ? #175cd3
-        : root.banner-kind == "warning" ? #b54708
-        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? #b42318
-        : #344054;
+        : root.banner-kind == "warning" ? Palette.caution
+        : root.banner-kind == "error" || root.banner-kind == "cancelled" ? Palette.danger
+        : Palette.body;
     out property <int> finding-count: root.findings.length;
     out property <int> delta-count: root.selected-deltas.length;
     out property <int> diff-count: root.selected-diff.length;
 
     // The only place a diff line kind becomes a colour; text and tint both read it.
     pure function diff-colour(kind: string) -> color {
-        return kind == "added" ? #067647
-            : kind == "removed" ? #b42318
-            : kind == "hunk" || kind == "elided" ? #667085
-            : #344054;
+        return kind == "added" ? Palette.success
+            : kind == "removed" ? Palette.danger
+            : kind == "hunk" || kind == "elided" ? Palette.muted
+            : Palette.body;
     }
     pure public function diff-colour-for(kind: string) -> color { return root.diff-colour(kind); }
 
@@ -235,7 +245,7 @@ export component ResultsTab inherits ScrollView {
                 text: root.findings-summary;
                 vertical-alignment: center;
                 font-weight: root.filter-hides-rows ? 700 : 400;
-                color: root.filter-hides-rows ? #b54708 : #344054;
+                color: root.filter-hides-rows ? Palette.caution : Palette.body;
             }
         }
 
@@ -259,7 +269,7 @@ export component ResultsTab inherits ScrollView {
                     text: root.selected-heading == "" ? "Select a finding to see its detail."
                         : root.selected-heading;
                     font-weight: 700;
-                    color: #344054;
+                    color: Palette.body;
                     overflow: elide;
                 }
                 for d in root.selected-deltas: HorizontalLayout {
@@ -288,7 +298,7 @@ export component ResultsTab inherits ScrollView {
                             if i == 0 || line.attribute != root.selected-diff[i - 1].attribute: Text {
                                 text: line.attribute;
                                 font-weight: 700;
-                                color: #344054;
+                                color: Palette.body;
                             }
                             Rectangle {
                                 background: line.kind == "added" || line.kind == "removed"
