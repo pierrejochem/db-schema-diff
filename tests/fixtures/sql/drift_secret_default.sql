@@ -18,3 +18,12 @@ BEGIN
     RETURN coalesce(v_total, 0);
 END;
 $$;
+
+-- An expression index and a function with a SET clause: two more places a literal can sit.
+CREATE INDEX idx_invoice_secret ON "cumo-invoicing".invoice
+    ((number || 'postgresql://u:s3cret@h/db'));
+
+CREATE FUNCTION "cumo-invoicing".uses_setting() RETURNS integer
+LANGUAGE sql
+SET "app.dsn" = 'postgresql://u:s3cret@h/db'
+AS 'SELECT 1';

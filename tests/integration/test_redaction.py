@@ -66,6 +66,22 @@ def test_a_secret_is_masked_in_every_output(tmp_path, secret_databases):
         assert SECRET not in text, f"{name} leaked the secret"
     assert "***:" in (out_dir / "report.json").read_text(encoding="utf-8")
 
+    # The fifth artefact: the captured inventory, which also holds the expression index key and
+    # the function's SET value that the report may not print.
+    inventory_path = tmp_path / "inventory.json"
+    invoke(
+        tmp_path,
+        secret_databases,
+        "--source",
+        "qa",
+        "-o",
+        str(inventory_path),
+        command="inventory",
+    )
+    captured = inventory_path.read_text(encoding="utf-8")
+    assert SECRET not in captured, "inventory leaked the secret"
+    assert "idx_invoice_secret" in captured and "uses_setting" in captured
+
 
 def test_the_masked_text_still_reports_as_drift(tmp_path, secret_databases):
     """Masking must not hide the change: the default and the body differ, and that is drift."""

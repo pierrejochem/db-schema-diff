@@ -6,13 +6,24 @@ expressions and column defaults already travelled into the HTML report that CI u
 
 from __future__ import annotations
 
+import inspect
+
 from click.testing import CliRunner
 
-from cumo_schema_comparer.build import _routines, masked_fields, redact_inventory
+from cumo_schema_comparer import build as build_module
+from cumo_schema_comparer import runner
+from cumo_schema_comparer.build import (
+    _routines,
+    build_inventory,
+    masked_fields,
+    redact_inventory,
+)
 from cumo_schema_comparer.cli import cli
+from cumo_schema_comparer.config.model import SourceRef
 from cumo_schema_comparer.diff.attributes import SPECS
+from cumo_schema_comparer.model.keys import ObjectKey
 from cumo_schema_comparer.model.kinds import ObjectKind
-from cumo_schema_comparer.model.objects import RawValues
+from cumo_schema_comparer.model.objects import Index, IndexKey, RawValues, Routine
 from tests.support.builders import col, inventory, table
 
 #: The definition-bearing attributes. The same ``body=True`` flag drives masking, the choice of a
@@ -89,19 +100,108 @@ def test_the_set_of_body_specs_is_pinned():
     assert actual == EXPECTED_BODY_SPECS
 
 
-def test_the_masked_fields_are_derived_from_the_body_specs():
-    fields = masked_fields()
-    derived = {f"{kind.value}.{name}" for kind, names in fields.items() for name in names}
-    for spec_name in EXPECTED_BODY_SPECS - {"routine.body_hash"}:
-        assert spec_name in derived, spec_name
-    # body_hash holds a digest; the text that travels is Routine.body, mapped deliberately.
-    assert "routine.body_hash" not in derived
-    assert "body" in fields[ObjectKind.ROUTINE]
-    # Every masked name is a real field of the object it is listed for.
-    sample = _routines([{"schema": "s", "name": "f", "identity_arguments": "", "language": "sql"}])
-    routine = next(iter(sample.values()))
-    for name in fields[ObjectKind.ROUTINE]:
-        assert hasattr(routine, name)
+#: Every field that is masked, per kind: the fields derived from the body specs and the explicit
+#: extras together. Equality, not containment, so deleting an entry or adding a spurious one fails.
+EXPECTED_MASKED_FIELDS = {
+    ObjectKind.TABLE: ("partition_key", "partition_bound"),
+    ObjectKind.COLUMN: ("generated", "default"),
+    ObjectKind.CONSTRAINT: ("expression",),
+    ObjectKind.INDEX: ("predicate", "keys"),
+    ObjectKind.VIEW: ("definition",),
+    ObjectKind.MATVIEW: ("definition",),
+    ObjectKind.ROUTINE: ("body", "argument_defaults", "arguments", "config"),
+    ObjectKind.TRIGGER: ("condition", "arguments"),
+    ObjectKind.ENUM_TYPE: ("constraints", "default"),
+    ObjectKind.DOMAIN_TYPE: ("constraints", "default"),
+    ObjectKind.COMPOSITE_TYPE: ("constraints", "default"),
+    ObjectKind.RANGE_TYPE: ("constraints", "default"),
+}
+
+
+def test_the_masked_fields_are_exactly_the_pinned_set():
+    actual = {kind: set(names) for kind, names in masked_fields().items()}
+    assert actual == {kind: set(names) for kind, names in EXPECTED_MASKED_FIELDS.items()}
+
+
+def test_every_masked_field_exists_on_its_object():
+    from dataclasses import fields
+
+    from cumo_schema_comparer.model import objects as m
+
+    classes = {
+        ObjectKind.TABLE: m.Table,
+        ObjectKind.COLUMN: m.Column,
+        ObjectKind.CONSTRAINT: m.Constraint,
+        ObjectKind.INDEX: m.Index,
+        ObjectKind.VIEW: m.View,
+        ObjectKind.MATVIEW: m.View,
+        ObjectKind.ROUTINE: m.Routine,
+        ObjectKind.TRIGGER: m.Trigger,
+    }
+    for kind, names in masked_fields().items():
+        cls = classes.get(kind, m.UserType)
+        assert set(names) <= {f.name for f in fields(cls)}, kind
+
+
+def test_an_expression_index_key_is_masked():
+    key = IndexKey(expression="(number || 'postgresql://u:s3cretXXX@h/db')", is_expression=True)
+    k = ObjectKey(ObjectKind.INDEX, "public", "ix")
+    idx = Index(
+        key=k,
+        table="t",
+        keys=(key,),
+        predicate=None,
+        raw=RawValues(
+            {"definition": "CREATE INDEX ix ON t ((number || 'postgresql://u:s3cretXXX@h/db'))"}
+        ),
+    )
+    masked = redact_inventory(inventory({k: idx})).objects[k]
+    assert "s3cret" not in repr(masked.keys)
+    assert "s3cret" not in masked.structure
+    assert masked.keys[0].is_expression is True
+
+
+def test_a_routine_config_setting_is_masked():
+    k = ObjectKey(ObjectKind.ROUTINE, "public", "f()")
+    routine = Routine(key=k, config=("app.dsn=postgresql://u:s3cretXXX@h/db",))
+    masked = redact_inventory(inventory({k: routine})).objects[k]
+    assert "s3cret" not in repr(masked.config)
+
+
+def test_redact_literals_defaults_to_on_everywhere():
+    for fn in (build_inventory, runner.capture, runner.capture_all, runner.compare):
+        assert inspect.signature(fn).parameters["redact_literals"].default is True, fn.__name__
+
+
+class _FakeIntrospector:
+    def __init__(self, connection, features):
+        pass
+
+    def server_info(self):
+        return {
+            "database": "d",
+            "user": "u",
+            "server_version_num": 150004,
+            "server_version": "15.4",
+            "encoding": "UTF8",
+            "datcollate": "c",
+            "datctype": "c",
+        }
+
+    def schemas(self, **kwargs):
+        return []
+
+
+def test_build_inventory_applies_redaction(monkeypatch):
+    calls = []
+    monkeypatch.setattr(build_module, "server_features", lambda connection: None)
+    monkeypatch.setattr(build_module, "Introspector", _FakeIntrospector)
+    monkeypatch.setattr(build_module, "redact_inventory", lambda inv: calls.append(inv) or inv)
+    source = SourceRef(label="x", dsn_env="X")
+    build_inventory(None, source, skip_liquibase=True)
+    assert len(calls) == 1
+    build_inventory(None, source, skip_liquibase=True, redact_literals=False)
+    assert len(calls) == 1
 
 
 SECRET_BODY = "BEGIN\n  PERFORM dblink_connect('postgresql://u:s3cret@h/db');\n  RETURN 1;\nEND"

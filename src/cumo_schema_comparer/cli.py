@@ -166,7 +166,9 @@ def cli(ctx: click.Context, verbose: int, quiet: bool, debug: bool) -> None:
         "report is often uploaded as a CI artifact, and a hardcoded connection string in a "
         "function body would travel with it. Masks keep a short digest, so two different "
         "secrets still compare as different. Pass --no-redact-literals to inspect the real "
-        "text locally; the captured inventory is then no longer safe to share."
+        "text locally; the captured inventory is then no longer safe to share. Redaction also "
+        "changes baseline signatures, so a baseline approved in one mode will not match the "
+        "other (accepted findings reappear as new; nothing is hidden)."
     ),
 )
 @click.pass_context
@@ -284,7 +286,9 @@ def compare_command(
         "report is often uploaded as a CI artifact, and a hardcoded connection string in a "
         "function body would travel with it. Masks keep a short digest, so two different "
         "secrets still compare as different. Pass --no-redact-literals to inspect the real "
-        "text locally; the captured inventory is then no longer safe to share."
+        "text locally; the captured inventory is then no longer safe to share. Redaction also "
+        "changes baseline signatures, so a baseline approved in one mode will not match the "
+        "other (accepted findings reappear as new; nothing is hidden)."
     ),
 )
 @click.pass_context

@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import fields as dataclass_fields
+from dataclasses import is_dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -103,8 +104,11 @@ _BODY_TEXT_FIELDS: Mapping[str, tuple[str, ...]] = {"routine.body_hash": ("body"
 #: argument list shown for a routine (with its defaults) and the literal arguments of a trigger.
 #: Kept explicit and pinned by a test, like the derived set.
 _EXTRA_TEXT_FIELDS: Mapping[ObjectKind, tuple[str, ...]] = {
-    ObjectKind.ROUTINE: ("arguments",),
+    ObjectKind.ROUTINE: ("arguments", "config"),
     ObjectKind.TRIGGER: ("arguments",),
+    # ``keys`` holds IndexKey objects whose ``expression`` is parsed from the same text as
+    # ``predicate``; masking one and not the other would print the secret one slot later.
+    ObjectKind.INDEX: ("keys",),
 }
 
 
@@ -132,14 +136,39 @@ def _mask_value(value: Any) -> Any:
         return mask_literals(value)
     if isinstance(value, tuple):
         return tuple(_mask_value(item) for item in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        # Generic rather than a per-class case (IndexKey today): any structured value that holds
+        # text is masked field by field, so a new one cannot silently pass through.
+        changes = {f.name: _mask_value(getattr(value, f.name)) for f in dataclass_fields(value)}
+        return replace(value, **{k: v for k, v in changes.items() if v != getattr(value, k)})
     return value
+
+
+#: Fields holding ``name=value`` settings (``proconfig``). The value is stored bare, not as a SQL
+#: literal, so ``mask_literals`` would see no literal in it at all.
+_SETTING_FIELDS = frozenset({"config"})
+
+
+def _mask_setting(entry: str) -> str:
+    """Mask the value of one ``name=value`` setting by judging it as the literal it was set as."""
+    name, sep, value = entry.partition("=")
+    if not sep:
+        return entry
+    masked = mask_literals(f"{name} = '{value.replace(chr(39), chr(39) * 2)}'") or ""
+    prefix = f"{name} = '"
+    if not (masked.startswith(prefix) and masked.endswith("'")):
+        return entry
+    return f"{name}={masked[len(prefix) : -1].replace(chr(39) * 2, chr(39))}"
 
 
 def _redact_object(obj: Any, fields: tuple[str, ...]) -> Any:
     changes: dict[str, Any] = {}
     for name in fields:
         current = getattr(obj, name)
-        masked = _mask_value(current)
+        if name in _SETTING_FIELDS:
+            masked = tuple(_mask_setting(e) for e in current)
+        else:
+            masked = _mask_value(current)
         if masked != current:
             changes[name] = masked
     # Every raw value is pre-normalisation server text kept for display; whichever definition it
