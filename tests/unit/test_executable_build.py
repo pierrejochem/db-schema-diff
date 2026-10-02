@@ -120,6 +120,19 @@ class TestBuildFlags:
         """
         assert "--nofollow-import-to=mypy" in self.flags()
 
+    def test_the_binary_is_allowed_to_take_a_dash_c_option(self):
+        """`-c` is this CLI's short form of --config, and a compiled binary guards against it.
+
+        Nuitka's deployment mode treats `-c` as the program trying to re-execute itself, the way
+        `python -c` would, and refuses:
+
+            Error, the program tried to call itself with '-c' argument: 'config.example.yaml'.
+
+        Which is to say the binary rejected its own primary invocation. Found by running it; the
+        build was clean and `--version` and `--help` both worked.
+        """
+        assert "--no-deployment-flag=self-execution" in self.flags()
+
     def test_the_build_never_waits_for_an_answer(self):
         # A prompt for a toolchain download would hang a CI job or a `make` run with no tty.
         assert "--assume-yes-for-downloads" in self.flags()
