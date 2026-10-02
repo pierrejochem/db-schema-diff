@@ -245,9 +245,10 @@ pip install --pre '.[gui]'     # needs Python 3.12+; --pre because the Slint bin
 cumo-schema-diff-gui config/invoicing.yaml
 ```
 
-Five tabs: **Config** (every parameter of the config file, with a Check connection button per
-source), **Ignores** (the project's rules, with the bundled defaults shown read-only),
-**Credentials**, **Run** and **Results**.
+Five views, chosen from the rail on the left: **Config** (every parameter of the config file, with
+a Check connection button per source), **Run**, **Results**, **Ignores** (the project's rules, with
+the bundled defaults shown read-only) and **Credentials**. The rail also carries the open config
+file and the button to replace it, so no strip across the top takes height from the views.
 
 Credentials are stored in the OS keychain and resolved **keychain first, environment as fallback**.
 A connection string is never shown, never logged and never written to the config file — the UI shows
@@ -268,8 +269,12 @@ finished run that found nothing. Cancelling stops sources that have not started,
 already connected is abandoned rather than interrupted — PostgreSQL work in flight ends on its own
 `statement_timeout`, which at the defaults can be minutes.
 
-The application follows the Cubic design system. Every colour, size, radius and spacing step comes
-from `gui/ui/tokens.slint`, and the HTML report holds the same palette — a test compares the two
+The application follows the Cubic design system. Sections are cards with an uppercase eyebrow
+heading; every form label in every view comes from one shared column, so fields line up when you
+move between views; and every list names its columns. On the Results view the findings and the
+detail pane sit side by side above 1000px of content width and stack below it. Every colour, size,
+radius and spacing step comes from `gui/ui/tokens.slint`, and the HTML report holds the same
+palette — a test compares the two
 files colour by colour, so a report and the window that produced it cannot disagree about what
 "error" looks like. Catalog text — object paths, statuses, attribute names, source states — is set
 in IBM Plex Mono; prose is Mulish; the verdict and the detail heading are Archivo.
@@ -280,8 +285,10 @@ cut instead: an existing value is always left alone. With neither, the UI falls 
 faces and the tokens carry the design on their own.
 
 Buttons, text fields and drop-downs keep their native look: Slint's widget set exposes its palette
-read-only, so the signature lime pill and a focus ring cannot be set from the markup without
-replacing those widgets by hand and losing the keyboard focus and activation they provide.
+read-only, so a focus ring and filled accent buttons cannot be set from the markup without replacing
+those widgets by hand and losing the keyboard focus and activation they provide. The pill shape the
+design system asks for appears where the markup owns the drawing, as the severity badge on each
+finding.
 
 The GUI is an optional extra: installing the CLI alone keeps its Python 3.11 floor and its five
 dependencies.

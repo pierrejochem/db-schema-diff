@@ -5,8 +5,8 @@
 // "ok" and only while no run is in flight; every unknown, empty or stale value is neutral.
 // Per-source progress is never consulted: all sources can be captured and the run still cancelled.
 
-import { LineEdit, Button, ScrollView, GroupBox } from "std-widgets.slint";
-import { LabelledCheck } from "widgets.slint";
+import { LineEdit, Button, ScrollView } from "std-widgets.slint";
+import { LabelledCheck, Card, ColumnHead, SeverityPill } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 
 export struct FindingRow {
@@ -38,53 +38,55 @@ export component FindingLine inherits Rectangle {
     in property <FindingRow> data;
     callback clicked();
 
+    // What the row has to say beyond its identity. Empty for most findings, and an ignored one
+    // must never look like an unremarked one.
+    property <string> footnote: root.data.suppressed_by == "" ? root.data.detail
+        : root.data.detail + "  [ignored by " + root.data.suppressed_by + "]";
+
+    border-radius: Tokens.radius-subtle;
+
     TouchArea { clicked => { root.clicked(); } }
 
-    HorizontalLayout {
+    VerticalLayout {
         padding: Tokens.space-1;
-        spacing: Tokens.space-2;
-        Text {
-            text: root.data.target;
-            width: 90px;
-            vertical-alignment: center;
-            color: Tokens.body;
+        spacing: 0px;
+        HorizontalLayout {
+            spacing: Tokens.space-2;
+            Text {
+                text: root.data.target;
+                width: 70px;
+                vertical-alignment: center;
+                color: Tokens.body;
+            }
+            Text {
+                text: root.data.kind;
+                width: 60px;
+                vertical-alignment: center;
+                font-family: Tokens.family-mono;
+                color: Tokens.muted;
+            }
+            Text {
+                text: root.data.path;
+                vertical-alignment: center;
+                overflow: elide;
+                font-family: Tokens.family-mono;
+                color: Tokens.heading;
+            }
+            Text {
+                text: root.data.status;
+                width: 100px;
+                vertical-alignment: center;
+                font-family: Tokens.family-mono;
+                color: Tokens.muted;
+            }
+            SeverityPill { severity: root.data.severity; }
         }
-        Text {
-            text: root.data.kind;
-            width: 80px;
-            vertical-alignment: center;
-            font-family: Tokens.family-mono;
+        if root.footnote != "": Text {
+            text: root.footnote;
+            x: 70px + Tokens.space-2;
+            font-size: Tokens.text-small;
             color: Tokens.muted;
-        }
-        Text {
-            text: root.data.path;
-            width: 280px;
-            vertical-alignment: center;
             overflow: elide;
-            font-family: Tokens.family-mono;
-            color: Tokens.heading;
-        }
-        Text {
-            text: root.data.status;
-            width: 110px;
-            vertical-alignment: center;
-            font-family: Tokens.family-mono;
-            color: Tokens.muted;
-        }
-        Text {
-            text: root.data.severity;
-            width: 70px;
-            vertical-alignment: center;
-            font-weight: Tokens.weight-bold;
-            color: root.data.severity == "error" ? Tokens.danger
-                : root.data.severity == "warning" ? Tokens.caution : Tokens.body;
-        }
-        Text {
-            text: root.data.suppressed_by == "" ? root.data.detail
-                : root.data.detail + "  [ignored by " + root.data.suppressed_by + "]";
-            vertical-alignment: center;
-            overflow: elide;
-            color: Tokens.muted;
         }
     }
 }
@@ -106,6 +108,10 @@ export component ResultsTab inherits ScrollView {
     in property <string> selected-heading;
     in property <[DeltaRow]> selected-deltas;
     in property <[DiffLine]> selected-diff;
+    // The width of the content column, handed down by the window. This view cannot
+    // measure it itself: a ScrollView positioned outside a layout reports its own
+    // visible-width as zero.
+    in property <length> column-width;
 
     callback filter-changed();
     callback select-finding(string, string, string);
@@ -208,6 +214,20 @@ export component ResultsTab inherits ScrollView {
     out property <length> diff-pane-width: diff-scroll.width;
     out property <length> diff-pane-height: diff-scroll.height;
     out property <length> tab-min-width: root.min-width;
+    // x, y, width, height of each pane, so a test can see that they do not overlap in either
+    // arrangement. Hand-set geometry has no layout guaranteeing that for it.
+    out property <[length]> findings-box: [
+        findings-card.x, findings-card.y, findings-card.width, findings-card.height];
+    out property <[length]> detail-box: [
+        detail-card.x, detail-card.y, detail-card.width, detail-card.height];
+    // The findings list and the detail pane divide the content column in these proportions.
+    // Detail takes the larger share because it holds the diff.
+    out property <int> findings-share: 48;
+    out property <int> detail-share: 52;
+    // Below this the two stack instead. Measured against the ScrollView's own viewport, never
+    // against root.width: a width derived from content inside a ScrollView is a binding loop.
+    out property <length> split-at: 1000px;
+    out property <bool> side-by-side: root.column-width >= root.split-at;
 
     public function request-filter-changed() { root.filter-changed(); }
     public function request-choose-output-directory() { root.choose-output-directory(); }
@@ -219,11 +239,12 @@ export component ResultsTab inherits ScrollView {
     }
 
     VerticalLayout {
-        padding: Tokens.space-3;
-        spacing: Tokens.space-3;
+        padding: Tokens.space-5;
+        spacing: Tokens.space-4;
+        alignment: start;
 
         Rectangle {
-            height: 56px;
+            height: 64px;
             border-radius: Tokens.radius-card;
             border-width: Tokens.hairline-width;
             border-color: root.banner-text-color;
@@ -243,53 +264,81 @@ export component ResultsTab inherits ScrollView {
             }
         }
 
-        HorizontalLayout {
-            spacing: Tokens.space-2;
-            filter-edit := LineEdit {
-                text <=> root.filter-text;
-                placeholder-text: "filter by object path, e.g. invoice";
-                edited(t) => { root.request-filter-changed(); }
-            }
-            error-check := LabelledCheck {
-                label: "error";
-                value <=> root.show-error;
-                toggled(v) => { root.request-filter-changed(); }
-            }
-            warning-check := LabelledCheck {
-                label: "warning";
-                value <=> root.show-warning;
-                toggled(v) => { root.request-filter-changed(); }
-            }
-            info-check := LabelledCheck {
-                label: "info";
-                value <=> root.show-info;
-                toggled(v) => { root.request-filter-changed(); }
+        Card {
+            title: "FILTER";
+            VerticalLayout {
+                spacing: Tokens.space-2;
+                HorizontalLayout {
+                    spacing: Tokens.space-3;
+                    filter-edit := LineEdit {
+                        text <=> root.filter-text;
+                        placeholder-text: "filter by object path, e.g. invoice";
+                        max-width: Tokens.field-max;
+                        edited(t) => { root.request-filter-changed(); }
+                    }
+                    error-check := LabelledCheck {
+                        label: "error";
+                        value <=> root.show-error;
+                        toggled(v) => { root.request-filter-changed(); }
+                    }
+                    warning-check := LabelledCheck {
+                        label: "warning";
+                        value <=> root.show-warning;
+                        toggled(v) => { root.request-filter-changed(); }
+                    }
+                    info-check := LabelledCheck {
+                        label: "info";
+                        value <=> root.show-info;
+                        toggled(v) => { root.request-filter-changed(); }
+                    }
+                    Rectangle { }
+                }
+                Rectangle {
+                    height: root.findings-summary == "" ? 0px : 28px;
+                    border-radius: Tokens.radius-subtle;
+                    background: root.filter-hides-rows ? Tokens.caution-surface : transparent;
+                    Text {
+                        x: Tokens.space-3;
+                        text: root.findings-summary;
+                        vertical-alignment: center;
+                        font-weight: root.filter-hides-rows ? Tokens.weight-bold
+                            : Tokens.weight-regular;
+                        color: root.filter-hides-rows ? Tokens.caution : Tokens.body;
+                    }
+                }
             }
         }
 
+        // Findings and detail sit side by side when there is room for both and stack when there is
+        // not, so choosing a row never scrolls the list out of view on a wide window. The geometry
+        // is set here rather than by a layout because Slint cannot switch a layout's direction
+        // without the markup appearing in both branches.
         Rectangle {
-            height: root.findings-summary == "" ? 0px : 28px;
-            border-radius: Tokens.radius-subtle;
-            background: root.filter-hides-rows ? Tokens.caution-surface : transparent;
-            Text {
-                x: Tokens.space-3;
-                text: root.findings-summary;
-                vertical-alignment: center;
-                font-weight: root.filter-hides-rows ? Tokens.weight-bold : Tokens.weight-regular;
-                color: root.filter-hides-rows ? Tokens.caution : Tokens.body;
-            }
-        }
+            property <length> inner: root.column-width - 2 * Tokens.space-5;
+            property <length> gap: Tokens.space-4;
+            property <length> left: (self.inner - self.gap) * root.findings-share / 100;
+            height: root.side-by-side
+                ? max(findings-card.preferred-height, detail-card.preferred-height)
+                : findings-card.preferred-height + self.gap + detail-card.preferred-height;
 
-        GroupBox {
-            title: "Findings";
-            Rectangle {
-                background: Tokens.card;
-                border-radius: Tokens.radius-card;
-                border-width: Tokens.hairline-width;
-                border-color: Tokens.hairline;
+            findings-card := Card {
+                title: "FINDINGS";
+                x: 0;
+                y: 0;
+                width: root.side-by-side ? parent.left : parent.inner;
+                height: root.side-by-side ? parent.height : self.preferred-height;
                 VerticalLayout {
-                    padding: Tokens.space-1;
                     spacing: Tokens.space-1;
+                    alignment: start;
+                    HorizontalLayout {
+                        padding-left: Tokens.space-1;
+                        spacing: Tokens.space-2;
+                        height: Tokens.space-5;
+                        ColumnHead { text: "TARGET"; width: 90px; }
+                        ColumnHead { text: "KIND"; width: 80px; }
+                        ColumnHead { text: "OBJECT"; }
+                        ColumnHead { text: "SEVERITY"; width: 70px; }
+                    }
                     for row[i] in root.findings: FindingLine {
                         background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
                         data: row;
@@ -297,75 +346,90 @@ export component ResultsTab inherits ScrollView {
                     }
                 }
             }
-        }
 
-        GroupBox {
-            title: "Detail";
-            VerticalLayout {
-                spacing: Tokens.space-2;
-                heading-text := Text {
-                    text: root.selected-heading == "" ? "Select a finding to see its detail."
-                        : root.selected-heading;
-                    font-family: Tokens.family-display;
-                    font-size: Tokens.text-control;
-                    font-weight: Tokens.weight-bold;
-                    letter-spacing: Tokens.tracking-tight;
-                    color: root.selected-heading == "" ? Tokens.muted : Tokens.heading;
-                    overflow: elide;
-                }
-                for d in root.selected-deltas: HorizontalLayout {
+            detail-card := Card {
+                title: "DETAIL";
+                x: root.side-by-side ? parent.left + parent.gap : 0;
+                y: root.side-by-side ? 0 : findings-card.preferred-height + parent.gap;
+                width: root.side-by-side
+                    ? (parent.inner - parent.gap) * root.detail-share / 100
+                    : parent.inner;
+                height: root.side-by-side ? parent.height : self.preferred-height;
+                VerticalLayout {
                     spacing: Tokens.space-2;
-                    Text {
-                        text: d.attribute;
-                        width: 160px;
+                    alignment: start;
+                    heading-text := Text {
+                        text: root.selected-heading == "" ? "Select a finding to see its detail."
+                            : root.selected-heading;
+                        font-family: Tokens.family-display;
+                        font-size: Tokens.text-control;
+                        font-weight: Tokens.weight-bold;
+                        letter-spacing: Tokens.tracking-tight;
+                        color: root.selected-heading == "" ? Tokens.muted : Tokens.heading;
                         overflow: elide;
-                        font-family: Tokens.family-mono;
-                        color: Tokens.heading;
                     }
-                    Text {
-                        text: d.is_body ? "(see diff below)" : d.master;
-                        width: 200px;
-                        overflow: elide;
-                        font-family: d.is_body ? Tokens.family-body : Tokens.family-mono;
-                        color: d.is_body ? Tokens.muted : Tokens.body;
+                    if root.selected-deltas.length > 0: HorizontalLayout {
+                        spacing: Tokens.space-2;
+                        height: Tokens.space-5;
+                        ColumnHead { text: "ATTRIBUTE"; width: 140px; }
+                        ColumnHead { text: "MASTER"; width: 160px; }
+                        ColumnHead { text: "TARGET"; width: 160px; }
+                        ColumnHead { text: ""; }
                     }
-                    Text {
-                        text: d.is_body ? "" : d.target;
-                        width: 200px;
-                        overflow: elide;
-                        font-family: Tokens.family-mono;
-                        color: Tokens.body;
+                    for d in root.selected-deltas: HorizontalLayout {
+                        spacing: Tokens.space-2;
+                        Text {
+                            text: d.attribute;
+                            width: 140px;
+                            overflow: elide;
+                            font-family: Tokens.family-mono;
+                            color: Tokens.heading;
+                        }
+                        Text {
+                            text: d.is_body ? "(see diff below)" : d.master;
+                            width: 160px;
+                            overflow: elide;
+                            font-family: d.is_body ? Tokens.family-body : Tokens.family-mono;
+                            color: d.is_body ? Tokens.muted : Tokens.body;
+                        }
+                        Text {
+                            text: d.is_body ? "" : d.target;
+                            width: 160px;
+                            overflow: elide;
+                            font-family: Tokens.family-mono;
+                            color: Tokens.body;
+                        }
+                        Text {
+                            text: d.severity;
+                            width: 70px;
+                            color: d.severity == "error" ? Tokens.danger
+                                : d.severity == "warning" ? Tokens.caution : Tokens.muted;
+                        }
+                        Text { text: d.note; overflow: elide; color: Tokens.muted; }
                     }
-                    Text {
-                        text: d.severity;
-                        width: 70px;
-                        color: d.severity == "error" ? Tokens.danger
-                            : d.severity == "warning" ? Tokens.caution : Tokens.muted;
-                    }
-                    Text { text: d.note; overflow: elide; color: Tokens.muted; }
-                }
-                // Horizontal scrolling: a routine body is one line and may be tens of KB, which
-                // must scroll rather than wrap or size the window.
-                diff-scroll := ScrollView {
-                    height: root.selected-diff.length == 0 ? 0px : 240px;
-                    VerticalLayout {
-                        alignment: start;
-                        for line[i] in root.selected-diff: VerticalLayout {
-                            if root.starts-group(i): Text {
-                                text: line.attribute;
-                                font-family: Tokens.family-mono;
-                                font-weight: Tokens.weight-bold;
-                                color: Tokens.heading;
-                            }
-                            Rectangle {
-                                border-radius: Tokens.radius-subtle;
-                                background: line.kind == "added" || line.kind == "removed"
-                                    ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
-                                Text {
-                                    text: line.text;
+                    // Horizontal scrolling: a routine body is one line and may be tens of KB,
+                    // which must scroll rather than wrap or size the window.
+                    diff-scroll := ScrollView {
+                        height: root.selected-diff.length == 0 ? 0px : 280px;
+                        VerticalLayout {
+                            alignment: start;
+                            for line[i] in root.selected-diff: VerticalLayout {
+                                if root.starts-group(i): Text {
+                                    text: line.attribute;
                                     font-family: Tokens.family-mono;
-                                    wrap: no-wrap;
-                                    color: root.diff-colour(line.kind);
+                                    font-weight: Tokens.weight-bold;
+                                    color: Tokens.heading;
+                                }
+                                Rectangle {
+                                    border-radius: Tokens.radius-subtle;
+                                    background: line.kind == "added" || line.kind == "removed"
+                                        ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
+                                    Text {
+                                        text: line.text;
+                                        font-family: Tokens.family-mono;
+                                        wrap: no-wrap;
+                                        color: root.diff-colour(line.kind);
+                                    }
                                 }
                             }
                         }
@@ -374,20 +438,27 @@ export component ResultsTab inherits ScrollView {
             }
         }
 
-        HorizontalLayout {
-            spacing: Tokens.space-2;
-            Text { text: "reports to"; vertical-alignment: center; color: Tokens.muted; }
-            output-edit := LineEdit { text <=> root.output-directory; placeholder-text: "output directory"; }
-            Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }
-            Button {
-                text: "Write reports";
-                enabled: root.reports-enabled;
-                clicked => { root.request-write-reports(); }
-            }
-            Button {
-                text: "Open HTML report";
-                enabled: root.reports-enabled;
-                clicked => { root.request-open-html(); }
+        Card {
+            title: "REPORTS";
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+                output-edit := LineEdit {
+                    text <=> root.output-directory;
+                    placeholder-text: "output directory";
+                    max-width: Tokens.field-max;
+                }
+                Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }
+                Button {
+                    text: "Write reports";
+                    enabled: root.reports-enabled;
+                    clicked => { root.request-write-reports(); }
+                }
+                Button {
+                    text: "Open HTML report";
+                    enabled: root.reports-enabled;
+                    clicked => { root.request-open-html(); }
+                }
+                Rectangle { }
             }
         }
     }

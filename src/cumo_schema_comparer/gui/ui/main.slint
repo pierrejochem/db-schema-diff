@@ -1,8 +1,8 @@
 // The window shell. Tabs are added by later tasks; the properties and callbacks the Python layer
 // binds are declared here and forwarded down.
 
-import { TabWidget, Button } from "std-widgets.slint";
-import { StatusLine } from "widgets.slint";
+import { Button } from "std-widgets.slint";
+import { StatusLine, NavItem, RailLabel } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
@@ -14,8 +14,8 @@ export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow, DeltaRow, D
 
 export component MainWindow inherits Window {
     title: "cumo-schema-diff";
-    preferred-width: 1100px;
-    preferred-height: 760px;
+    preferred-width: 1320px;
+    preferred-height: 820px;
     background: Tokens.page;
     // Set once, inherited by every widget: std-widgets expose font-size but not font-family,
     // so a LineEdit can only be reached through the window's default.
@@ -23,6 +23,15 @@ export component MainWindow inherits Window {
     default-font-size: Tokens.text-body;
     default-font-weight: Tokens.weight-regular;
 
+    // Which view the rail has selected. All five are instantiated; one is visible.
+    // The width the views get: the window less the rail and the gutters, capped. Derived from the
+    // window rather than from the content column itself, which would be self-referential and
+    // evaluates to zero. In-out so a test can drive the Results breakpoint: setting a Window's own
+    // `width` before it is shown is not honoured — it reports its minimum — so the breakpoint
+    // would otherwise be untestable.
+    in-out property <length> column-width: min(
+        root.width - Tokens.rail-width - 2 * Tokens.space-5, Tokens.container-max);
+    in-out property <int> current-view: 0;
     in-out property <string> config-name;
     in-out property <string> config-path;
     in-out property <bool> dirty;
@@ -120,6 +129,12 @@ export component MainWindow inherits Window {
         return results-tab.diff-colour-for(kind);
     }
     public function results-diff-viewport-width() -> length { return results-tab.diff-viewport-width; }
+    public function results-side-by-side() -> bool { return results-tab.side-by-side; }
+    // Where the views begin. Nothing but the status line — which is zero-height when there is
+    // no message — may sit above them: a strip across the top costs every view its height.
+    public function content-top() -> length { return content.y; }
+    public function results-findings-box() -> [length] { return results-tab.findings-box; }
+    public function results-detail-box() -> [length] { return results-tab.detail-box; }
     public function results-diff-pane-width() -> length { return results-tab.diff-pane-width; }
     public function results-diff-pane-height() -> length { return results-tab.diff-pane-height; }
     public function results-tab-min-width() -> length { return results-tab.tab-min-width; }
@@ -128,6 +143,16 @@ export component MainWindow inherits Window {
     }
     public function results-heading-shown() -> string { return results-tab.heading-shown; }
     public function drive-select-row(index: int) { results-tab.choose-row(index); }
+    public function drive-select-view(index: int) { root.current-view = index; }
+    pure public function view-visible(index: int) -> bool {
+        return index == 0 ? config-tab.visible
+            : index == 1 ? run-tab.visible
+            : index == 2 ? results-tab.visible
+            : index == 3 ? ignores-tab.visible
+            : index == 4 ? credentials-tab.visible
+            : false;
+    }
+    out property <int> view-count: 5;
     public function run-start-enabled() -> bool { return run-tab.start-enabled; }
     public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
     public function results-banner-kind() -> string { return results-tab.banner-kind; }
@@ -161,43 +186,100 @@ export component MainWindow inherits Window {
     public function drive-write-reports() { results-tab.request-write-reports(); }
     public function drive-open-html() { results-tab.request-open-html(); }
 
-    VerticalLayout {
-        // The header is a surface of its own, separated by a hairline rather than a shadow: the
-        // path it carries is machine text and is set in the mono face so a long path stays legible.
+    HorizontalLayout {
+        // The navigation rail: a navy surface carrying the wordmark and the five views. The
+        // selected one is marked in lime rather than by fill alone.
         Rectangle {
-            background: Tokens.card;
+            width: Tokens.rail-width;
+            background: Tokens.navy-rail;
             VerticalLayout {
-                HorizontalLayout {
-                    padding: Tokens.space-3;
-                    spacing: Tokens.space-3;
+                padding-top: Tokens.space-5;
+                padding-bottom: Tokens.space-4;
+                spacing: Tokens.space-1;
+
+                Text {
+                    x: Tokens.space-4;
+                    text: "cumo";
+                    font-family: Tokens.family-display;
+                    font-size: Tokens.text-title;
+                    font-weight: Tokens.weight-bold;
+                    letter-spacing: Tokens.tracking-tight;
+                    color: Tokens.inverse;
+                }
+                RailLabel { x: Tokens.space-4; text: "SCHEMA DIFF"; }
+                Rectangle { height: Tokens.space-5; }
+
+                NavItem {
+                    label: "Config";
+                    selected: root.current-view == 0;
+                    clicked => { root.current-view = 0; }
+                }
+                NavItem {
+                    label: "Run";
+                    selected: root.current-view == 1;
+                    clicked => { root.current-view = 1; }
+                }
+                NavItem {
+                    label: "Results";
+                    selected: root.current-view == 2;
+                    clicked => { root.current-view = 2; }
+                }
+                NavItem {
+                    label: "Ignores";
+                    selected: root.current-view == 3;
+                    clicked => { root.current-view = 3; }
+                }
+                NavItem {
+                    label: "Credentials";
+                    selected: root.current-view == 4;
+                    clicked => { root.current-view = 4; }
+                }
+
+                // Takes the slack, so the config block below sits at the foot of the rail.
+                Rectangle { }
+
+                Rectangle { height: Tokens.hairline-width; background: Tokens.navy-selected; }
+                VerticalLayout {
+                    padding-left: Tokens.space-4;
+                    padding-right: Tokens.space-4;
+                    padding-top: Tokens.space-3;
+                    spacing: Tokens.space-1;
+                    RailLabel { text: "CONFIG"; }
+                    // Wrapped rather than elided: vertical space is what the rail has, and a
+                    // truncated path with no tooltip to recover it is worse than two lines.
                     Text {
                         text: root.config-path == "" ? "(unsaved)" : root.config-path;
                         font-family: Tokens.family-mono;
-                        font-size: Tokens.text-body;
-                        color: root.config-path == "" ? Tokens.muted : Tokens.heading;
-                        vertical-alignment: center;
-                        overflow: elide;
+                        font-size: Tokens.text-small;
+                        color: root.config-path == "" ? Tokens.lime : Tokens.inverse;
+                        wrap: word-wrap;
                     }
                     Text {
                         text: root.dirty ? "• modified" : "";
-                        font-family: Tokens.family-body;
-                        font-size: Tokens.text-body;
-                        color: Tokens.caution;
-                        vertical-alignment: center;
+                        font-size: Tokens.text-small;
+                        color: Tokens.caution-inverse;
+                        height: root.dirty ? Tokens.space-4 : 0px;
                     }
-                    Rectangle { }
                     Button { text: "Open…"; clicked => { root.load-config(); } }
                 }
-                Rectangle { height: Tokens.hairline-width; background: Tokens.hairline; }
             }
         }
 
-        StatusLine { message: root.status-message; is-error: root.status-is-error; }
+        VerticalLayout {
+            StatusLine { message: root.status-message; is-error: root.status-is-error; }
 
-        TabWidget {
-            Tab {
-                title: "Config";
-                ConfigTab {
+            // The content column, capped and centred: a wide window gives wide margins rather
+            // than 900px-wide text fields. The width is declared once here and handed to the views
+            // that need to know it — a ScrollView positioned outside a layout reports its own
+            // visible-width as zero, so it cannot measure itself.
+            content := Rectangle {
+
+                config-tab := ConfigTab {
+                    // Every view is instantiated; the rail chooses which is drawn.
+                    visible: root.current-view == 0;
+                    x: (parent.width - root.column-width) / 2;
+                    width: root.column-width;
+                    height: parent.height;
                     config-name <=> root.config-name;
                     sources: root.sources;
                     exclude-schemas-text <=> root.exclude-schemas-text;
@@ -219,12 +301,14 @@ export component MainWindow inherits Window {
                     check-all => { root.check-all(); }
                     validate-config => { root.validate-config(); }
                     save-config => { root.save-config(); }
-                }
-            }
+                    }
 
-            Tab {
-                title: "Run";
                 run-tab := RunTab {
+                    // Every view is instantiated; the rail chooses which is drawn.
+                    visible: root.current-view == 1;
+                    x: (parent.width - root.column-width) / 2;
+                    width: root.column-width;
+                    height: parent.height;
                     running <=> root.running;
                     progress: root.progress;
                     run-fail-on <=> root.run-fail-on;
@@ -239,12 +323,15 @@ export component MainWindow inherits Window {
                     start-run => { root.start-run(); }
                     cancel-run => { root.cancel-run(); }
                     choose-baseline => { root.choose-baseline(); }
-                }
-            }
+                    }
 
-            Tab {
-                title: "Results";
                 results-tab := ResultsTab {
+                    column-width: root.column-width;
+                    // Every view is instantiated; the rail chooses which is drawn.
+                    visible: root.current-view == 2;
+                    x: (parent.width - root.column-width) / 2;
+                    width: root.column-width;
+                    height: parent.height;
                     running: root.running;
                     verdict: root.verdict;
                     verdict-level: root.verdict-level;
@@ -264,12 +351,14 @@ export component MainWindow inherits Window {
                     choose-output-directory => { root.choose-output-directory(); }
                     write-reports => { root.write-reports(); }
                     open-html => { root.open-html(); }
-                }
-            }
+                    }
 
-            Tab {
-                title: "Ignores";
                 ignores-tab := IgnoresTab {
+                    // Every view is instantiated; the rail chooses which is drawn.
+                    visible: root.current-view == 3;
+                    x: (parent.width - root.column-width) / 2;
+                    width: root.column-width;
+                    height: parent.height;
                     rules: root.rules;
                     default-rules: root.default-rules;
                     case-insensitive-globs <=> root.case-insensitive-globs;
@@ -278,19 +367,21 @@ export component MainWindow inherits Window {
                     add-rule => { root.add-rule(); }
                     remove-rule(i) => { root.remove-rule(i); }
                     save-ignores => { root.save-ignores(); }
-                }
-            }
+                    }
 
-            Tab {
-                title: "Credentials";
                 credentials-tab := CredentialsTab {
+                    // Every view is instantiated; the rail chooses which is drawn.
+                    visible: root.current-view == 4;
+                    x: (parent.width - root.column-width) / 2;
+                    width: root.column-width;
+                    height: parent.height;
                     credentials: root.credentials;
                     keychain-available: root.keychain-available;
                     keychain-problem: root.keychain-problem;
 
                     store-credential(e, s) => { root.store-credential(e, s); }
                     forget-credential(e) => { root.forget-credential(e); }
-                }
+                    }
             }
         }
     }

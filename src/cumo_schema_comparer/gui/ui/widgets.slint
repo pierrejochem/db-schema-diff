@@ -79,3 +79,126 @@ export component StatusLine inherits Rectangle {
         x: Tokens.space-3;
     }
 }
+
+// The design system's section label: 11px, uppercase, blue, with the caps tracking. Slint has no
+// text-transform, so the text arrives already uppercase from the markup.
+export component Eyebrow inherits Text {
+    font-size: Tokens.text-eyebrow;
+    font-weight: Tokens.weight-bold;
+    letter-spacing: Tokens.tracking-caps;
+    color: Tokens.blue;
+}
+
+// The same label on the navy rail. Blue on navy fails contrast, so the rail's eyebrows are lime.
+export component RailLabel inherits Text {
+    font-size: Tokens.text-eyebrow;
+    font-weight: Tokens.weight-bold;
+    letter-spacing: Tokens.tracking-caps;
+    color: Tokens.lime;
+}
+
+// A section: a card surface with an eyebrow heading. Cards never nest — a card inside a card reads
+// as the framed group box this replaced.
+export component Card inherits Rectangle {
+    in property <string> title;
+
+    background: Tokens.card;
+    border-radius: Tokens.radius-card;
+    border-width: Tokens.hairline-width;
+    border-color: Tokens.hairline;
+
+    VerticalLayout {
+        padding: Tokens.space-4;
+        spacing: Tokens.space-3;
+        if root.title != "": Eyebrow { text: root.title; }
+        @children
+    }
+}
+
+// The severity of one finding, as a pill. A word in a coloured column is easy to lose in a list;
+// a filled pill is not, and the shape is the design system's signature.
+export component SeverityPill inherits Rectangle {
+    in property <string> severity;
+
+    width: 80px;
+    height: Tokens.pill-height;
+    border-radius: Tokens.radius-pill;
+    background: root.severity == "error" ? Tokens.danger-surface
+        : root.severity == "warning" ? Tokens.caution-surface
+        : root.severity == "info" ? Tokens.info-surface
+        : Tokens.neutral-surface;
+
+    Text {
+        // Uppercase by mapping, since Slint has no text-transform. An unrecognised severity shows
+        // its own value rather than nothing: this is a report of what the run found.
+        text: root.severity == "error" ? "ERROR"
+            : root.severity == "warning" ? "WARNING"
+            : root.severity == "info" ? "INFO"
+            : root.severity;
+        width: 100%;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: Tokens.text-eyebrow;
+        font-weight: Tokens.weight-bold;
+        letter-spacing: Tokens.tracking-caps;
+        color: root.severity == "error" ? Tokens.danger
+            : root.severity == "warning" ? Tokens.caution
+            : root.severity == "info" ? Tokens.info
+            : Tokens.muted;
+    }
+}
+
+// One form row, and the reason anything lines up: every label in every view is this width and this
+// alignment, so moving between tabs does not move the fields.
+export component FormRow inherits HorizontalLayout {
+    in property <string> label;
+
+    spacing: Tokens.space-3;
+    Text {
+        text: root.label;
+        width: Tokens.label-column;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        font-size: Tokens.text-body;
+        color: Tokens.muted;
+    }
+    @children
+}
+
+// A column heading over a list. Same type as the card eyebrow, muted rather than blue: it labels a
+// column of values rather than opening a section.
+export component ColumnHead inherits Text {
+    font-size: Tokens.text-eyebrow;
+    font-weight: Tokens.weight-bold;
+    letter-spacing: Tokens.tracking-caps;
+    color: Tokens.muted;
+    vertical-alignment: center;
+}
+
+// One entry in the navigation rail.
+export component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 40px;
+    background: root.selected ? Tokens.navy-selected
+        : touch.has-hover ? Tokens.navy-selected.with-alpha(0.5) : transparent;
+
+    touch := TouchArea { clicked => { root.clicked(); } }
+
+    // The selected view is marked in lime, the signature accent, rather than by fill alone.
+    Rectangle {
+        x: 0;
+        width: root.selected ? Tokens.space-1 : 0px;
+        background: Tokens.lime;
+    }
+    Text {
+        x: Tokens.space-4;
+        text: root.label;
+        vertical-alignment: center;
+        font-size: Tokens.text-control;
+        font-weight: root.selected ? Tokens.weight-bold : Tokens.weight-regular;
+        color: Tokens.inverse;
+    }
+}

@@ -1009,7 +1009,7 @@ def test_each_finding_row_click_hands_its_own_index_to_choose_row():
 
 def test_the_diff_markup_reads_the_colour_function_only():
     source = (UI / "results_tab.slint").read_text()
-    pane = source[source.index('title: "Detail"') :]
+    pane = source[source.index('title: "DETAIL"') :]
     assert pane.count("root.diff-colour(line.kind)") == 2
     assert "#" not in "".join(
         line.split("//")[0] for line in pane.splitlines() if "diff-colour" not in line
@@ -1042,4 +1042,208 @@ def test_a_huge_single_row_scrolls_sideways_and_neither_breaks_nor_resizes_the_l
     viewport, wide_pane_width, height, wide_min_width = shown_pane(huge)
     assert viewport > 10 * wide_pane_width
     assert (wide_pane_width, wide_min_width) == (pane_width, min_width)
-    assert height == 240
+    # Fixed, and the same for a 51KB line as for a short one: the pane scrolls rather than grows.
+    assert height == 280
+
+
+# The layout itself: a rail that reaches every view, cards instead of framed group boxes, and one
+# label column shared by every form.
+def test_the_rail_reaches_every_view_and_only_one_is_drawn(window):
+    """A view wired to the wrong index would still render — just never, or always.
+
+    This reads the `visible` bindings rather than the property driving them, so an off-by-one
+    between a rail entry and the view it selects fails here.
+    """
+    count = window.view_count
+    assert count == 5
+    for index in range(count):
+        window.drive_select_view(index)
+        drawn = [i for i in range(count) if window.view_visible(i)]
+        assert drawn == [index], f"selecting {index} drew {drawn}"
+
+
+def test_an_out_of_range_view_draws_nothing_rather_than_guessing(window):
+    # The view model sets this; a stale or garbage index must not silently show the Config tab.
+    window.drive_select_view(9)
+    assert [i for i in range(window.view_count) if window.view_visible(i)] == []
+
+
+def test_the_rail_has_an_entry_per_view():
+    shell = (UI / "main.slint").read_text()
+    assert shell.count("NavItem {") == 5
+    for label in ("Config", "Run", "Results", "Ignores", "Credentials"):
+        assert f'label: "{label}";' in shell
+
+
+@pytest.mark.parametrize("markup", sorted(p.name for p in UI.glob("*.slint")))
+def test_no_view_uses_a_framed_group_box(markup):
+    """GroupBox is the std-widgets framed-box-with-a-title, and it is what dated the window.
+
+    Sections are `Card` now: a surface with a hairline and an eyebrow label. Importing GroupBox
+    again would reintroduce the frame next to the cards, which looks worse than either alone.
+    """
+    assert "GroupBox" not in (UI / markup).read_text()
+
+
+def test_one_label_column_is_what_makes_the_forms_line_up():
+    """Every form label in every view is this width, or they stop aligning across views.
+
+    The token appears exactly once in the markup — in FormRow — so there is no second place for a
+    view to pick its own label width.
+    """
+    uses = {
+        path.name: path.read_text().count("Tokens.label-column")
+        for path in UI.glob("*.slint")
+        if path.name != "tokens.slint"
+    }
+    assert uses["widgets.slint"] == 1
+    assert sum(uses.values()) == 1, f"a view is setting its own label width: {uses}"
+
+
+def shown_results(column_width):
+    """A shown window with the Results view selected and the content column at this width.
+
+    The column width is driven rather than the window's: setting a Window's own `width` before it
+    is shown is not honoured — it reports its minimum, 330px — so every arrangement would measure
+    the same and the breakpoint would be untestable.
+    """
+    win = slint.load_file(str(UI / "main.slint")).MainWindow()
+    win.drive_select_view(2)
+    win.column_width = column_width
+    win.show()
+    return win
+
+
+@pytest.mark.parametrize(
+    ("column_width", "expect_side_by_side"),
+    [(1200, True), (1000, True), (999, False), (700, False)],
+)
+def test_the_results_split_follows_the_column_width(column_width, expect_side_by_side):
+    """Side by side when there is room, stacked when there is not.
+
+    Measured against the width the window hands down, not against this view's own: a ScrollView
+    positioned outside a layout reports its visible-width as zero, and a width read from the
+    content inside it is a binding loop. Both were tried; both failed in ways no test would catch.
+    """
+    win = shown_results(column_width)
+    try:
+        assert win.results_side_by_side() is expect_side_by_side
+    finally:
+        win.hide()
+
+
+def test_the_two_cards_never_overlap_in_either_arrangement():
+    """The geometry is hand-set, so nothing but this stops the panes sitting on top of each other.
+
+    A layout would have guaranteed it; the geometry is explicit here because Slint cannot switch a
+    layout's direction without the markup appearing in both branches.
+    """
+    for column_width, side_by_side in ((1200, True), (700, False)):
+        win = shown_results(column_width)
+        try:
+            findings = win.results_findings_box()
+            detail = win.results_detail_box()
+            assert findings[2] > 0 and detail[2] > 0, (column_width, findings, detail)
+            if side_by_side:
+                assert findings[0] + findings[2] <= detail[0], (findings, detail)
+                assert findings[1] == detail[1] == 0
+            else:
+                assert findings[0] == detail[0] == 0
+                assert findings[1] + findings[3] <= detail[1], (findings, detail)
+                assert findings[2] == detail[2]
+        finally:
+            win.hide()
+
+
+def test_the_shares_add_up_to_the_whole_column():
+    results = (UI / "results_tab.slint").read_text()
+    assert "out property <int> findings-share: 48;" in results
+    assert "out property <int> detail-share: 52;" in results
+
+
+def test_every_list_names_its_columns(window):
+    """The findings, sources, progress, rules and credentials lists are tables without headings.
+
+    Before this, six fixed-width columns of catalog text ran down the window with nothing saying
+    which was which. ColumnHead is the heading; a list without one is the defect.
+    """
+    expected = {
+        "results_tab.slint": ("TARGET", "KIND", "OBJECT", "SEVERITY"),
+        "run_tab.slint": ("SOURCE", "STATE", "DETAIL"),
+        "credentials_tab.slint": ("VARIABLE", "USED BY", "SOURCE", "RESOLVES TO"),
+        "ignores_tab.slint": ("ID", "REASON", "ACTION"),
+    }
+    for markup, headings in expected.items():
+        text = (UI / markup).read_text()
+        for heading in headings:
+            assert f'ColumnHead {{ text: "{heading}";' in text, f"{markup} lost {heading}"
+
+
+def test_every_source_field_is_labelled_rather_than_placeheld():
+    """A placeholder disappears the moment someone types over it.
+
+    The Config view used to identify nine of a source's fields by placeholder alone, which is what
+    made it unreadable once filled in. Each one now carries a label from the shared column.
+    """
+    text = (UI / "config_tab.slint").read_text()
+    for field in (
+        "label",
+        "dsn variable",
+        "credential",
+        "host",
+        "database",
+        "schemas",
+        "schema map",
+        "liquibase schema",
+        "liquibase table",
+    ):
+        assert f'label: "{field}";' in text, f"the source card does not label {field}"
+
+
+def test_the_options_are_grouped_rather_than_one_flat_list():
+    # Ten controls in a single column is what the Options box was, and it read as a settings dump.
+    text = (UI / "config_tab.slint").read_text()
+    for section in ("TIMEOUTS", "EXECUTION", "INCLUDE"):
+        assert f'title: "{section}";' in text
+
+
+def test_severity_is_a_pill_and_names_an_unknown_value_rather_than_hiding_it():
+    widgets = (UI / "widgets.slint").read_text()
+    pill = widgets[widgets.index("export component SeverityPill") :]
+    assert "border-radius: Tokens.radius-pill;" in pill
+    # The final branch of the ladder is the raw value, so a severity the UI has not been taught
+    # still appears. A report that silently drops a finding's severity is worse than an ugly one.
+    assert ": root.severity;" in pill
+    assert (UI / "results_tab.slint").read_text().count(
+        "SeverityPill { severity: root.data.severity; }"
+    ) == 1
+
+
+def test_nothing_sits_above_the_views_but_the_status_line():
+    """The config path and Open button live in the rail, not in a strip across the top.
+
+    A full-width header cost every view its own height — about 45px — to say one line that the
+    rail had empty space for. With no status message the views start at the very top.
+    """
+    win = slint.load_file(str(UI / "main.slint")).MainWindow()
+    win.show()
+    try:
+        assert float(win.content_top()) == 0.0
+        # And the strip does not come back when there is a message: the status line takes its own
+        # height only while it has something to say.
+        win.status_message = "could not connect to qa"
+        assert float(win.content_top()) > 0.0
+        win.status_message = ""
+        assert float(win.content_top()) == 0.0
+    finally:
+        win.hide()
+
+
+def test_the_rail_carries_the_config_block():
+    shell = (UI / "main.slint").read_text()
+    rail = shell[shell.index('text: "cumo";') : shell.index("StatusLine {")]
+    assert 'RailLabel { text: "CONFIG"; }' in rail
+    assert "root.config-path" in rail, "the config path must live inside the rail"
+    assert 'Button { text: "Open…"' in rail
+    # Blue on navy fails contrast, so rail labels are lime; a plain Eyebrow here would be a defect.
+    assert "Eyebrow {" not in rail
