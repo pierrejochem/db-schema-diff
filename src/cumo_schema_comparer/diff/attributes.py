@@ -30,6 +30,13 @@ class AttributeSpec:
     Those are re-printed by the server from its parse tree, and the formatting changes between
     major releases, so they are downgraded to INFO when the two servers are different majors.
     """
+    display_getter: Callable[[Any], Any] | None = None
+    """An alternative value to *show* when this attribute differs.
+
+    The comparison always uses :attr:`getter`. A routine is compared by its body hash — stable,
+    cheap, and independent of how the server prints the body — but a reader needs the text, so the
+    text is shown when both sides have one. Nothing about equality changes.
+    """
 
     @property
     def qualified(self) -> str:
@@ -68,6 +75,7 @@ def _spec(
     note: str | None = None,
     body: bool = False,
     getter: Callable[[Any], Any] | None = None,
+    display_getter: Callable[[Any], Any] | None = None,
 ) -> AttributeSpec:
     return AttributeSpec(
         name=f"{kind.value}.{attribute}",
@@ -75,6 +83,7 @@ def _spec(
         severity=severity,
         note=note,
         body=body,
+        display_getter=display_getter,
     )
 
 
@@ -312,10 +321,12 @@ ROUTINE_SPECS: tuple[AttributeSpec, ...] = (
     ),
     _spec(
         ObjectKind.ROUTINE,
-        "body_hash",
+        "body",
         Severity.WARNING,
         note="the routine does something different",
         body=True,
+        getter=_attrgetter("body_hash"),
+        display_getter=_attrgetter("body"),
     ),
     _spec(
         ObjectKind.ROUTINE,
