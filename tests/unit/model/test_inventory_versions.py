@@ -66,7 +66,7 @@ def test_every_released_version_stays_readable():
 def test_an_unknown_version_is_refused_by_name():
     with pytest.raises(
         ValueError,
-        match=r"unsupported inventory schema_version 99; this build reads \[1\] and writes 1",
+        match=r"unsupported inventory schema_version 99; this build reads \[1, 2\] and writes 2",
     ):
         Inventory.from_json_dict({"schema_version": 99})
 
@@ -74,7 +74,7 @@ def test_an_unknown_version_is_refused_by_name():
 def test_a_missing_version_is_refused():
     with pytest.raises(
         ValueError,
-        match=r"unsupported inventory schema_version None; this build reads \[1\] and writes 1",
+        match=r"unsupported inventory schema_version None; this build reads \[1, 2\] and writes 2",
     ):
         Inventory.from_json_dict({})
 

@@ -421,6 +421,14 @@ class Routine:
     arguments: str | None = None
     """Full argument list including defaults, for display."""
 
+    body: str | None = field(default=None, compare=False, repr=False)
+    """Canonical body text, for display and diffing.
+
+    ``None`` in an inventory written at schema version 1, which had only the hash. Excluded from
+    equality: it is derived from the same source as :attr:`body_hash`, which is what decides
+    whether two routines match, and a version 1 capture (``None``) must still equal a fresh one.
+    """
+
     body_hash: str | None = None
     """SHA-256 of the canonical body.
 

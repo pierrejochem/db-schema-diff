@@ -407,6 +407,7 @@ def _routines(rows: list[dict[str, Any]]) -> dict[ObjectKey, Routine]:
             return_type=canonical_type(return_type) if return_type else None,
             returns_set=bool(row.get("returns_set")),
             arguments=_text(row.get("arguments")),
+            body=canonical_body(body),
             body_hash=body_hash(body),
             volatility=str(row.get("volatility") or "v"),
             strict=bool(row.get("strict")),

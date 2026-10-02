@@ -25,12 +25,12 @@ from .changelog import ChangelogState
 from .keys import ObjectKey
 from .kinds import KIND_ORDER, ObjectKind
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: Versions this build can *read*. A file on disk outlives the build that wrote it, so dropping
 #: one from this set is a breaking change and has to be a deliberate edit rather than a side
 #: effect of bumping SCHEMA_VERSION.
-READABLE_SCHEMA_VERSIONS = frozenset({1})
+READABLE_SCHEMA_VERSIONS = frozenset({1, 2})
 
 #: Object types keyed by kind, for deserialisation.
 _OBJECT_TYPES: dict[ObjectKind, type] = {}

@@ -69,7 +69,7 @@ class TestInventoryCommand:
         result = run("inventory", "-c", str(run.config), "--source", "prod", "-o", str(out))
         assert result.returncode == ExitCode.OK, result.stdout + result.stderr
         payload = json.loads(out.read_text())
-        assert payload["schema_version"] == 1
+        assert payload["schema_version"] == 2
         assert payload["source"]["label"] == "prod"
         assert payload["objects"]
 
