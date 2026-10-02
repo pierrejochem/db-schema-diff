@@ -373,10 +373,14 @@ each service with its own baseline when you need them.
 ### Definition text, routine bodies and `--redact-literals`
 
 Definition text is carried in full: the inventory and every report hold a routine's body next to its
-hash, so a changed function shows what changed instead of two hashes. A routine body is the
-*canonical* text, which is one line, so its diff is a single removed and added pair; view and
-check-expression diffs span several lines. The HTML report and the GUI's Results tab both draw the
-diff. A delta whose text is short and single-line stays a plain before/after row.
+hash, so a changed function shows what changed instead of two hashes. Two texts are kept per
+definition and they do different jobs. The *canonical* text — the tokens joined by single spaces —
+is what equality is decided on, so reformatting a view or reindenting a function body is not drift.
+The text the server printed (`pg_get_viewdef`, `prosrc`) is what a diff is drawn from, because it
+still has its line breaks: a nine-line view differing in one line renders that line against three
+lines of context, not one giant removed line against one giant added line. Both are masked, so the
+diff is as safe as the compared value. The HTML report and the GUI's Results tab draw the same diff.
+A delta whose text is short and single-line stays a plain before/after row.
 
 Because that text can contain a hardcoded connection string, `compare` and `inventory` mask
 credential-shaped string literals (column defaults, view bodies, check expressions, routine bodies)

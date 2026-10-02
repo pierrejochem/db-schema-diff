@@ -126,3 +126,33 @@ def test_a_routine_body_secret_is_in_body_and_raw_only_without_redaction(secret_
     assert SECRET not in masked.body and SECRET not in masked.raw.values["body"]
     real = routine(False)
     assert SECRET in real.body and SECRET in real.raw.values["body"]
+
+
+def test_a_secret_in_a_view_body_survives_being_shown_as_raw_text(tmp_path, secret_databases):
+    """The end-to-end check that showing raw definition text did not reopen the leak.
+
+    A differing body is now *displayed* as the text the server printed rather than as the canonical
+    one-liner, because the canonical form holds no newline and so can never produce a readable
+    diff. That means the HTML diff of ``open_invoice`` is rendered from ``raw["definition"]``, and
+    what keeps the credential in it out of the artifact is the masking of every ``raw`` value.
+    """
+    _, out_dir = invoke(tmp_path, secret_databases)
+
+    html = (out_dir / "report.html").read_text(encoding="utf-8")
+    assert SECRET not in html, "the rendered diff leaked the secret"
+    assert 'class="diff"' in html, "no diff was rendered, so this proves nothing"
+    assert "***:" in html
+
+    report = json.loads((out_dir / "report.json").read_text(encoding="utf-8"))
+    delta = next(
+        d
+        for target in report["targets"]
+        for f in target["findings"]
+        if f["path"] == "cumo-invoicing.open_invoice"
+        for d in f.get("deltas", [])
+        if d["attribute"] == "view.definition"
+    )
+    # The displayed text really is the server's own, line breaks intact, and still masked.
+    assert "\n" in delta["master_display"] and "\n" in delta["target_display"]
+    assert SECRET not in delta["target_display"]
+    assert "***:" in delta["target_display"]

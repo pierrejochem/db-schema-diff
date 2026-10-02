@@ -27,3 +27,11 @@ CREATE FUNCTION "cumo-invoicing".uses_setting() RETURNS integer
 LANGUAGE sql
 SET "app.dsn" = 'postgresql://u:s3cret@h/db'
 AS 'SELECT 1';
+
+-- A credential in a *view* body. The report now prints the raw definition of a differing body
+-- rather than the canonical one-liner, so what keeps this out of the HTML diff is the masking of
+-- `raw` text rather than the masking of the compared value. Worth its own fixture for that reason.
+CREATE OR REPLACE VIEW "cumo-invoicing".open_invoice AS
+SELECT * FROM "cumo-invoicing".invoice_summary
+ WHERE status::text = 'OPEN'::text
+   AND 'postgresql://u:s3cret@h/db' <> '';

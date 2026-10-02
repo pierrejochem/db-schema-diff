@@ -37,6 +37,11 @@ class AttributeSpec:
     cheap, and independent of how the server prints the body — but a reader needs the text, so the
     text is carried alongside for display when both sides have one. Nothing about equality or
     identity changes.
+
+    Every ``body`` spec has one, because none of their compared values is readable text: the
+    canonicaliser joins the tokens of a definition with single spaces, so a 400-line view body
+    compares as one line and a diff of it could only ever show one removed and one added line.
+    See :func:`_raw_display`.
     """
 
     @property
@@ -68,6 +73,30 @@ def _attrgetter(attribute: str) -> Callable[[Any], Any]:
     return get
 
 
+def _raw_display(field: str, fallback: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """Read the server's own text for ``field``, falling back to the compared value.
+
+    This is what makes a rendered diff of a definition worth reading. The compared value is
+    canonical — the tokenizer's output joined by single spaces — which is exactly right for
+    deciding equality and useless to show: it holds no newline, so every multi-line body would
+    render as one removed and one added line however long it is.
+
+    ``raw`` is the text the server printed (``pg_get_viewdef``, ``prosrc``), line breaks and all.
+    It is masked by :func:`cumo_schema_comparer.build.redact_inventory` alongside the canonical
+    value — every ``raw`` entry is, unconditionally — so showing it reopens no credential path.
+
+    An inventory captured before a given raw value was recorded has none; then the canonical value
+    is shown, which is what every reader saw before this existed.
+    """
+
+    def display(obj: Any) -> Any:
+        raw = getattr(obj, "raw", None)
+        text = raw.get(field) if raw is not None else None
+        return fallback(obj) if text is None else text
+
+    return display
+
+
 def _spec(
     kind: ObjectKind,
     attribute: str,
@@ -76,15 +105,22 @@ def _spec(
     note: str | None = None,
     body: bool = False,
     getter: Callable[[Any], Any] | None = None,
-    display_getter: Callable[[Any], Any] | None = None,
+    display_field: str | None = None,
 ) -> AttributeSpec:
+    """One spec. ``display_field`` names the model field holding the text, when it is not
+    ``attribute`` itself — a routine is compared by ``body_hash`` and read as ``body``."""
+    compare_with = getter or _attrgetter(attribute)
+    display: Callable[[Any], Any] | None = None
+    if body:
+        field = display_field or attribute
+        display = _raw_display(field, _attrgetter(field) if display_field else compare_with)
     return AttributeSpec(
         name=f"{kind.value}.{attribute}",
-        getter=getter or _attrgetter(attribute),
+        getter=compare_with,
         severity=severity,
         note=note,
         body=body,
-        display_getter=display_getter,
+        display_getter=display,
     )
 
 
@@ -326,7 +362,7 @@ ROUTINE_SPECS: tuple[AttributeSpec, ...] = (
         Severity.WARNING,
         note="the routine does something different",
         body=True,
-        display_getter=_attrgetter("body"),
+        display_field="body",
     ),
     _spec(
         ObjectKind.ROUTINE,
