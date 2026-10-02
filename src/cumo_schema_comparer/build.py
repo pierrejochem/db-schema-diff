@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +19,7 @@ import psycopg
 from .config.model import SourceRef
 from .db.connect import server_features
 from .db.introspect import Introspector
+from .diff.attributes import SPECS
 from .model.changelog import ChangelogLocation, ChangelogState
 from .model.inventory import Inventory, SourceInfo
 from .model.keys import ObjectKey, column_key, table_key
@@ -44,6 +47,7 @@ from .model.objects import (
 )
 from .normalize.defaults import canonical_default
 from .normalize.expressions import canonical_expr
+from .normalize.redact import mask_literals
 from .normalize.routines import body_hash, canonical_body
 from .normalize.types import canonical_type
 
@@ -56,8 +60,14 @@ def build_inventory(
     *,
     exclude_schemas: tuple[str, ...] = (),
     skip_liquibase: bool = False,
+    redact_literals: bool = True,
 ) -> Inventory:
-    """Capture one database as a canonical inventory."""
+    """Capture one database as a canonical inventory.
+
+    With ``redact_literals`` (the default) credential-shaped literals in definition text are masked
+    here, as the inventory is built, so they never enter the in-memory model and every consumer
+    inherits that. See :func:`redact_inventory`.
+    """
     features = server_features(connection)
     introspector = Introspector(connection, features)
 
@@ -80,7 +90,80 @@ def build_inventory(
 
     changelog = None if skip_liquibase else _changelog(introspector, source)
 
-    return Inventory(source=info, schemas=tuple(schemas), objects=objects, changelog=changelog)
+    inventory = Inventory(source=info, schemas=tuple(schemas), objects=objects, changelog=changelog)
+    return redact_inventory(inventory) if redact_literals else inventory
+
+
+#: Specs whose compared attribute is not itself the text that travels. ``routine.body_hash`` is a
+#: hash; the body text that reaches a report is carried in :attr:`Routine.body` (and
+#: ``raw["body"]``), so that is the field to mask. Every other body spec names its own field.
+_BODY_TEXT_FIELDS: Mapping[str, tuple[str, ...]] = {"routine.body_hash": ("body",)}
+
+#: Definition-bearing text that no ``body`` spec covers but that can still hold a literal: the
+#: argument list shown for a routine (with its defaults) and the literal arguments of a trigger.
+#: Kept explicit and pinned by a test, like the derived set.
+_EXTRA_TEXT_FIELDS: Mapping[ObjectKind, tuple[str, ...]] = {
+    ObjectKind.ROUTINE: ("arguments",),
+    ObjectKind.TRIGGER: ("arguments",),
+}
+
+
+def masked_fields() -> dict[ObjectKind, tuple[str, ...]]:
+    """Which model fields carry definition text, per object kind.
+
+    Derived from the ``body=True`` attribute specs rather than listed by hand, so a new body
+    attribute is covered automatically.
+    """
+    out: dict[ObjectKind, list[str]] = {}
+    for kind, specs in SPECS.items():
+        for spec in specs:
+            if not spec.body:
+                continue
+            attribute = spec.name.split(".", 1)[1]
+            for name in _BODY_TEXT_FIELDS.get(spec.name, (attribute,)):
+                out.setdefault(kind, []).append(name)
+    for kind, names in _EXTRA_TEXT_FIELDS.items():
+        out.setdefault(kind, []).extend(names)
+    return {kind: tuple(names) for kind, names in out.items()}
+
+
+def _mask_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return mask_literals(value)
+    if isinstance(value, tuple):
+        return tuple(_mask_value(item) for item in value)
+    return value
+
+
+def _redact_object(obj: Any, fields: tuple[str, ...]) -> Any:
+    changes: dict[str, Any] = {}
+    for name in fields:
+        current = getattr(obj, name)
+        masked = _mask_value(current)
+        if masked != current:
+            changes[name] = masked
+    # Every raw value is pre-normalisation server text kept for display; whichever definition it
+    # holds, it is the same secret in a second place.
+    raw = obj.raw.values
+    masked_raw = {name: _mask_value(text) for name, text in raw.items()}
+    if masked_raw != raw:
+        changes["raw"] = RawValues(masked_raw)
+    return replace(obj, **changes) if changes else obj
+
+
+def redact_inventory(inventory: Inventory) -> Inventory:
+    """A copy of ``inventory`` with credential-shaped literals in definition text masked.
+
+    Touches only the fields from :func:`masked_fields` and each object's ``raw`` display text;
+    identifiers, types and flags are never rewritten. Idempotent. ``Routine.body_hash`` is left as
+    computed from the real body: it is a digest, not text, and keeping it means redaction never
+    changes which routines compare as different.
+    """
+    fields = masked_fields()
+    objects = {
+        key: _redact_object(obj, fields.get(key.kind, ())) for key, obj in inventory.objects.items()
+    }
+    return replace(inventory, objects=objects)
 
 
 def _changelog(introspector: Introspector, source: SourceRef) -> ChangelogState:

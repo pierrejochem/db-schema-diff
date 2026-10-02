@@ -522,6 +522,8 @@ class Session:
                 exclude_schemas=self._config.exclude_schemas,
                 options=runner.connection_options(self._config),
                 skip_liquibase=skip_liquibase,
+                # No opt-out in the GUI: what it shows is meant to be shareable.
+                redact_literals=True,
             )
         except Exception as exc:
             # Only the type: an unexpected exception's text is not under the library's redaction.

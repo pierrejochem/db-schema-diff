@@ -157,6 +157,18 @@ def cli(ctx: click.Context, verbose: int, quiet: bool, debug: bool) -> None:
     show_default=True,
     help="Cap the test cases per JUnit suite; the remainder is summarised in one case.",
 )
+@click.option(
+    "--redact-literals/--no-redact-literals",
+    default=True,
+    help=(
+        "Mask credential-shaped string literals in definition text (defaults, view bodies, "
+        "check expressions, routine bodies) before they reach any output. On by default: a "
+        "report is often uploaded as a CI artifact, and a hardcoded connection string in a "
+        "function body would travel with it. Masks keep a short digest, so two different "
+        "secrets still compare as different. Pass --no-redact-literals to inspect the real "
+        "text locally; the captured inventory is then no longer safe to share."
+    ),
+)
 @click.pass_context
 def compare_command(
     ctx: click.Context,
@@ -180,6 +192,7 @@ def compare_command(
     html_path: Path | None,
     out_dir: Path | None,
     junit_max_cases: int,
+    redact_literals: bool,
 ) -> None:
     """Compare the master against its targets and report any drift.
 
@@ -220,6 +233,7 @@ def compare_command(
             ignores=rules,
             changelog_options=ChangelogOptions(strict=strict_changelog),
             skip_liquibase=skip_liquibase,
+            redact_literals=redact_literals,
         )
 
         if baseline_path is not None:
@@ -261,6 +275,18 @@ def compare_command(
     help="Where to write the inventory JSON.",
 )
 @click.option("--skip-liquibase", is_flag=True, help="Do not read DATABASECHANGELOG.")
+@click.option(
+    "--redact-literals/--no-redact-literals",
+    default=True,
+    help=(
+        "Mask credential-shaped string literals in definition text (defaults, view bodies, "
+        "check expressions, routine bodies) before they reach any output. On by default: a "
+        "report is often uploaded as a CI artifact, and a hardcoded connection string in a "
+        "function body would travel with it. Masks keep a short digest, so two different "
+        "secrets still compare as different. Pass --no-redact-literals to inspect the real "
+        "text locally; the captured inventory is then no longer safe to share."
+    ),
+)
 @click.pass_context
 def inventory_command(
     ctx: click.Context,
@@ -268,6 +294,7 @@ def inventory_command(
     label: str,
     out_path: Path,
     skip_liquibase: bool,
+    redact_literals: bool,
 ) -> None:
     """Capture one database's schema to a JSON file.
 
@@ -291,6 +318,7 @@ def inventory_command(
         exclude_schemas=config.exclude_schemas,
         options=runner.connection_options(config),
         skip_liquibase=skip_liquibase,
+        redact_literals=redact_literals,
     )
     if not result.ok or result.inventory is None:
         raise ProbeError(result.error or f"{label}: capture failed")
