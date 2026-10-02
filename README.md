@@ -293,10 +293,18 @@ finding.
 The GUI is an optional extra: installing the CLI alone keeps its Python 3.11 floor and its five
 dependencies.
 
-Two rough edges in this first version: there is no native file dialog, so the config file is named
-on the command line and the baseline and output-directory paths are typed into their fields; and
-the Slint binding is a beta whose Python objects must be freed on the thread that made them, so the
-application drives the cyclic garbage collector itself (see `gui/app.py`).
+**Open…** and the two **Choose…** buttons open a native picker. Slint's binding has none, and a
+second GUI toolkit inside its event loop would risk the window, so each dialog runs in a
+subprocess — `osascript` on macOS, `zenity` or `kdialog` on a Linux desktop. The dialog opens
+wherever the field already points. Windows has no backend: the same approach would work through
+PowerShell, but it cannot be exercised from this project's machines or its CI, and a picker that
+returns the wrong thing is worse than one that is honestly absent. Where no backend exists the
+fields still accept a typed path and the status line says so.
+
+One rough edge remains: the Slint binding is a beta whose Python objects must be freed on the
+thread that made them, so the application drives the cyclic garbage collector itself (see
+`gui/app.py`). The window also stops repainting while a picker is open, which is the cost of
+keeping the dialog out of this process.
 
 ## Exit codes
 
