@@ -234,6 +234,7 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 | `--html PATH` | Write the standalone HTML report. |
 | `--out-dir DIR` | Write all three machine-readable reports into one directory. |
 | `--sequential` | Capture one source at a time, for debugging. |
+| `--redact-literals` / `--no-redact-literals` | Mask credential-shaped string literals in definition text. **On by default**; see below. |
 
 ## Desktop application
 
@@ -252,6 +253,12 @@ only where each credential came from and a redacted host/database summary.
 
 **The CLI does not read the keychain.** It reads the environment and nothing else, so a credential
 stored here cannot change what a CI run does.
+
+Selecting a row on the Results tab opens a detail pane under the list: every attribute that
+differs, with the master and target values side by side, and, for a printed definition (a view, a
+routine body, a check expression), a unified diff of the two texts. Changing the filter or a
+severity toggle, or starting a new run, clears the pane. The pane shows the same masked text as the
+reports.
 
 A cancelled comparison produces no report and says so: the Results banner is only ever green for a
 finished run that found nothing. Cancelling stops sources that have not started, but a capture
@@ -362,6 +369,27 @@ cumo-schema-diff compare -c config/ --out-dir build/
 
 A baseline is scoped to the report it came from, so `--baseline` belongs with a single config. Run
 each service with its own baseline when you need them.
+
+### Definition text, routine bodies and `--redact-literals`
+
+Definition text is carried in full: the inventory and every report hold a routine's body next to its
+hash, so a changed function shows what changed instead of two hashes. A routine body is the
+*canonical* text, which is one line, so its diff is a single removed and added pair; view and
+check-expression diffs span several lines. The HTML report and the GUI's Results tab both draw the
+diff. A delta whose text is short and single-line stays a plain before/after row.
+
+Because that text can contain a hardcoded connection string, `compare` and `inventory` mask
+credential-shaped string literals (column defaults, view bodies, check expressions, routine bodies)
+at capture time, before anything is written. A mask keeps a short digest (`'***:3fa9c2d41b07'`), so
+two *different* secrets still compare as different and a rotated one still shows as drift.
+
+`--no-redact-literals` shows the real text, for inspecting a database locally. **An inventory or
+report produced that way is no longer safe to share or upload as a CI artifact.** Redaction also
+changes baseline signatures, so a baseline approved in one mode will not match the other: accepted
+findings reappear as new (nothing is hidden). Keep one mode per baseline, normally the default.
+
+The inventory and the report now write schema version 2 and still read version 1, so an existing
+capture or `--baseline` file keeps working.
 
 ### Reading the exit code in CI
 
