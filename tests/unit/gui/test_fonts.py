@@ -103,10 +103,13 @@ def test_the_entry_point_installs_fonts_before_importing_the_application():
     Setting it afterwards is measurably a no-op — the same string under a named family measures
     167px either way, where a loaded face gives 177px — and nothing else in the suite would notice,
     because an unresolvable family falls back silently.
+
+    Reads `launcher.py`, which is where start-up lives: `__main__.py` is a shim, because a compiled
+    build cannot import a module named `__main__` without colliding with the program's own.
     """
     from pathlib import Path
 
-    source = Path(fonts.__file__).with_name("__main__.py").read_text(encoding="utf-8")
+    source = Path(fonts.__file__).with_name("launcher.py").read_text(encoding="utf-8")
     install_at = source.index("fonts.install()")
     app_import_at = source.index("from .app import run")
     assert install_at < app_import_at, "fonts.install() must precede the app import"

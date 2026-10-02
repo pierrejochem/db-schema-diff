@@ -46,10 +46,16 @@ gui = [
   "slint>=1.18.1b1,<2",
   "keyring>=25,<26",
 ]
+# Kept out of `dev` on purpose: compiling needs a C toolchain, takes minutes, and no test or CI
+# job needs it. `make exe` installs it on demand.
+exe = [
+  # 4.2 is the first release that compiles under Python 3.14, which the GUI requires.
+  "nuitka>=4.2,<5",
+]
 
 [project.scripts]
 cumo-schema-diff = "cumo_schema_comparer.cli:main"
-cumo-schema-diff-gui = "cumo_schema_comparer.gui.__main__:main"
+cumo-schema-diff-gui = "cumo_schema_comparer.gui.launcher:main"
 
 [tool.hatch.build.targets.wheel]
 # hatchling ships every file inside the package directory, including the .sql query files, the

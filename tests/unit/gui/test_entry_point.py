@@ -1,4 +1,8 @@
-"""The GUI entry point, including its behaviour on a Python it cannot run on."""
+"""The GUI start-up, including its behaviour on a Python it cannot run on.
+
+The start-up lives in `launcher`, not `__main__`: a compiled build cannot import a module named
+`__main__` without colliding with the program's own. `__main__` is a shim over it.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,7 @@ from contextlib import redirect_stderr
 from unittest import mock
 
 from cumo_schema_comparer.gui import MINIMUM_PYTHON
-from cumo_schema_comparer.gui import __main__ as entry
+from cumo_schema_comparer.gui import launcher as entry
 from cumo_schema_comparer.gui.errors import GuiError
 
 
@@ -31,3 +35,25 @@ def test_a_gui_error_carries_an_optional_field_path():
     assert error.field == "targets.1.dsn_env"
     assert str(error) == "dsn_env is required"
     assert GuiError("boom").field is None
+
+
+def test_the_dunder_main_shim_only_forwards():
+    """`python -m cumo_schema_comparer.gui` must keep working, and must hold no logic of its own.
+
+    Logic in both places would drift, and the compiled binary only ever runs the launcher.
+    """
+    import ast
+    from pathlib import Path
+
+    from cumo_schema_comparer.gui import launcher
+
+    source = Path(launcher.__file__).with_name("__main__.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    assert "from .launcher import main" in source
+    # A docstring, one import, and the `if __name__` guard. Nothing else belongs here.
+    assert [type(node).__name__ for node in tree.body] == [
+        "Expr",
+        "ImportFrom",
+        "ImportFrom",
+        "If",
+    ]

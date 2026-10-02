@@ -1,0 +1,190 @@
+"""The standalone executables: their entry scripts and the build that produces them.
+
+Nothing here compiles anything — a Nuitka build takes minutes and needs a C toolchain. What these
+tests hold is the part that is silently wrong rather than loudly broken: a build that omits the
+package data succeeds and produces a binary that dies on the first catalog query it loads, and an
+entry script that imports a GUI toolkit too early produces one that renders in the wrong typeface.
+"""
+
+from __future__ import annotations
+
+import ast
+import tomllib
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
+PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+#: Entry script -> the console script it must agree with, by its pyproject name.
+ENTRY_SCRIPTS = {
+    "main.py": "cumo-schema-diff-gui",
+    "main_cli.py": "cumo-schema-diff",
+}
+
+
+def imported_names(source: str) -> set[str]:
+    """Every module imported at the top level of ``source`` — not inside a function."""
+    names: set[str] = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+    return names
+
+
+@pytest.mark.parametrize("script", sorted(ENTRY_SCRIPTS))
+def test_each_entry_script_exists_and_runs_something(script):
+    source = (ROOT / script).read_text(encoding="utf-8")
+    assert 'if __name__ == "__main__":' in source
+    assert "raise SystemExit(main())" in source
+
+
+@pytest.mark.parametrize(("script", "console_script"), sorted(ENTRY_SCRIPTS.items()))
+def test_the_binaries_enter_where_the_installed_commands_enter(script, console_script):
+    """A compiled binary and the pip-installed command must be the same program.
+
+    The entry point is spelled twice — once in pyproject for the console script, once in the script
+    Nuitka compiles — and nothing but this stops the two drifting into different behaviour.
+    """
+    target = PYPROJECT["project"]["scripts"][console_script]
+    module, _, function = target.partition(":")
+    source = (ROOT / script).read_text(encoding="utf-8")
+    assert f"from {module} import {function}" in source, f"{script} does not enter at {target}"
+
+
+def test_the_gui_entry_script_imports_no_toolkit_before_the_fonts_are_installed():
+    """The ordering `gui/fonts.py` depends on, held at the one place that could break it.
+
+    `gui/launcher.main` installs `SLINT_FONT_PATH` and only then imports the application. Slint
+    reads that variable once, when the renderer starts, so an `import slint` reached while this
+    module is imported makes the bundled typefaces a no-op — and nothing would look broken, it
+    would just render in the system face.
+    """
+    names = imported_names((ROOT / "main.py").read_text(encoding="utf-8"))
+    assert not any(name.split(".")[0] == "slint" for name in names)
+    # And it must not reach the application module either, which imports slint itself.
+    assert "cumo_schema_comparer.gui.app" not in names
+
+
+@pytest.mark.parametrize("script", sorted(ENTRY_SCRIPTS))
+def test_no_entry_script_imports_a_module_named_dunder_main(script):
+    """Nuitka names each module's generated C file after the module, and two cannot collide.
+
+    A compiled program is itself `__main__`, so importing a package's `__main__` submodule makes
+    Nuitka emit `module.__main__.c` twice and abort:
+
+        AssertionError: build/main.build/module.__main__.c
+
+    This is why the GUI's start-up lives in `gui/launcher.py` with `__main__.py` as a shim over it.
+    Reverting that for tidiness would break the build and nothing else.
+    """
+    names = imported_names((ROOT / script).read_text(encoding="utf-8"))
+    offenders = [name for name in names if name.split(".")[-1] == "__main__"]
+    assert offenders == [], f"{script} imports {offenders}, which collides with its own __main__"
+
+
+def test_the_cli_entry_script_pulls_in_no_gui():
+    """The command-line binary keeps the 3.11 floor, which the GUI dependency would break."""
+    names = imported_names((ROOT / "main_cli.py").read_text(encoding="utf-8"))
+    assert not any("gui" in name for name in names)
+
+
+class TestBuildFlags:
+    def flags(self) -> str:
+        start = MAKEFILE.index("NUITKA_FLAGS :=")
+        return MAKEFILE[start : MAKEFILE.index("\n\n", start)]
+
+    def test_the_package_data_is_included(self):
+        """The flag whose absence is invisible until the binary runs.
+
+        Every catalog query, report template, ignore ruleset, `.slint` file and typeface is package
+        data read through importlib.resources at run time. Nuitka ships none of it by default, so
+        without this the build is clean and the binary dies on its first query.
+        """
+        assert "--include-package-data=cumo_schema_comparer" in self.flags()
+
+    def test_it_is_a_single_file_in_the_build_directory(self):
+        flags = self.flags()
+        assert "--onefile" in flags
+        assert "--output-dir=build" in flags
+
+    def test_mypy_is_kept_out_of_the_binary(self):
+        """pydantic ships a mypy plugin, so following imports reaches the whole of mypy.
+
+        Forty-odd modules of a development dependency, compiled into a shipped executable — and it
+        does not even build: the first attempt here died in the C backend partway through them.
+        """
+        assert "--nofollow-import-to=mypy" in self.flags()
+
+    def test_the_build_never_waits_for_an_answer(self):
+        # A prompt for a toolchain download would hang a CI job or a `make` run with no tty.
+        assert "--assume-yes-for-downloads" in self.flags()
+
+    def test_both_targets_share_one_set_of_flags(self):
+        # Two copies would let one binary ship the package data and the other not. Comment lines
+        # are excluded: the flag is explained just above where it is set.
+        live = [line for line in MAKEFILE.splitlines() if not line.lstrip().startswith("#")]
+        assert sum(line.count("--include-package-data") for line in live) == 1
+        assert sum(line.count("$(NUITKA_FLAGS)") for line in live) == 2
+
+    def test_each_target_builds_on_the_interpreter_its_program_supports(self):
+        """The GUI needs 3.12+ for Slint; the CLI keeps 3.11. Compiling on the wrong one either
+        fails outright or produces a binary with the wrong floor baked in."""
+        gui = next(line for line in MAKEFILE.splitlines() if "cumo-schema-diff-gui main.py" in line)
+        cli = next(line for line in MAKEFILE.splitlines() if "cumo-schema-diff main_cli.py" in line)
+        assert "$(PY_GUI)" in gui
+        assert "$(PY)" in cli and "$(PY_GUI)" not in cli
+
+    def test_the_targets_are_declared_phony(self):
+        phony = MAKEFILE[
+            MAKEFILE.index(".PHONY:") : MAKEFILE.index("\n\n", MAKEFILE.index(".PHONY:"))
+        ]
+        assert "exe" in phony.split()
+        assert "exe-cli" in phony.split()
+
+    def test_neither_target_installs_this_project_non_editably(self):
+        """A plain `pip install .` into a development environment is a trap.
+
+        It copies the package into site-packages, where it shadows `src/` — so the next test run
+        exercises the copy and the next build compiles the copy, both silently stale. The first
+        build that completed here produced a binary missing a module added minutes earlier, and
+        nothing about either the install or the build looked wrong.
+        """
+        installs = [
+            line
+            for line in MAKEFILE.splitlines()
+            if "pip install" in line and "nuitka" not in line and ".[" in line
+        ]
+        assert installs, "the exe targets no longer install anything"
+        for line in installs:
+            assert " -e " in line, f"non-editable install of this project: {line.strip()}"
+
+    def test_the_help_text_warns_what_a_build_costs(self):
+        # `make help` lists these; a target that silently takes minutes and needs clang should say
+        # so where someone reads it.
+        target = next(line for line in MAKEFILE.splitlines() if line.startswith("exe:"))
+        assert "C toolchain" in target or "minutes" in target
+
+
+class TestDeclaredDependency:
+    def test_nuitka_is_an_extra_rather_than_a_dev_dependency(self):
+        """No test or CI job compiles anything, and the build needs a C toolchain.
+
+        In `dev` it would be installed into every environment and every CI job for nothing.
+        """
+        extras = PYPROJECT["project"]["optional-dependencies"]
+        assert any(spec.startswith("nuitka") for spec in extras["exe"])
+        assert not any("nuitka" in spec for spec in extras["dev"])
+
+    def test_the_pin_rules_out_releases_that_cannot_build_the_gui(self):
+        # Nuitka gained Python 3.14 support in 4.2, and the GUI environment is 3.14.
+        spec = next(s for s in PYPROJECT["project"]["optional-dependencies"]["exe"])
+        assert ">=4.2" in spec
+
+    def test_the_build_directory_is_ignored(self):
+        # Both `python -m build` and Nuitka write here; a committed binary would be a 40MB blob.
+        assert "/build/" in (ROOT / ".gitignore").read_text(encoding="utf-8")
