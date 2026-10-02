@@ -32,11 +32,23 @@ def html() -> str:
 class TestSelfContained:
     """Nothing outside the file, ever."""
 
-    @pytest.mark.parametrize(
-        "pattern", ["http://", "https://", "//cdn", "//unpkg", "//fonts.", "@import"]
-    )
-    def test_no_external_reference(self, html, pattern):
-        assert pattern not in html
+    # Markup, not text: definition text is on the page, and a routine body or SQL comment may
+    # legitimately mention a URL. What must never happen is the page *loading* something.
+    def test_no_link_element_and_no_import(self, html):
+        assert "<link" not in html
+        assert "@import" not in html.split("</style>")[0]
+        assert "url(" not in html.split("</style>")[0]
+
+    def test_no_loading_attribute(self, html):
+        assert not re.search(r"\saction\s*=", html)
+
+    def test_a_url_in_a_definition_is_not_an_external_reference(self):
+        from tests.unit.report.test_html_diff import report_with_a_url_in_a_body
+
+        page = render(report_with_a_url_in_a_body())
+        assert "http://example.com/docs" in page
+        assert "<link" not in page
+        assert not re.search(r"\s(src|href|action)\s*=", page)
 
     def test_no_element_loads_anything(self, html):
         # src= and href= are how an external resource gets in; neither may appear at all.

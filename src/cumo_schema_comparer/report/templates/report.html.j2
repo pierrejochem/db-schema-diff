@@ -323,14 +323,17 @@ pre.payload { display: none; }
           {%- if finding.deltas %}
           <dl class="deltas">
             {%- for delta in finding.deltas %}
+            {%- set diff = diff_for(delta) %}
             <dt>{{ delta.attribute }}</dt>
             <dd>
+              {#- A rendered diff supersedes the before/after row; the JSON payload keeps the values. #}
+              {%- if not diff %}
               <span class="from">{{ delta.master_value if delta.master_value is not none else '—' }}</span>
               <span class="arrow">→</span>
               <span class="to">{{ delta.target_value if delta.target_value is not none else '—' }}</span>
+              {%- endif %}
               {%- if delta.note %}<span class="why">{{ delta.note }}</span>{% endif %}
             </dd>
-            {%- set diff = diff_for(delta) %}
             {%- if diff %}
             <dd class="diffwrap"><pre class="diff">{% for line in diff %}<span class="diff-{{ line.kind.value }}">{{ line.text }}</span>{% endfor %}</pre></dd>
             {%- endif %}

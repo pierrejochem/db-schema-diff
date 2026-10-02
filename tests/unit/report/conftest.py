@@ -141,3 +141,21 @@ def a_report_with_a_50kb_multiline_body() -> ComparisonReport:
     master = "\n".join(f"statement number {i} -- {'p' * 40}" for i in range(1000))
     target = "\n".join(f"statement number {i} -- {'q' * 40}" for i in range(1000))
     return _report(_body(master, target))
+
+
+@pytest.fixture
+def a_report_with_a_long_multiline_scalar() -> ComparisonReport:
+    """A scalar (non-body) delta that is long and multi-line, e.g. a column default."""
+    return _report(
+        AttributeDelta(
+            attribute="column.default",
+            master_value="CASE\n  WHEN a THEN 1\n  ELSE 2 END",
+            target_value="CASE\n  WHEN a THEN 1\n  ELSE 3 END " + "x" * 200,
+            severity=Severity.WARNING,
+        )
+    )
+
+
+@pytest.fixture
+def a_report_with_a_directional_change() -> ComparisonReport:
+    return _report(_body("keep\nonly_in_master\nkeep2", "keep\nonly_in_target\nkeep2"))

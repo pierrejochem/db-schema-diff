@@ -16,8 +16,8 @@ def render(report):
 def test_a_body_delta_renders_a_diff(a_report_with_changed_view):
     html = render(a_report_with_changed_view)
     assert 'class="diff"' in html
-    assert "diff-removed" in html
-    assert "diff-added" in html
+    assert '<span class="diff-removed">' in html
+    assert '<span class="diff-added">' in html
 
 
 def test_a_scalar_delta_renders_no_diff(a_report_with_changed_column_type):
@@ -71,7 +71,7 @@ def test_a_routine_with_a_captured_body_diffs_the_text_not_the_hashes(
 def test_a_long_one_line_routine_body_diffs_its_text(a_report_with_a_50kb_one_line_body):
     html = render(a_report_with_a_50kb_one_line_body)
     assert 'class="diff"' in html
-    assert "diff-removed" in html and "diff-added" in html
+    assert '<span class="diff-removed">' in html and '<span class="diff-added">' in html
     diff_block = html.split('<pre class="diff">')[1].split("</pre>")[0]
     assert "a" * 64 not in diff_block
 
@@ -98,3 +98,37 @@ def test_the_console_reporter_shows_no_diff(a_report_with_a_huge_body_change):
     rendered = out.getvalue()
     assert "@@" not in rendered
     assert "more lines" not in rendered
+
+
+def test_a_long_multiline_scalar_renders_no_diff(a_report_with_a_long_multiline_scalar):
+    # Only definitions diff; a long column default stays a plain before/after row.
+    html = render(a_report_with_a_long_multiline_scalar)
+    assert 'class="diff"' not in html
+    assert 'class="from"' in html
+
+
+def test_the_master_is_removed_and_the_target_is_added(a_report_with_a_directional_change):
+    html = render(a_report_with_a_directional_change)
+    assert '<span class="diff-removed">only_in_master</span>' in html
+    assert '<span class="diff-added">only_in_target</span>' in html
+    assert '<span class="diff-removed">only_in_target</span>' not in html
+
+
+def test_a_rendered_diff_replaces_the_before_after_row(a_report_with_a_50kb_multiline_body):
+    html = render(a_report_with_a_50kb_multiline_body)
+    assert 'class="diff"' in html
+    assert 'class="from"' not in html
+
+
+def test_a_hash_only_routine_keeps_its_before_after_row(a_report_with_a_hashed_routine):
+    assert 'class="from"' in render(a_report_with_a_hashed_routine)
+
+
+def report_with_a_url_in_a_body():
+    from tests.unit.report.conftest import _body, _report
+
+    return _report(
+        _body(
+            "-- see http://example.com/docs\nSELECT 1", "-- see http://example.com/docs\nSELECT 2"
+        )
+    )
