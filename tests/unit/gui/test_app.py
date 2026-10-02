@@ -1205,6 +1205,153 @@ class TestResults:
         assert app.window.output_directory.endswith("output-directory.json")
 
 
+class TestDetailPane:
+    @staticmethod
+    def show(app, model):
+        app.results = model
+        app._verdict = ("error", "x")
+        app._refresh()
+        return app
+
+    @staticmethod
+    def click(app, position=0):
+        row = dict(app.window.findings[position])
+        app.window.drive_select_row(position)
+        return row
+
+    def test_selecting_a_finding_fills_the_pane(self, app, model_with_a_changed_view):
+        self.show(app, model_with_a_changed_view)
+        row = self.click(app)
+        assert app.window.status_is_error is False, app.window.status_message
+        assert len(app.window.selected_deltas) == 1
+        assert row["path"] in app.window.selected_heading
+        assert row["target"] in app.window.selected_heading
+
+    def test_every_delta_row_carries_every_field(self, app, model_with_a_changed_view):
+        self.show(app, model_with_a_changed_view)
+        self.click(app)
+        assert set(dict(app.window.selected_deltas[0])) == {
+            "attribute",
+            "master",
+            "target",
+            "severity",
+            "note",
+            "is_body",
+        }
+
+    def test_a_body_finding_fills_the_diff(self, app, model_with_a_changed_view):
+        self.show(app, model_with_a_changed_view)
+        self.click(app)
+        kinds = {dict(r)["kind"] for r in app.window.selected_diff}
+        assert {"added", "removed"} <= kinds
+        assert app.window.results_diff_count() == len(app.window.selected_diff)
+
+    def test_the_click_resolves_the_identity_under_the_live_filter(
+        self, app, model_with_two_findings
+    ):
+        self.show(app, model_with_two_findings)
+        app.window.drive_type_filter("second")
+        assert [r["path"] for r in rows(app.window.findings)] == ["public.second"]
+        self.click(app, 0)
+        assert "public.second" in app.window.selected_heading
+        assert "y" in [dict(r)["text"] for r in app.window.selected_diff]
+
+    def test_changing_the_filter_clears_the_pane(self, app, model_with_two_findings):
+        self.show(app, model_with_two_findings)
+        self.click(app, 1)
+        assert app.window.selected_heading
+        app.window.drive_type_filter("nomatch")
+        assert app.window.selected_heading == ""
+        assert len(app.window.selected_deltas) == 0
+        assert len(app.window.selected_diff) == 0
+
+    def test_toggling_a_severity_clears_the_pane(self, app, model_with_a_changed_view):
+        self.show(app, model_with_a_changed_view)
+        self.click(app)
+        app.window.drive_toggle_info(False)
+        assert app.window.selected_heading == ""
+        assert len(app.window.selected_deltas) == 0
+
+    def test_a_new_run_clears_the_pane(self, app, model_with_a_changed_view):
+        self.show(app, model_with_a_changed_view)
+        self.click(app)
+        app.results = None
+        app._refresh()
+        assert app.window.selected_heading == ""
+        assert len(app.window.selected_diff) == 0
+
+    def test_selecting_before_a_run_is_harmless(self, app):
+        app.select_finding("qa", "view", "public.v")
+        assert len(app.window.selected_deltas) == 0
+        assert app.window.selected_heading == ""
+
+    def test_an_identity_the_live_filter_hides_leaves_an_empty_pane(
+        self, app, model_with_two_findings
+    ):
+        self.show(app, model_with_two_findings)
+        app.window.filter_text = "second"
+        app.select_finding("qa", "view", "public.first")
+        assert app.window.selected_heading == ""
+        app.window.filter_text = ""
+        app.window.show_error = False
+        app.select_finding("qa", "view", "public.first")
+        assert app.window.selected_heading == ""
+
+    def test_an_unknown_identity_leaves_an_empty_pane(self, app, model_with_a_changed_view):
+        self.show(app, model_with_a_changed_view)
+        app.select_finding("nope", "view", "public.v_open")
+        assert app.window.selected_heading == ""
+        assert len(app.window.selected_deltas) == 0
+
+    def test_a_partial_row_becomes_a_status_error_not_a_crash(
+        self, app, model_with_a_changed_view, monkeypatch
+    ):
+        self.show(app, model_with_a_changed_view)
+        real = type(app.results).delta_rows
+
+        def partial(self_, *args, **kwargs):
+            return [
+                {k: v for k, v in r.items() if k != "note"} for r in real(self_, *args, **kwargs)
+            ]
+
+        monkeypatch.setattr(type(app.results), "delta_rows", partial)
+        self.click(app)
+        assert app.window.status_is_error is True
+        assert "note" in app.window.status_message
+        assert len(app.window.selected_deltas) == 0
+
+    def test_a_partial_diff_row_is_surfaced_too(self, app, model_with_a_changed_view, monkeypatch):
+        self.show(app, model_with_a_changed_view)
+        real = type(app.results).diff_rows
+
+        def partial(self_, *args, **kwargs):
+            return [
+                {k: v for k, v in r.items() if k != "kind"} for r in real(self_, *args, **kwargs)
+            ]
+
+        monkeypatch.setattr(type(app.results), "diff_rows", partial)
+        self.click(app)
+        assert app.window.status_is_error is True
+        assert "kind" in app.window.status_message
+
+    def test_no_secret_reaches_the_detail_pane(self, app):
+        from cumo_schema_comparer.model.keys import column_key
+
+        from .conftest import _model, delta, differing
+
+        model = _model(
+            differing(
+                column_key("public", "t", "c"),
+                delta("column.default", "'***:ab12cd34'", "'***:ee00ff11'"),
+            )
+        )
+        self.show(app, model)
+        self.click(app)
+        blob = "".join(str(dict(r)) for r in app.window.selected_deltas)
+        assert "s3cret" not in blob
+        assert "***:" in blob
+
+
 class TestEntryPoint:
     def test_run_returns_one_when_the_window_cannot_be_built(self):
         with mock.patch.object(app_module, "Application", side_effect=RuntimeError("no display")):

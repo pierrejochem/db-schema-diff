@@ -58,7 +58,7 @@ from .config_vm import ConfigDocument
 from .credentials import CredentialStatus, CredentialStore
 from .errors import GuiError
 from .ignores_vm import IgnoresDocument
-from .results_vm import ResultsModel
+from .results_vm import ResultsModel, checked_delta_rows, checked_diff_rows
 from .session import ProgressEvent, Session, SourceState
 
 log = logging.getLogger(__name__)
@@ -356,6 +356,7 @@ class Application:
         if results is None:
             window.findings = slint.ListModel([])
             window.total_findings = 0
+            self._clear_selection()
             return
         shown = results.finding_rows(needle=str(window.filter_text), severities=self._severities())
         window.findings = slint.ListModel([_finding_row(row) for row in shown])
@@ -474,6 +475,7 @@ class Application:
         window.write_reports = self._guard(self._write_reports)
         window.open_html = self._guard(self._open_html)
         window.filter_changed = self._guard(self._filter_changed)
+        window.select_finding = self._guard(self._select_finding)
 
     # -- the Config tab ----------------------------------------------------------------------
 
@@ -925,7 +927,50 @@ class Application:
     # -- the Results tab ---------------------------------------------------------------------
 
     def _filter_changed(self) -> None:
+        # The detail pane describes a finding chosen under the previous filter. Identity makes it
+        # impossible to show the wrong one; clearing keeps it from showing a stale one.
+        self._clear_selection()
         self._refresh_results()
+
+    def select_finding(self, target: str, kind: str, path: str) -> None:
+        """Show the detail of the finding named ``(target, kind, path)``."""
+        self._guard(self._select_finding)(target, kind, path)
+
+    def _select_finding(self, target: str, kind: str, path: str) -> None:
+        """Fill the detail pane for one finding, named by identity and not by position.
+
+        An index into the filtered rows only means something under the exact filter state it was
+        clicked under, and a reorder once showed one finding's diff under another's heading.
+        ``(target, path)`` was not enough either: ``ObjectKey.path`` omits the kind, so a column,
+        a constraint and a trigger can share one. The live filter state is passed through because
+        the view model resolves the identity against the filtered list.
+
+        The models are assigned only through ``checked_delta_rows`` / ``checked_diff_rows``. Slint
+        accepts a row dict with a key missing and then aborts the process at the next repaint
+        (exit 134, no Python exception); the validator raises a ``GuiError`` instead, which the
+        guard turns into the status line.
+        """
+        target, kind, path = str(target), str(kind), str(path)
+        results = self.results
+        if results is None:
+            self._clear_selection()
+            return
+        needle, severities = str(self.window.filter_text), self._severities()
+        deltas = results.delta_rows(target, kind, path, needle=needle, severities=severities)
+        diff = results.diff_rows(target, kind, path, needle=needle, severities=severities)
+        if not deltas:
+            self._clear_selection()
+            return
+        deltas_checked = checked_delta_rows(deltas)
+        diff_checked = checked_diff_rows(diff)
+        self.window.selected_heading = _one_line(f"{kind} {path} on {target}")
+        self.window.selected_deltas = slint.ListModel(deltas_checked)
+        self.window.selected_diff = slint.ListModel(diff_checked)
+
+    def _clear_selection(self) -> None:
+        self.window.selected_heading = ""
+        self.window.selected_deltas = slint.ListModel([])
+        self.window.selected_diff = slint.ListModel([])
 
     def _results(self) -> ResultsModel:
         results = self.results
