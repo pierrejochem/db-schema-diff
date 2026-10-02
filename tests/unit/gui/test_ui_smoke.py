@@ -859,11 +859,36 @@ def test_the_window_wires_the_detail_models_into_the_results_tab(window):
     assert window.results_diff_count() == 3
 
 
-def test_the_heading_reaches_the_tab(window):
-    # No read-back of the tab's own text exists, so check the markup binds it.
-    source = (UI / "main.slint").read_text()
-    assert "selected-heading: root.selected-heading;" in source
-    assert "root.selected-heading" in (UI / "results_tab.slint").read_text()
+def test_the_heading_reaches_the_rendered_pane(window):
+    assert window.results_heading_shown() == "Select a finding to see its detail."
+    window.selected_heading = "qa / column / public.t.x"
+    assert window.results_heading_shown() == "qa / column / public.t.x"
+
+
+def groups(window, attributes):
+    window.selected_diff = slint.ListModel([make_diff_line(attribute=a) for a in attributes])
+    return [window.results_starts_group(i) for i in range(len(attributes))]
+
+
+def test_a_group_label_appears_once_per_run_of_equal_attributes(window):
+    assert groups(window, ["a", "a", "b", "b", "b", "c"]) == [True, False, True, False, False, True]
+
+
+def test_the_first_line_opens_a_group_and_a_lone_run_has_one_label(window):
+    assert groups(window, ["a"]) == [True]
+    assert groups(window, ["a", "a", "a"]) == [True, False, False]
+
+
+def test_the_markup_labels_lines_through_starts_group_only():
+    # The label's `if` is pinned by text; what starts-group answers is driven above.
+    assert "if root.starts-group(i): Text {" in (UI / "results_tab.slint").read_text()
+
+
+def test_the_validator_field_lists_match_the_structs():
+    from cumo_schema_comparer.gui.results_vm import DELTA_ROW_FIELDS, DIFF_ROW_FIELDS
+
+    assert set(DELTA_ROW_FIELDS) == declared_fields("DeltaRow")
+    assert set(DIFF_ROW_FIELDS) == declared_fields("DiffLine")
 
 
 def colour_of(window, kind):

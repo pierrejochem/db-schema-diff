@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,11 @@ HTML_NAME = "report.html"
 
 #: Same sentence the console and the HTML report use for a partial comparison.
 INCOMPLETE = "At least one source could not be inspected, so this comparison is incomplete."
+
+#: Fields of the ``DeltaRow`` and ``DiffLine`` structs in ``ui/results_tab.slint``. A test compares
+#: them with the structs, so they cannot drift from the markup.
+DELTA_ROW_FIELDS = ("attribute", "master", "target", "severity", "note", "is_body")
+DIFF_ROW_FIELDS = ("attribute", "kind", "text")
 
 _SEVERITIES = (Severity.ERROR, Severity.WARNING, Severity.INFO)
 
@@ -340,3 +346,31 @@ def _changelog_lines(target: TargetDiff, changelog: ChangelogDiff) -> list[str]:
         lines.append(f"! {failed.id} by {failed.author}: recorded as FAILED{suffix}")
     lines.extend(f"note: {note}" for note in changelog.notes)
     return lines
+
+
+def checked_rows(
+    rows: Sequence[Mapping[str, Any]], fields: tuple[str, ...], what: str
+) -> list[Mapping[str, Any]]:
+    """Return ``rows`` unchanged after proving every one carries every field of its struct.
+
+    Assign a Slint model only from rows that went through here. Slint accepts a row dict with a
+    key missing and then dies later, at ``show()`` or the next repaint, with no Python exception:
+    ``panicked at internal/core/rtti.rs:260: binding was of the wrong type: ()``, process exit
+    code 134. The window simply vanishes, far from its cause. A missing ``DiffLine.kind`` is
+    quieter and no better: accepted, and drawn as context. Do not remove this as paranoid.
+    Wrong types and extra keys already raise ``ValueError`` in the binding, so only presence is
+    checked.
+    """
+    for index, row in enumerate(rows):
+        for name in fields:
+            if name not in row:
+                raise GuiError(f"{what} row {index} is missing the field '{name}'")
+    return list(rows)
+
+
+def checked_delta_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return checked_rows(rows, DELTA_ROW_FIELDS, "delta")
+
+
+def checked_diff_rows(rows: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return checked_rows(rows, DIFF_ROW_FIELDS, "diff")

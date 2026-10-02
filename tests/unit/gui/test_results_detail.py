@@ -296,3 +296,48 @@ class TestKindsSharingAPath:
                 for row in model.finding_rows(**filters):
                     got = model.delta_rows(row.target, row.kind, row.path, **filters)
                     assert [d["attribute"] for d in got] != []
+
+
+# --- The row guard: a missing key aborts the process in Slint, so Python rejects it first. ---
+
+import pytest as _pytest  # noqa: E402
+
+from cumo_schema_comparer.gui.errors import GuiError as _GuiError  # noqa: E402
+from cumo_schema_comparer.gui.results_vm import (  # noqa: E402
+    DELTA_ROW_FIELDS,
+    DIFF_ROW_FIELDS,
+    checked_delta_rows,
+    checked_diff_rows,
+)
+
+_GUARDS = [
+    (checked_delta_rows, DELTA_ROW_FIELDS),
+    (checked_diff_rows, DIFF_ROW_FIELDS),
+]
+
+
+def _full(fields):
+    return {name: ("" if name != "is_body" else False) for name in fields}
+
+
+@_pytest.mark.parametrize(("guard", "fields"), _GUARDS)
+def test_a_complete_row_passes_and_an_empty_sequence_passes(guard, fields):
+    assert guard([_full(fields), _full(fields)]) == [_full(fields), _full(fields)]
+    assert guard([]) == []
+
+
+@_pytest.mark.parametrize(("guard", "fields"), _GUARDS)
+def test_each_missing_field_raises_naming_field_and_row(guard, fields):
+    for name in fields:
+        broken = _full(fields)
+        del broken[name]
+        with _pytest.raises(_GuiError) as caught:
+            guard([_full(fields), broken])
+        assert f"'{name}'" in str(caught.value)
+        assert "row 1" in str(caught.value)
+
+
+@_pytest.mark.parametrize(("guard", "fields"), _GUARDS)
+def test_an_empty_dict_raises(guard, fields):
+    with _pytest.raises(_GuiError):
+        guard([{}])

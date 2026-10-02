@@ -131,6 +131,13 @@ export component ResultsTab inherits ScrollView {
             : kind == "hunk" || kind == "elided" ? Palette.muted
             : Palette.body;
     }
+    // A diff line opens a group when its attribute differs from the line before it. The pane
+    // relies on the view model emitting rows grouped by attribute: for a, b, a it labels all three.
+    pure public function starts-group(index: int) -> bool {
+        return index == 0 || root.selected-diff[index].attribute
+            != root.selected-diff[index - 1].attribute;
+    }
+    out property <string> heading-shown: heading-text.text;
     pure public function diff-colour-for(kind: string) -> color { return root.diff-colour(kind); }
 
     // A report exists to write only for a finished run that produced one. A cancelled run, a run
@@ -265,7 +272,7 @@ export component ResultsTab inherits ScrollView {
             title: "Detail";
             VerticalLayout {
                 spacing: 6px;
-                Text {
+                heading-text := Text {
                     text: root.selected-heading == "" ? "Select a finding to see its detail."
                         : root.selected-heading;
                     font-weight: 700;
@@ -295,7 +302,7 @@ export component ResultsTab inherits ScrollView {
                     VerticalLayout {
                         alignment: start;
                         for line[i] in root.selected-diff: VerticalLayout {
-                            if i == 0 || line.attribute != root.selected-diff[i - 1].attribute: Text {
+                            if root.starts-group(i): Text {
                                 text: line.attribute;
                                 font-weight: 700;
                                 color: Palette.body;

@@ -116,6 +116,10 @@ export component MainWindow inherits Window {
     public function results-diff-pane-width() -> length { return results-tab.diff-pane-width; }
     public function results-diff-pane-height() -> length { return results-tab.diff-pane-height; }
     public function results-tab-min-width() -> length { return results-tab.tab-min-width; }
+    pure public function results-starts-group(index: int) -> bool {
+        return results-tab.starts-group(index);
+    }
+    public function results-heading-shown() -> string { return results-tab.heading-shown; }
     public function drive-select-row(index: int) { results-tab.choose-row(index); }
     public function run-start-enabled() -> bool { return run-tab.start-enabled; }
     public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
