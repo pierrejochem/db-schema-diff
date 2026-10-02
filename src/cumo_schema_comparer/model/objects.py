@@ -427,6 +427,10 @@ class Routine:
     ``None`` in an inventory written at schema version 1, which had only the hash. Excluded from
     equality: it is derived from the same source as :attr:`body_hash`, which is what decides
     whether two routines match, and a version 1 capture (``None``) must still equal a fresh one.
+
+    Comparison falls back to :attr:`body_hash`: the hash alone decides whether a routine differs.
+    The text is only shown, when the hashes differ and both sides have a body; otherwise the
+    hashes are shown.
     """
 
     body_hash: str | None = None

@@ -48,7 +48,9 @@ def test_the_hash_is_still_kept():
 
 
 def test_the_body_round_trips_through_json():
-    restored = Inventory.from_json_dict(inventory_with(a_routine()).to_json_dict())
+    payload = inventory_with(a_routine()).to_json_dict()
+    assert payload["objects"][0]["attributes"]["body"] == BODY  # written, not just restored
+    restored = Inventory.from_json_dict(payload)
     only = next(iter(restored.objects.values()))
     assert only.body == BODY
 
