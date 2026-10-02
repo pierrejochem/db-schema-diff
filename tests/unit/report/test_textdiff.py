@@ -61,6 +61,15 @@ class TestOrdinaryChange:
         assert len(wide) > 0
         assert len(narrow) > 0
 
+    def test_the_default_context_is_three_lines(self):
+        # Pinned because it is what every caller gets: neither the HTML report nor the GUI passes
+        # `context`, so changing this default silently changes every rendered diff. Dropping it to
+        # 1 passed all 187 report and detail tests.
+        import inspect
+
+        assert inspect.signature(unified).parameters["context"].default == 3
+        assert unified(BEFORE, AFTER) == unified(BEFORE, AFTER, context=3)
+
 
 class TestOneSideMissing:
     def test_a_body_only_on_the_master_is_wholly_removed(self):

@@ -18,7 +18,7 @@ from cumo_schema_comparer.build import (
     masked_fields,
     redact_inventory,
 )
-from cumo_schema_comparer.cli import cli
+from cumo_schema_comparer.cli import cli, compare_command, inventory_command
 from cumo_schema_comparer.config.model import SourceRef
 from cumo_schema_comparer.diff.attributes import SPECS
 from cumo_schema_comparer.model.keys import ObjectKey
@@ -208,6 +208,20 @@ def test_a_routine_config_setting_is_masked():
 def test_redact_literals_defaults_to_on_everywhere():
     for fn in (build_inventory, runner.capture, runner.capture_all, runner.compare):
         assert inspect.signature(fn).parameters["redact_literals"].default is True, fn.__name__
+
+
+def test_both_click_options_default_to_on():
+    """The CLI half of the same guarantee, and the half nothing on this machine could see.
+
+    Flipping both click defaults to ``False`` left ``.venv`` at 1461 passed; only the Docker-gated
+    integration suite failed. That is the gap class already closed once for the library defaults
+    above: security wiring guarded only by a suite that needs Docker breaks quietly on a machine
+    without it, and the flip is a one-character edit.
+    """
+    for command in (compare_command, inventory_command):
+        (option,) = [p for p in command.params if p.name == "redact_literals"]
+        assert option.default is True, command.name
+        assert option.secondary_opts == ["--no-redact-literals"], command.name
 
 
 class _FakeIntrospector:

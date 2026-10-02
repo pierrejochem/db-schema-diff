@@ -1202,3 +1202,26 @@ class TestCheckConnection:
         subject, _ = session()
         with pytest.raises(GuiError, match="staging"):
             await subject.check_connection("staging")
+
+
+class TestCaptureIsAlwaysRedacted:
+    """The GUI has no opt-out, and nothing used to hold it to that.
+
+    Flipping ``redact_literals=True`` to ``False`` in ``session.py`` passed all 616 GUI tests, the
+    full suite and the integration suite. What the GUI shows is meant to be shareable — a reader
+    screenshots the detail pane — so the keyword itself is the assertion.
+    """
+
+    @pytest.mark.asyncio
+    async def test_every_capture_asks_the_runner_to_redact_literals(self):
+        seen: list[Any] = []
+
+        def capture(source, *args, **kwargs):
+            seen.append(kwargs.get("redact_literals", "not passed"))
+            return ok_capture(source.label)
+
+        subject, _ = session()
+        with mock.patch(CAPTURE, side_effect=capture):
+            await subject.compare()
+
+        assert seen == [True] * len(LABELS), seen
