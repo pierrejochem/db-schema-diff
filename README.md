@@ -353,6 +353,25 @@ texts. A missing or extra object has no attributes to differ, and the pane says 
 blank. Changing the filter or a severity toggle, or starting a new run, clears the pane. The pane
 shows the same masked text as the reports.
 
+### What a comparison is doing
+
+**Start comparison** opens a modal dialog that says what is being compared before it starts and
+fills in a checklist as it runs. The top half is read from the configuration — each source with its
+host, database, schemas and schema map, the gate, the per-run flags, the ruleset, the baseline — so
+a report that comes back clean can be told from a report of the wrong thing. The bottom half is one
+row per source and one per catalog step inside it (tables, columns, constraints, indexes, views,
+sequences, routines, triggers, types, extensions, then the Liquibase changelog), each showing what
+it found, followed by the diff and the report build. Those last two are otherwise invisible: a
+large comparison looks finished when the last source is captured, and then sits there.
+
+Cancel is in the dialog, because a modal that hid the only way to stop a long run would be worse
+than no dialog. When the run ends the dialog stays, with the verdict and a button to the results —
+the log is the point, so it is not thrown away at the moment it becomes worth reading. A source
+that never connects reports no steps, and its rows are marked skipped rather than left pending.
+
+Nothing in the dialog is a secret: every line of the inputs block is a value the config file holds,
+and a source with no host is described by the name of the variable its credential comes from.
+
 A cancelled comparison produces no report and says so: the Results banner is only ever green for a
 finished run that found nothing. Cancelling stops sources that have not started, but a capture
 already connected is abandoned rather than interrupted — PostgreSQL work in flight ends on its own

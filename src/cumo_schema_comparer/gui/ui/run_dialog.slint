@@ -1,0 +1,222 @@
+// What is being compared, and how far it has got, over everything else.
+//
+// A comparison reads two or more databases and prints a verdict. Without this the only visible
+// account of what it actually looked at was a per-source list of three states, so a report that
+// came back clean could not be told from a report that compared the wrong thing — the wrong
+// schemas, the wrong gate, a ruleset suppressing the finding you were looking for.
+//
+// Two halves. The top states the run's inputs, written once before anything starts, from the
+// configuration: every value here is in the YAML, so none of it is a secret and no connection
+// string is assembled to show it. The bottom is a checklist filled in as the run proceeds.
+//
+// Modal, by the same reasoning as TunnelDialog: Slint has no modal of its own, so this is a scrim
+// that takes every click with a card above it. Cancel lives in the footer, because a modal that
+// hid the only way to stop a long run would be worse than no dialog at all.
+
+import { Button, ScrollView } from "std-widgets.slint";
+import { Tokens } from "tokens.slint";
+
+// One line of the inputs block: what it is, and what it is set to.
+export struct RunInput {
+    label: string,
+    value: string,
+    // Indents a value that belongs to the line above it, so a source's schemas read as part of
+    // that source rather than as another setting.
+    nested: bool,
+}
+
+// One line of the checklist. A persistent row rather than an appended log line: ten steps per
+// source arrive within milliseconds on a fast database, and a scrolling log of that is unreadable.
+export struct RunStep {
+    label: string,
+    // pending | running | ok | failed | skipped
+    state: string,
+    detail: string,
+    // A step inside a source's capture, indented under it.
+    nested: bool,
+}
+
+component InputRow inherits HorizontalLayout {
+    in property <RunInput> data;
+
+    spacing: Tokens.space-3;
+
+    Text {
+        text: root.data.nested ? "" : root.data.label;
+        width: 92px;
+        font-size: Tokens.text-small;
+        font-weight: Tokens.weight-bold;
+        color: Tokens.muted;
+        overflow: elide;
+    }
+    Text {
+        text: root.data.value;
+        font-family: Tokens.family-mono;
+        font-size: Tokens.text-small;
+        color: root.data.nested ? Tokens.muted : Tokens.heading;
+        wrap: word-wrap;
+    }
+}
+
+component StepRow inherits HorizontalLayout {
+    in property <RunStep> step;
+
+    spacing: Tokens.space-3;
+
+    Rectangle { width: root.step.nested ? Tokens.space-4 : 0px; }
+    Text {
+        // A glyph rather than a colour alone: the states have to be told apart without relying on
+        // seeing colour at all.
+        text: root.step.state == "ok" ? "✓"
+            : root.step.state == "failed" ? "✕"
+            : root.step.state == "running" ? "…"
+            : root.step.state == "skipped" ? "–"
+            : "·";
+        width: Tokens.space-4;
+        horizontal-alignment: center;
+        font-weight: Tokens.weight-bold;
+        color: root.step.state == "ok" ? Tokens.success
+            : root.step.state == "failed" ? Tokens.danger
+            : root.step.state == "running" ? Tokens.info
+            : Tokens.muted;
+    }
+    Text {
+        text: root.step.label;
+        font-size: root.step.nested ? Tokens.text-small : Tokens.text-body;
+        font-weight: root.step.state == "running" ? Tokens.weight-bold : Tokens.weight-regular;
+        color: root.step.state == "pending" ? Tokens.muted : Tokens.heading;
+    }
+    Rectangle { }
+    Text {
+        text: root.step.detail;
+        font-family: Tokens.family-mono;
+        font-size: Tokens.text-small;
+        color: root.step.state == "failed" ? Tokens.danger : Tokens.muted;
+        horizontal-alignment: right;
+        overflow: elide;
+    }
+}
+
+export component RunDialog inherits Rectangle {
+    in property <bool> open;
+    in property <string> title;
+    in property <[RunInput]> inputs;
+    in property <[RunStep]> steps;
+    in property <bool> busy;
+    in property <string> summary;
+    // The verdict's own level: "ok", a severity label ("error", "warning", "info"), or
+    // "cancelled". Info-level drift is not a failure, so it reads as caution rather than danger.
+    in property <string> summary-level;
+    callback cancel();
+    callback close();
+    callback show-results();
+
+    out property <int> input-count: root.inputs.length;
+    out property <int> step-count: root.steps.length;
+
+    visible: root.open;
+    background: Tokens.scrim;
+
+    // Takes every click, so nothing behind the dialog can be used while it is open.
+    TouchArea { }
+
+    Rectangle {
+        width: min(640px, parent.width - 2 * Tokens.space-5);
+        height: min(body.preferred-height, parent.height - 2 * Tokens.space-5);
+        background: Tokens.card;
+        border-radius: Tokens.radius-card;
+        border-width: Tokens.hairline-width;
+        border-color: Tokens.hairline;
+        clip: true;
+
+        body := VerticalLayout {
+            padding: Tokens.space-5;
+            spacing: Tokens.space-3;
+
+            Text {
+                text: root.title;
+                font-family: Tokens.family-display;
+                font-size: Tokens.text-lead;
+                font-weight: Tokens.weight-bold;
+                letter-spacing: Tokens.tracking-tight;
+                color: Tokens.heading;
+            }
+
+            Text {
+                text: "WHAT IS BEING COMPARED";
+                font-size: Tokens.text-eyebrow;
+                font-weight: Tokens.weight-bold;
+                letter-spacing: Tokens.tracking-caps;
+                color: Tokens.muted;
+            }
+            VerticalLayout {
+                spacing: Tokens.space-1;
+                for row in root.inputs: InputRow { data: row; }
+            }
+
+            Rectangle { height: Tokens.hairline-width; background: Tokens.hairline; }
+
+            Text {
+                text: "PROGRESS";
+                font-size: Tokens.text-eyebrow;
+                font-weight: Tokens.weight-bold;
+                letter-spacing: Tokens.tracking-caps;
+                color: Tokens.muted;
+            }
+            // Scrolled, because the checklist is one row per source plus one per step within it:
+            // three sources is over thirty rows, which is taller than a dialog should be.
+            ScrollView {
+                // A fixed height, so the dialog does not resize itself as rows arrive — a card
+                // that grows under the pointer is a card whose Cancel button moves.
+                height: 240px;
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    alignment: start;
+                    for step in root.steps: StepRow { step: step; }
+                }
+            }
+
+            Rectangle {
+                height: root.summary == "" ? 0px : verdict.preferred-height + Tokens.space-3;
+                border-radius: Tokens.radius-subtle;
+                background: root.summary-level == "ok" ? Tokens.success-surface
+                    : (root.summary-level == "warning" || root.summary-level == "info")
+                        ? Tokens.caution-surface
+                    : Tokens.danger-surface;
+                verdict := Text {
+                    x: Tokens.space-3;
+                    width: parent.width - 2 * Tokens.space-3;
+                    y: Tokens.space-1;
+                    text: root.summary;
+                    font-size: Tokens.text-body;
+                    font-weight: Tokens.weight-bold;
+                    color: root.summary-level == "ok" ? Tokens.success
+                        : (root.summary-level == "warning" || root.summary-level == "info")
+                            ? Tokens.caution
+                        : Tokens.danger;
+                    wrap: word-wrap;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+                Rectangle { }
+                // While it runs there is one thing to offer, and it is the way out of a long run.
+                if root.busy: Button {
+                    text: "Cancel";
+                    clicked => { root.cancel(); }
+                }
+                if !root.busy: Button {
+                    text: "Close";
+                    clicked => { root.close(); }
+                }
+                // The log is the transparency, so it stays until dismissed; this is the way on.
+                if !root.busy: Button {
+                    text: "Show results";
+                    primary: true;
+                    clicked => { root.show-results(); }
+                }
+            }
+        }
+    }
+}

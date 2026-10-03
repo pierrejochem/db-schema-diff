@@ -1227,6 +1227,101 @@ class TestCaptureIsAlwaysRedacted:
         assert seen == [True] * len(LABELS), seen
 
 
+class TestRunDetails:
+    """The verbose stream the run dialog is built from.
+
+    Separate from ``on_progress`` on purpose: a capture reports ten steps, and sending those down
+    the per-source channel would grow the Run tab's list by a row per object kind.
+    """
+
+    def built(self):
+        from cumo_schema_comparer.gui.session import RunDetail
+
+        details: list[RunDetail] = []
+        built = Session(CONFIG, store(), on_progress=[].append, on_detail=details.append)
+        return built, details
+
+    @pytest.mark.asyncio
+    async def test_each_capture_step_is_reported_with_what_it_found(self, monkeypatch):
+        from cumo_schema_comparer.gui import session as session_module
+        from cumo_schema_comparer.gui.session import CAPTURE_PHASE
+
+        def fake_capture(source, dsn, *, observer=None, **kwargs):
+            observer("tables", 7)
+            observer("columns", 41)
+            return ok_capture(source.label)
+
+        monkeypatch.setattr(session_module.runner, "capture", fake_capture)
+        built, details = self.built()
+        await built.compare()
+        await asyncio.sleep(0.05)  # the reports are queued on the loop, not run on the spot
+
+        steps = [(d.source, d.step, d.count) for d in details if d.phase == CAPTURE_PHASE]
+        assert ("prod", "tables", 7) in steps
+        assert ("prod", "columns", 41) in steps
+        assert {label for label, _, _ in steps} == {"prod", "qa", "dev"}
+
+    @pytest.mark.asyncio
+    async def test_the_steps_reach_the_window_on_the_loop_thread(self, monkeypatch):
+        """Slint values are pyo3 ``unsendable``: touching one from a worker aborts the process
+        rather than raising. A capture runs in an executor, so every step is a cross-thread call."""
+        from cumo_schema_comparer.gui import session as session_module
+
+        loop_thread = threading.get_ident()
+        seen: list[int] = []
+
+        def fake_capture(source, dsn, *, observer=None, **kwargs):
+            assert threading.get_ident() != loop_thread, "the capture should be off the loop"
+            observer("tables", 1)
+            return ok_capture(source.label)
+
+        monkeypatch.setattr(session_module.runner, "capture", fake_capture)
+        built = Session(CONFIG, store(), on_detail=lambda _: seen.append(threading.get_ident()))
+        await built.compare()
+        await asyncio.sleep(0.05)
+
+        assert seen, "no step was ever reported"
+        assert set(seen) == {loop_thread}, "a step reached the window from a worker thread"
+
+    @pytest.mark.asyncio
+    async def test_the_diff_and_the_report_are_phases_of_their_own(self, monkeypatch):
+        """Both are invisible otherwise: a large comparison looks finished when the last source is
+        captured, and then sits there."""
+        from cumo_schema_comparer.gui import session as session_module
+        from cumo_schema_comparer.gui.session import COMPARE_PHASE, REPORT_PHASE
+
+        monkeypatch.setattr(session_module.runner, "capture", succeed)
+        built, details = self.built()
+        await built.compare()
+
+        phases = [d.phase for d in details]
+        assert COMPARE_PHASE in phases
+        assert REPORT_PHASE in phases
+        assert phases.index(COMPARE_PHASE) < phases.index(REPORT_PHASE)
+
+    @pytest.mark.asyncio
+    async def test_a_consumer_that_raises_does_not_fail_the_comparison(self, monkeypatch):
+        """Same contract as ``on_progress``: a broken progress display is not a failed run."""
+        from cumo_schema_comparer.gui import session as session_module
+
+        monkeypatch.setattr(session_module.runner, "capture", succeed)
+
+        def explode(_):
+            raise RuntimeError("the dialog is broken")
+
+        built = Session(CONFIG, store(), on_detail=explode)
+        report = await built.compare()
+        assert report is not None
+
+    @pytest.mark.asyncio
+    async def test_no_detail_consumer_is_fine(self, monkeypatch):
+        from cumo_schema_comparer.gui import session as session_module
+
+        monkeypatch.setattr(session_module.runner, "capture", succeed)
+        built, _ = session()
+        assert await built.compare() is not None
+
+
 class TestTunnelStepsCrossThreadsSafely:
     """Slint values are pyo3 `unsendable`: touching one from another thread does not raise, it
     aborts the process. paramiko is synchronous, so the probe runs in an executor — which makes

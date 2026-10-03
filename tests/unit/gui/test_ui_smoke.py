@@ -52,6 +52,8 @@ PROPERTIES = [
 CALLBACKS = {
     "source_changed": ("prod", "dsn_env", "PROD_DSN"),
     "config_changed": ("max_workers", "9"),
+    "close_run_dialog": (),
+    "show_run_results": (),
     "add_target": (),
     "remove_target": ("qa",),
     "check_connection": ("qa",),
@@ -364,6 +366,70 @@ def test_every_tab_list_property_exists_and_starts_empty(window, name):
 def declared_fields(struct_name):
     loaded = slint.load_file(str(UI / "main.slint"))
     return {k.replace("-", "_") for k in dict(getattr(loaded, struct_name)())}
+
+
+RUN_STEP_FIELDS = ["label", "state", "detail", "nested"]
+RUN_INPUT_FIELDS = ["label", "value", "nested"]
+
+
+def test_run_step_declares_exactly_the_expected_fields():
+    # Slint accepts a partial row dict and then dies at repaint, so the field list is load-bearing.
+    assert declared_fields("RunStep") == set(RUN_STEP_FIELDS)
+
+
+def test_run_input_declares_exactly_the_expected_fields():
+    assert declared_fields("RunInput") == set(RUN_INPUT_FIELDS)
+
+
+def test_the_run_dialog_rows_round_trip(window):
+    import slint
+
+    step = {"label": "tables", "state": "ok", "detail": "412", "nested": True}
+    entry = {"label": "master", "value": "prod  db-prod/invoicing", "nested": False}
+    window.run_steps = slint.ListModel([step])
+    window.run_inputs = slint.ListModel([entry])
+    assert {k: window.run_steps[0][k] for k in RUN_STEP_FIELDS} == step
+    assert {k: window.run_inputs[0][k] for k in RUN_INPUT_FIELDS} == entry
+
+
+def test_the_run_dialog_is_wired_into_the_window(window):
+    import slint
+
+    assert window.run_dialog_open() is False
+    assert window.run_step_count() == 0
+    assert window.run_input_count() == 0
+    window.run_open = True
+    window.run_steps = slint.ListModel(
+        [{"label": "tables", "state": "pending", "detail": "", "nested": True}]
+    )
+    window.run_inputs = slint.ListModel([{"label": "name", "value": "invoicing", "nested": False}])
+    assert window.run_dialog_open() is True
+    assert window.run_step_count() == 1
+    assert window.run_input_count() == 1
+
+
+def test_the_run_dialog_is_the_last_child_so_it_covers_the_rail():
+    """A modal that leaves the rail reachable is not one: you could switch views behind it."""
+    shell = (UI / "main.slint").read_text()
+    assert shell.index("RunDialog {") > shell.index("TunnelDialog {")
+    assert shell.index("RunDialog {") > shell.index("NavItem {")
+
+
+def test_the_run_dialog_offers_a_way_out_whether_it_is_busy_or_not():
+    """Busy shows Cancel; finished shows Close. Neither state may have no button at all — that is
+    a window with a scrim over it and nothing to click."""
+    text = (UI / "run_dialog.slint").read_text()
+    for needed in (
+        "if root.busy: Button",
+        "if !root.busy: Button",
+        'text: "Cancel";',
+        'text: "Close";',
+        'text: "Show results";',
+        "root.cancel()",
+        "root.close()",
+        "root.show-results()",
+    ):
+        assert needed in text, needed
 
 
 def test_rule_row_declares_exactly_the_expected_fields():

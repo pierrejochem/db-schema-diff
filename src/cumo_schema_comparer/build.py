@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import fields as dataclass_fields
 from dataclasses import is_dataclass, replace
 from datetime import UTC, datetime
@@ -55,6 +55,26 @@ from .normalize.types import canonical_type
 log = logging.getLogger(__name__)
 
 
+#: Names of the steps a capture reports, in order. The table itself is at the foot of this module,
+#: where the converters it names have been defined.
+CAPTURE_STEP_NAMES: tuple[str, ...] = (
+    "tables",
+    "columns",
+    "constraints",
+    "indexes",
+    "views",
+    "sequences",
+    "routines",
+    "triggers",
+    "types",
+    "extensions",
+)
+
+#: The step reported for the Liquibase changelog, which is read after the catalog and only when it
+#: is not skipped. Named here so a caller can lay out the whole checklist before anything runs.
+CHANGELOG_STEP = "changelog"
+
+
 def build_inventory(
     connection: psycopg.Connection[dict[str, Any]],
     source: SourceRef,
@@ -62,12 +82,19 @@ def build_inventory(
     exclude_schemas: tuple[str, ...] = (),
     skip_liquibase: bool = False,
     redact_literals: bool = True,
+    observer: Callable[[str, int], None] | None = None,
 ) -> Inventory:
     """Capture one database as a canonical inventory.
 
     With ``redact_literals`` (the default) credential-shaped literals in definition text are masked
     here, as the inventory is built, so they never enter the in-memory model and every consumer
     inherits that. See :func:`redact_inventory`.
+
+    ``observer`` is called with each step's name and how many objects it found, as it finishes, so
+    a caller can show what is happening during a capture that takes a while. It is called on
+    whatever thread this runs on — a capture runs on a worker — so an implementation must not touch
+    anything belonging to another thread. It may not raise: a broken progress display is not a
+    reason to fail a capture, so anything it throws is logged and dropped.
     """
     features = server_features(connection)
     introspector = Introspector(connection, features)
@@ -76,20 +103,25 @@ def build_inventory(
     schemas = introspector.schemas(exclude=exclude_schemas, only=source.schemas)
     log.info("%s: inventorying %d schema(s)", source.label, len(schemas))
 
+    def report(step: str, found: int) -> None:
+        if observer is None:
+            return
+        try:
+            observer(step, found)
+        except Exception as exc:  # pragma: no cover - defended, not expected
+            log.warning("progress observer failed (%s)", type(exc).__name__)
+
     objects: dict[ObjectKey, Any] = {}
-    if schemas:
-        objects.update(_tables(introspector.relations(schemas)))
-        objects.update(_columns(introspector.columns(schemas)))
-        objects.update(_constraints(introspector.constraints(schemas)))
-        objects.update(_indexes(introspector.indexes(schemas)))
-        objects.update(_views(introspector.views(schemas)))
-        objects.update(_sequences(introspector.sequences(schemas)))
-        objects.update(_routines(introspector.routines(schemas)))
-        objects.update(_triggers(introspector.triggers(schemas)))
-        objects.update(_types(introspector.types(schemas)))
-        objects.update(_extensions(introspector.extensions()))
+    for name, query, convert in _CAPTURE_STEPS:
+        # Every step is reported, including when there are no schemas to look in: a checklist that
+        # stops halfway reads as a capture that stalled.
+        found = convert(query(introspector, schemas)) if schemas else {}
+        objects.update(found)
+        report(name, len(found))
 
     changelog = None if skip_liquibase else _changelog(introspector, source)
+    if not skip_liquibase:
+        report(CHANGELOG_STEP, 0 if changelog is None else len(changelog.rows))
 
     inventory = Inventory(source=info, schemas=tuple(schemas), objects=objects, changelog=changelog)
     return redact_inventory(inventory) if redact_literals else inventory
@@ -740,3 +772,24 @@ def _extensions(rows: list[dict[str, Any]]) -> dict[ObjectKey, Extension]:
 
 def _int_or_none(value: Any) -> int | None:
     return None if value is None else int(value)
+
+
+#: What a capture does, in order: a name for it, the catalog query, and the converter.
+#:
+#: A table rather than ten statements in a row so that each step can be announced as it finishes.
+#: The desktop application shows these as a checklist while a comparison runs, and a kind captured
+#: outside this table would be captured silently — present in the report and absent from the one
+#: place that claims to say what was looked at. ``test_capture_steps`` holds that line.
+_CAPTURE_STEPS: tuple[tuple[str, Callable[[Introspector, list[str]], Any], Any], ...] = (
+    ("tables", lambda i, s: i.relations(s), _tables),
+    ("columns", lambda i, s: i.columns(s), _columns),
+    ("constraints", lambda i, s: i.constraints(s), _constraints),
+    ("indexes", lambda i, s: i.indexes(s), _indexes),
+    ("views", lambda i, s: i.views(s), _views),
+    ("sequences", lambda i, s: i.sequences(s), _sequences),
+    ("routines", lambda i, s: i.routines(s), _routines),
+    ("triggers", lambda i, s: i.triggers(s), _triggers),
+    ("types", lambda i, s: i.types(s), _types),
+    # Extensions are per database, not per schema, so this one ignores the schema list.
+    ("extensions", lambda i, s: i.extensions(), _extensions),
+)
