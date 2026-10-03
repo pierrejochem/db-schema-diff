@@ -179,8 +179,8 @@ def write_config(tmp_path, text: str = CONFIG):
 def adopt(app: Application, path) -> Application:
     """Put a configuration into a window.
 
-    The application cannot do this itself any more — it has no Open button, takes no path on the
-    command line and reopens nothing, and `ConfigDocument` no longer reads files either. The
+    The application only ever reads its own saved file, from a path nobody chooses — it has no Open
+    button and takes no path on the command line, and `ConfigDocument` has no loader of its own. The
     harness uses the library's own loader, which the command-line tool uses and which is not part
     of the GUI, and puts the result in directly. One place touches the internals, deliberately,
     rather than keeping production code alive that only tests call.
@@ -449,11 +449,15 @@ class TestSaving:
         assert app.window.status_is_error is True
         assert (tmp_path / "invoicing.yaml").read_text() == before
 
-    def test_a_file_with_comments_says_they_were_dropped(self, tmp_path):
+    def test_saving_reports_the_path_and_nothing_else(self, tmp_path):
+        """A previous version of this test asserted ``"comment" in status_message`` after a save,
+        and passed on pytest's temp directory being named after the test — the message has only
+        ever been ``Saved <path>.``. Whether comments survive is said when the file is *read*; see
+        `TestReopeningTheSavedConfiguration`."""
         app = application(tmp_path, text="# the invoicing service\n" + CONFIG)
         app.window.save_config()
         assert app.window.status_is_error is False
-        assert "comment" in app.window.status_message
+        assert app.window.status_message == f"Saved {app.config.path}."
 
 
 def fill(app: Application, label: str, **parts: str) -> None:
@@ -1519,10 +1523,11 @@ class TestEntryPoint:
             assert app_module.run([]) == 1
 
     def test_a_path_on_the_command_line_opens_nothing_and_says_so(self, tmp_path, capsys):
-        """The application does not open configuration files at all any more.
+        """A path on the command line is still refused, and said out loud.
 
-        Silently ignoring an argument would leave someone staring at an empty window wondering
-        which file they were looking at.
+        The application reads back the one configuration it saves, and nothing else. Silently
+        ignoring a path would leave someone staring at a window wondering which file they were
+        looking at — and they would be looking at the wrong one.
         """
         path = write_config(tmp_path)
         built: list[Application] = []
@@ -1538,8 +1543,14 @@ class TestEntryPoint:
         ):
             assert app_module.run([str(path)]) == 0
 
-        assert built and built[0].config.path is None, "nothing should have been opened"
-        assert "does not open a configuration file" in capsys.readouterr().err
+        from cumo_schema_comparer.gui import home
+
+        assert built, "the window was never built"
+        assert built[0].config.path != path, "the path on the command line was opened"
+        assert built[0].config.path is None, "nothing was saved there, so nothing to reopen"
+        said = capsys.readouterr().err
+        assert "takes no arguments" in said
+        assert str(home.default_path()) in said, "it has to say which file it does use"
 
     def test_run_installs_the_real_pickers(self, tmp_path):
         """The default chooser is inert, and `run` is what makes it real.
@@ -2073,6 +2084,132 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
         assert "clear the field" in message
 
 
+class TestReopeningTheSavedConfiguration:
+    """The one file the application owns is read back when it starts.
+
+    It used to start empty every time, which was right while it had no fixed place to save to.
+    Now that it saves to one known path, not reading that path back meant the only way to see
+    yesterday's configuration was to open the YAML in an editor.
+    """
+
+    def saved(self, text: str = CONFIG) -> object:
+        """Put a configuration where the application saves, before it starts."""
+        from cumo_schema_comparer.gui import home
+
+        path = home.default_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return path
+
+    def started(self, **kwargs) -> Application:
+        return Application(environ=dict(BOTH), keychain=FakeKeychain(), **kwargs)
+
+    def test_the_saved_configuration_is_what_the_window_shows(self):
+        self.saved()
+        app = self.started()
+        assert [row["label"] for row in rows(app.window.sources)] == ["prod", "qa"]
+        assert app.window.status_is_error is False
+
+    def test_it_is_adopted_so_saving_goes_back_to_the_same_file(self):
+        from cumo_schema_comparer.gui import home
+
+        path = self.saved()
+        app = self.started()
+        assert app.config.path == path
+        app.window.source_changed("qa", "host", "db-qa.internal")
+        app.window.save_config()
+        assert app.config.path == path
+        assert "host: db-qa.internal" in home.default_path().read_text()
+
+    def test_reading_it_is_not_an_unsaved_change(self):
+        """Otherwise the window claims there is something to save before anything was touched."""
+        self.saved()
+        app = self.started()
+        assert app.config.dirty is False
+        assert app.window.dirty is False
+
+    def test_no_file_still_starts_empty_and_says_nothing(self):
+        app = self.started()
+        assert [row["label"] for row in rows(app.window.sources)] == ["prod", "qa"]
+        assert app.window.status_message == ""
+
+    def test_the_names_in_the_file_are_what_the_keychain_is_asked_for(self):
+        """The file carries ``dsn_env``, so a password stored under that name has to be found."""
+        self.saved()
+        app = Application(environ={}, keychain=FakeKeychain(QA_DSN=QA_DSN))
+        by_label_ = {row["label"]: row for row in rows(app.window.sources)}
+        assert by_label_["qa"]["has_password"] is True
+        assert by_label_["prod"]["has_password"] is False
+
+    def test_a_hand_edited_file_is_told_that_saving_drops_its_comments(self):
+        """Saving rewrites the file from the configuration rather than patching it. Said on the
+        way in, while the comments are still there to rescue."""
+        self.saved("# the invoicing service, by hand\n" + CONFIG)
+        app = self.started()
+        assert app.window.status_is_error is False
+        assert "comments" in app.window.status_message
+        assert "Save will not keep" in app.window.status_message
+        # The path cannot be what matched: the message names the file, not its directory.
+        assert "config.yaml" in app.window.status_message
+
+    def test_a_file_with_no_comments_is_not_warned_about(self):
+        self.saved()
+        app = self.started()
+        assert app.window.status_message == ""
+
+    def test_an_indented_comment_counts(self):
+        self.saved(CONFIG + "    # trailing thought\n")
+        app = self.started()
+        assert "comments" in app.window.status_message
+
+    def test_a_broken_file_leaves_a_window_that_works(self):
+        """Refusing to start would leave no way to recover from inside the application."""
+        self.saved("version: 1\nmaster: [this is not a source]\n")
+        app = self.started()
+        assert app.window.status_is_error is True
+        assert [row["label"] for row in rows(app.window.sources)] == ["prod", "qa"]
+        # And the window is usable, not merely rendered.
+        app.window.source_changed("qa", "host", "db-qa.internal")
+        assert app.window.status_is_error is False
+
+    def test_a_file_that_is_not_yaml_at_all_is_reported_the_same_way(self):
+        self.saved("}{ not yaml\n")
+        app = self.started()
+        assert app.window.status_is_error is True
+        assert "config.yaml" in app.window.status_message
+
+    def test_a_broken_file_can_be_replaced_by_saving_over_it(self):
+        """The accepted trade-off: an empty window plus Save is how you get out of a bad file."""
+        self.saved("}{ not yaml\n")
+        app = self.started()
+        app.window.save_config()
+        assert app.window.status_is_error is False
+        from cumo_schema_comparer.gui import home
+
+        assert "version: 1" in home.default_path().read_text()
+
+    def test_a_secret_in_a_broken_file_is_not_quoted_back(self):
+        """A parse error names what it choked on, and someone may have pasted a DSN into the file.
+
+        The message goes to a toast that is also written to the log, so this is the one assertion
+        worth repeating at every layer that handles a message.
+        """
+        self.saved(f"version: 1\nname: [{QA_DSN}\n")
+        app = self.started()
+        assert app.window.status_is_error is True
+        assert SECRET not in app.window.status_message
+        assert "postgresql://" not in app.window.status_message
+
+    def test_a_directory_where_the_file_should_be_is_not_a_crash(self):
+        """``~/.cumo_db_schema_comparer/config.yaml`` as a directory is somebody's bad `mkdir`."""
+        from cumo_schema_comparer.gui import home
+
+        home.default_path().mkdir(parents=True)
+        app = self.started()
+        assert [row["label"] for row in rows(app.window.sources)] == ["prod", "qa"]
+        assert app.window.status_is_error is True
+
+
 class TestTheApplicationsOwnFolder:
     """Where a configuration goes when it has none of its own, and what opens with no argument."""
 
@@ -2127,7 +2264,7 @@ class TestTheApplicationsOwnFolder:
 
 
 class TestWhatOpensOnStartUp:
-    """Nothing. The application starts empty every time and only ever saves."""
+    """One file, the one it saves to. Nothing else in that folder, and nothing from argv."""
 
     def start(self, arguments):
         """Returns the configuration path the window ended up with, which should always be none."""
@@ -2145,8 +2282,8 @@ class TestWhatOpensOnStartUp:
             assert app_module.run(arguments) == 0
         return [app.config.path for app in built if app.config.path is not None]
 
-    def test_the_folder_is_created_even_though_nothing_is_read_from_it(self, monkeypatch, tmp_path):
-        """It is still where a configuration goes, so it still has to exist."""
+    def test_the_folder_is_created_before_anything_looks_in_it(self, monkeypatch, tmp_path):
+        """It is where the configuration goes and where the reopen looks, so it has to exist."""
         from cumo_schema_comparer.gui import home
 
         target = tmp_path / "fresh"
@@ -2154,12 +2291,22 @@ class TestWhatOpensOnStartUp:
         self.start([])
         assert target.is_dir()
 
-    def test_a_configuration_sitting_in_the_folder_is_not_opened(self, monkeypatch, tmp_path):
+    def test_another_yaml_in_the_folder_is_not_opened(self, monkeypatch, tmp_path):
+        """Only ``config.yaml`` is read. There is no chooser, so a second file is not a candidate
+        — picking one by name or by mtime would make the window's contents a guess."""
         from cumo_schema_comparer.gui import home
 
         monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path))
         (tmp_path / "invoicing.yaml").write_text("version: 1\nname: x\n")
         assert self.start([]) == []
+
+    def test_the_saved_configuration_is_opened(self, monkeypatch, tmp_path):
+        from cumo_schema_comparer.gui import home
+
+        monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path))
+        saved = tmp_path / home.CONFIG_NAME
+        saved.write_text(CONFIG)
+        assert self.start([]) == [saved]
 
 
 class TestTheAboutView:
@@ -2182,7 +2329,8 @@ class TestTheAboutView:
         assert app.window.about_slint == str(getattr(slint, "__version__", "unknown"))
 
     def test_it_names_the_file_it_writes(self, app):
-        """The whole path. The window cannot open what it saved, so this is how it is found."""
+        """The whole path: it is the one file read and written, and the only thing to point an
+        editor at when a configuration needs hand-editing."""
         from cumo_schema_comparer.gui import home
 
         assert app.window.about_config_path == str(home.default_path())

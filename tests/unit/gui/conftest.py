@@ -1,9 +1,9 @@
 """Two policies for the whole GUI package: where its home directory is, and when the collector runs.
 
-The application keeps configurations in ``~/.cumo_db_schema_comparer`` and, with no argument,
-reopens the most recent one it finds there. A test that reads or writes the home directory of
-whoever is running it is a test that has already failed — it would open their real configuration,
-or leave files behind — so every test in this package is pointed at a temporary directory instead.
+The application keeps its one configuration in ``~/.cumo_db_schema_comparer`` and reads it back when
+it starts. A test that reads or writes the home directory of whoever is running it is a test that
+has already failed — it would open their real configuration, or leave files behind — so every test
+in this package is pointed at a temporary directory instead.
 
 The rest of this file is about the collector.
 

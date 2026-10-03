@@ -50,6 +50,7 @@ from typing import Any
 import slint
 
 from .. import __version__
+from ..config.loader import load_config_files
 from ..config.model import (
     ComparerConfig,
     FailOn,
@@ -262,12 +263,63 @@ class Application:
         self._verdict: tuple[str, str] = ("", "")
         self._progress: Any = slint.ListModel([])
         self._progress_index: dict[str, int] = {}
+        #: What to say about the saved configuration, and whether it is a failure. Held rather
+        #: than announced on the spot: `_refresh` runs last and would leave the toast empty.
+        notice = self._reopen()
         self._adopt_documents()
         self._describe_itself()
         self._bind()
         self._refresh()
+        if notice is not None:
+            message, is_error = notice
+            self._announce(message, is_error=is_error)
 
     # -- loading -----------------------------------------------------------------------------
+
+    def _reopen(self) -> tuple[str, bool] | None:
+        """Read back the one file this application saves.
+
+        Returns ``(message, is_error)`` for the toast, or ``None`` when there is nothing to say.
+
+        It saves to a single known path, so not reading that path back meant the only way to see
+        yesterday's configuration was to open the YAML in an editor. There is still no Open
+        button and no path on the command line: this is that one file, not a file chooser.
+
+        A file that cannot be read must not stop the window opening — refusing to start would
+        leave no way to recover from inside the application. The configuration stays blank, the
+        reason goes to a toast, and saving replaces the bad file. The loader is the library's own,
+        the one the command-line tool uses, so a file written here and a file written by hand are
+        read exactly alike.
+        """
+        path = home.default_path()
+        try:
+            if not path.exists():
+                return None
+            if not path.is_file():
+                # A directory where the file goes is somebody's stray mkdir. Saying so now beats
+                # saying it at the end of the first session, when Save is the thing that fails.
+                return f"{path.name} is not a file; starting from an empty configuration", True
+            ((_, config),) = load_config_files([path])
+        except Exception as exc:
+            # Only the type for anything unexpected: a parse error quotes the text it choked on,
+            # and somebody may have pasted a connection string into the file. `_announce`
+            # redacts what it recognises, and a ComparerError is already written for a person.
+            detail = str(exc) if isinstance(exc, ComparerError) else type(exc).__name__
+            log.warning("cannot reopen %s (%s)", path.name, type(exc).__name__)
+            return (
+                f"{path.name} could not be read ({detail}); starting from an empty configuration",
+                True,
+            )
+        self.config = ConfigDocument(path=path, config=config)
+        if _has_comments(path):
+            # Saving rewrites the file from the configuration rather than patching it, so a
+            # hand-written comment does not survive the next Save. Said on the way in, while the
+            # comments are still there to rescue — saying it afterwards would be an obituary.
+            return (
+                f"Loaded {path.name}. It has comments, which Save will not keep.",
+                False,
+            )
+        return None
 
     def _adopt_documents(self) -> None:
         """Attach the ignore ruleset that belongs to the current configuration.
@@ -288,8 +340,8 @@ class Application:
         window.about_version = __version__
         window.about_python = ".".join(str(part) for part in sys.version_info[:3])
         window.about_slint = str(getattr(slint, "__version__", "unknown"))
-        # The whole path, not the folder: it is the one file this writes, and knowing where
-        # it lands is the only way to find it again — the window cannot open it.
+        # The whole path, not the folder: it is the one file this writes and reads back, and it is
+        # the only thing to point an editor at when a configuration needs hand-editing.
         window.about_config_path = str(home.default_path())
         window.about_tunnelling = tunnelling_available()
 
@@ -1365,6 +1417,20 @@ def _unique(stem: str, taken: set[str]) -> str:
     return f"{stem}-{index}"
 
 
+def _has_comments(path: Path) -> bool:
+    """Whether a configuration file carries comment lines of its own.
+
+    A line whose first non-space character is ``#``, which is what a comment is in YAML. A ``#``
+    inside a quoted value is not one and is not looked for: this decides whether to mention that
+    Save rewrites the file, and being wrong about it costs a sentence.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:  # pragma: no cover - the loader has just read this file
+        return False
+    return any(line.lstrip().startswith("#") for line in text.splitlines())
+
+
 def _summarise(errors: Sequence[GuiError]) -> str:
     return "; ".join(f"{e.field}: {e}" if e.field else str(e) for e in errors)
 
@@ -1409,7 +1475,8 @@ def run(argv: Sequence[str] | None = None) -> int:
     try:
         # Must be off before any worker thread exists; see _show for why.
         gc.disable()
-        # Before the window, so a first run has somewhere to save to and something to reopen.
+        # Before the window, so a first run has somewhere to save to and the reopen below has a
+        # directory to look in.
         # Here rather than in the launcher: this is where the application starts, whatever started
         # it — the console script, `python -m`, or the compiled binary.
         home.ensure()
@@ -1419,9 +1486,8 @@ def run(argv: Sequence[str] | None = None) -> int:
         application.path_dialogs_available = dialogs.available
         if arguments:
             print(
-                "cumo-schema-diff-gui does not open a configuration file. "
-                "It starts empty and saves what you build into "
-                f"{home.directory()}.",
+                "cumo-schema-diff-gui takes no arguments. It reads and writes one "
+                f"configuration, {home.default_path()}.",
                 file=sys.stderr,
             )
         slint.run_event_loop(_show(application.window))
