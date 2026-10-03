@@ -18,6 +18,7 @@ process — so asyncio buys nothing here and multiprocessing would cost pickling
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -100,7 +101,11 @@ class TunnelStatus:
 
 
 def check_tunnel(
-    source: SourceRef, dsn: Dsn | None, *, ssh_passphrase: Secret | None = None
+    source: SourceRef,
+    dsn: Dsn | None,
+    *,
+    ssh_passphrase: Secret | None = None,
+    observer: Callable[[str, str, str], None] | None = None,
 ) -> TunnelStatus:
     """Test only the gateway for ``source``, without touching the database.
 
@@ -132,10 +137,18 @@ def check_tunnel(
             to_host=None if target is None else target[0],
             to_port=None if target is None else target[1],
             passphrase=ssh_passphrase,
+            observer=observer,
         )
     except ComparerError as exc:
         return TunnelStatus(label=source.label, ok=False, detail=str(exc))
     return TunnelStatus(label=source.label, ok=True, detail=detail + note)
+
+
+def describe_gateway(ssh: object) -> str:
+    """How a gateway is named on screen, from the one place that decides it."""
+    from .db.tunnel import describe
+
+    return describe(ssh)  # type: ignore[arg-type]
 
 
 def tunnelling_supported() -> bool:

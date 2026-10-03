@@ -247,6 +247,8 @@ class Application:
         self._task: asyncio.Task[None] | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._checks: dict[str, ConnectionStatus] = {}
+        #: The dialog's step rows, updated in place as the probe reports.
+        self._tunnel_steps: Any = slint.ListModel([])
         #: Which tab each source card is showing, by label. Here rather than in the markup
         #: because every refresh replaces the row model and a card's own property would be
         #: rebuilt back to zero — cancelling a file dialog would jump you to another tab.
@@ -522,6 +524,7 @@ class Application:
         window.remove_target = self._guard(self._remove_target)
         window.check_connection = self._guard(self._check_connection)
         window.test_tunnel = self._guard(self._test_tunnel)
+        window.close_tunnel_dialog = self._guard(self._close_tunnel_dialog)
         window.choose_ssh_key = self._guard(self._choose_ssh_key)
         window.select_source_tab = self._guard(self._select_source_tab)
         window.check_all = self._guard(self._check_all)
@@ -1018,35 +1021,79 @@ class Application:
         self._ssh_changed(label, "ssh_key", chosen)
         self._ok(f"Key: {chosen}")
 
+    #: The steps a gateway test goes through, in order, with what to call them on screen. Laid out
+    #: before anything runs so the dialog shows the whole shape of the test rather than growing a
+    #: line at a time.
+    _TUNNEL_STEPS = (
+        ("key", "Key"),
+        ("gateway", "Gateway"),
+        ("database", "Channel to the database"),
+    )
+
     def _test_tunnel(self, label: str) -> None:
         """The gateway's own test, separate from Check connection.
 
         A refused key and a database that is down are different problems with different fixes, and
         one message covering both sends people to the wrong field.
+
+        Opens its dialog straight away, with every step pending. The gateway can take seconds to
+        answer and a window that shows nothing until it does looks like a window that has stopped.
         """
         label = str(label)
         source = self._source(label)
         if source.ssh is None:
             raise GuiError("this source has no ssh gateway to test", field="ssh")
+
+        from .db_names import describe_gateway
+
+        window = self.window
+        window.tunnel_gateway = describe_gateway(source.ssh)
+        window.tunnel_summary = ""
+        window.tunnel_ok = False
+        window.tunnel_busy = True
+        window.tunnel_open = True
+        self._tunnel_steps = slint.ListModel(
+            [{"label": name, "state": "pending", "detail": ""} for _, name in self._TUNNEL_STEPS]
+        )
+        window.tunnel_steps = self._tunnel_steps
+
         loop = self._loop()
         session = self._session_now()
-        self._task = loop.create_task(self._finish_tunnel(session.check_tunnel(label)))
-        self._ok(f"Testing the gateway for {label}…")
+        work = session.check_tunnel(label, self._tunnel_step)
+        self._task = loop.create_task(self._finish_tunnel(work))
+
+    def _tunnel_step(self, step: str, state: str, detail: str) -> None:
+        """One step's progress. Called on the loop thread; see Session.check_tunnel for why."""
+        for index, (key, _) in enumerate(self._TUNNEL_STEPS):
+            if key == step:
+                row = dict(self._tunnel_steps[index])
+                row["state"] = state
+                row["detail"] = detail or row["detail"]
+                self._tunnel_steps[index] = row
+                return
+
+    def _close_tunnel_dialog(self) -> None:
+        self.window.tunnel_open = False
 
     async def _finish_tunnel(self, work: Coroutine[Any, Any, Any]) -> None:
+        window = self.window
         try:
             status = await work
         except asyncio.CancelledError:
+            window.tunnel_busy = False
             raise
         except Exception as exc:
-            self._fail(f"tunnel check failed ({type(exc).__name__})")
+            window.tunnel_busy = False
+            window.tunnel_ok = False
+            window.tunnel_summary = f"the test failed unexpectedly ({type(exc).__name__})"
             return
         finally:
             self._refresh()
-        if status.ok:
-            self._ok(_sanitise(status.detail))
-        else:
-            self._fail(_sanitise(status.detail))
+        window.tunnel_busy = False
+        window.tunnel_ok = status.ok
+        # The dialog carries the answer, so the toast would be the same thing said twice over a
+        # window that is already showing it.
+        window.tunnel_summary = _sanitise(status.detail)
 
     def _check_connection(self, label: str) -> None:
         # Named before anything else can fail, so a mistyped label says so.

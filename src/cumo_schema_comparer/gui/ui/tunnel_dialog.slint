@@ -1,0 +1,137 @@
+// What happened when the gateway was tested, step by step, over everything else.
+//
+// Modal because the answer is the only thing worth attending to while it is on screen, and because
+// a second test started underneath it would report over the first. Slint has no modal of its own,
+// so this is an overlay: a scrim that takes every click, and a card above it.
+//
+// The steps are filled in as they happen rather than all at once at the end — the gateway can take
+// seconds to answer, and a window that shows nothing until it does looks like a window that has
+// stopped.
+
+import { Button } from "std-widgets.slint";
+import { Tokens } from "tokens.slint";
+
+export struct TunnelStep {
+    label: string,
+    // pending | running | ok | failed | skipped
+    state: string,
+    detail: string,
+}
+
+component StepRow inherits HorizontalLayout {
+    in property <TunnelStep> step;
+
+    spacing: Tokens.space-3;
+
+    Text {
+        // A glyph rather than a colour alone: the states have to be told apart without relying on
+        // seeing colour at all.
+        text: root.step.state == "ok" ? "✓"
+            : root.step.state == "failed" ? "✕"
+            : root.step.state == "running" ? "…"
+            : root.step.state == "skipped" ? "–"
+            : "·";
+        width: Tokens.space-4;
+        horizontal-alignment: center;
+        font-weight: Tokens.weight-bold;
+        color: root.step.state == "ok" ? Tokens.success
+            : root.step.state == "failed" ? Tokens.danger
+            : root.step.state == "running" ? Tokens.info
+            : Tokens.muted;
+    }
+    VerticalLayout {
+        spacing: 0px;
+        Text {
+            text: root.step.label;
+            font-weight: root.step.state == "running" ? Tokens.weight-bold
+                : Tokens.weight-regular;
+            color: root.step.state == "pending" ? Tokens.muted : Tokens.heading;
+        }
+        if root.step.detail != "": Text {
+            text: root.step.detail;
+            font-size: Tokens.text-small;
+            font-family: Tokens.family-mono;
+            color: root.step.state == "failed" ? Tokens.danger : Tokens.muted;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component TunnelDialog inherits Rectangle {
+    in property <bool> open;
+    in property <string> gateway;
+    in property <string> summary;
+    in property <bool> busy;
+    in property <bool> ok;
+    in property <[TunnelStep]> steps;
+    callback close();
+
+    visible: root.open;
+    background: Tokens.scrim;
+
+    // Takes every click, so nothing behind the dialog can be used while it is open.
+    TouchArea { }
+
+    Rectangle {
+        width: min(560px, parent.width - 2 * Tokens.space-5);
+        height: body.preferred-height;
+        background: Tokens.card;
+        border-radius: Tokens.radius-card;
+        border-width: Tokens.hairline-width;
+        border-color: Tokens.hairline;
+
+        body := VerticalLayout {
+            padding: Tokens.space-5;
+            spacing: Tokens.space-3;
+
+            Text {
+                text: "Testing the gateway";
+                font-family: Tokens.family-display;
+                font-size: Tokens.text-lead;
+                font-weight: Tokens.weight-bold;
+                letter-spacing: Tokens.tracking-tight;
+                color: Tokens.heading;
+            }
+            Text {
+                text: root.gateway;
+                font-family: Tokens.family-mono;
+                font-size: Tokens.text-body;
+                color: Tokens.muted;
+                wrap: word-wrap;
+            }
+
+            Rectangle { height: Tokens.hairline-width; background: Tokens.hairline; }
+
+            VerticalLayout {
+                spacing: Tokens.space-2;
+                for step in root.steps: StepRow { step: step; }
+            }
+
+            Rectangle {
+                height: root.summary == "" ? 0px : body-summary.preferred-height + Tokens.space-3;
+                border-radius: Tokens.radius-subtle;
+                background: root.ok ? Tokens.success-surface : Tokens.danger-surface;
+                body-summary := Text {
+                    x: Tokens.space-3;
+                    width: parent.width - 2 * Tokens.space-3;
+                    y: Tokens.space-1;
+                    text: root.summary;
+                    font-size: Tokens.text-body;
+                    font-weight: Tokens.weight-bold;
+                    color: root.ok ? Tokens.success : Tokens.danger;
+                    wrap: word-wrap;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+                Rectangle { }
+                Button {
+                    text: root.busy ? "Testing…" : "Close";
+                    enabled: !root.busy;
+                    clicked => { root.close(); }
+                }
+            }
+        }
+    }
+}

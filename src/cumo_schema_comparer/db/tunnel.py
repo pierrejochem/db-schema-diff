@@ -131,6 +131,19 @@ def _handler(transport: Any, to_host: str, to_port: int) -> type[socketserver.Ba
     return Handler
 
 
+#: What a probe reports as it goes: a step's name, whether it passed, and a line about it. Steps are
+#: announced before they are attempted, so a caller can show one as running rather than guessing.
+Observer = Callable[[str, "str", str], None]
+
+#: The steps, in the order a probe performs them. Named here so a caller can lay them out before
+#: anything has happened rather than discovering them one at a time.
+STEPS = ("key", "gateway", "database")
+
+
+def _noop(step: str, state: str, detail: str) -> None:
+    """The observer when nobody is watching."""
+
+
 def probe(
     ssh: SshRef,
     *,
@@ -138,6 +151,7 @@ def probe(
     to_port: int | None = None,
     passphrase: Secret | None = None,
     client_factory: Callable[[], Any] | None = None,
+    observer: Observer | None = None,
 ) -> str:
     """Try everything the tunnel needs, without touching the database. Returns what it proved.
 
@@ -151,22 +165,54 @@ def probe(
     usually not set the database credential yet, and needing it to check an ssh key would make the
     two checks one again.
     """
+    say = observer or _noop
     paramiko = _paramiko()
-    with _connected(ssh, passphrase, paramiko, client_factory) as client:
-        if to_host is None or to_port is None:
-            return f"{describe(ssh)}: reached and authenticated"
-        transport = client.get_transport()
-        if transport is None:  # pragma: no cover - paramiko sets this on a successful connect
-            raise ConnectionFailed(f"{describe(ssh)}: connected but gave no transport")
-        try:
-            channel = transport.open_channel("direct-tcpip", (to_host, to_port), ("127.0.0.1", 0))
-        except Exception as exc:
-            raise ConnectionFailed(
-                f"{describe(ssh)}: connected, but it would not open a channel to "
-                f"{to_host}:{to_port} ({type(exc).__name__}). The gateway may forbid forwarding, "
-                "or may not reach the database itself."
-            ) from None
-        channel.close()
+
+    say("key", "running", "")
+    if ssh.private_key:
+        say("key", "ok", f"{ssh.private_key}{' with a passphrase' if passphrase else ''}")
+    else:
+        say("key", "ok", "no key named; the agent and ssh's usual key names will be tried")
+
+    say("gateway", "running", f"connecting to {ssh.host}:{ssh.port}")
+    try:
+        with _connected(ssh, passphrase, paramiko, client_factory) as client:
+            say(
+                "gateway",
+                "ok",
+                f"host key accepted and authenticated{f' as {ssh.user}' if ssh.user else ''}",
+            )
+            if to_host is None or to_port is None:
+                say("database", "skipped", "no database address known, so forwarding was not tried")
+                return f"{describe(ssh)}: reached and authenticated"
+
+            say("database", "running", f"asking for a channel to {to_host}:{to_port}")
+            transport = client.get_transport()
+            if transport is None:  # pragma: no cover - paramiko sets this on a connect
+                raise ConnectionFailed(f"{describe(ssh)}: connected but gave no transport")
+            try:
+                channel = transport.open_channel(
+                    "direct-tcpip", (to_host, to_port), ("127.0.0.1", 0)
+                )
+            except Exception as exc:
+                say(
+                    "database",
+                    "failed",
+                    f"the gateway would not open the channel ({type(exc).__name__})",
+                )
+                raise ConnectionFailed(
+                    f"{describe(ssh)}: connected, but it would not open a channel to "
+                    f"{to_host}:{to_port} ({type(exc).__name__}). The gateway may forbid "
+                    "forwarding, or may not reach the database itself."
+                ) from None
+            channel.close()
+            say("database", "ok", f"the gateway reached {to_host}:{to_port}")
+    except ConnectionFailed as exc:
+        # The database step reports its own failure before raising; anything else failed at the
+        # gateway, which is where the connect, the host key and the authentication all live.
+        if "would not open a channel" not in str(exc):
+            say("gateway", "failed", str(exc))
+        raise
     return f"{describe(ssh)}: reached {to_host}:{to_port}"
 
 
