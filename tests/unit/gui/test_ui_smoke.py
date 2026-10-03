@@ -51,6 +51,7 @@ PROPERTIES = [
 # name -> argument tuple of the declared types
 CALLBACKS = {
     "source_changed": ("prod", "dsn_env", "PROD_DSN"),
+    "config_changed": ("max_workers", "9"),
     "add_target": (),
     "remove_target": ("qa",),
     "check_connection": ("qa",),

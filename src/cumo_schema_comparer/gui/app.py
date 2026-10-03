@@ -504,6 +504,7 @@ class Application:
     def _bind(self) -> None:
         window = self.window
         window.source_changed = self._guard(self._source_changed)
+        window.config_changed = self._guard(self._config_changed)
         window.add_target = self._guard(self._add_target)
         window.remove_target = self._guard(self._remove_target)
         window.check_connection = self._guard(self._check_connection)
@@ -536,11 +537,15 @@ class Application:
     # -- the Config tab ----------------------------------------------------------------------
 
     def _source_changed(self, label: str, field: str, value: str) -> None:
-        """One edit. An empty label means a config-level field rather than a source."""
+        """One edit to one source.
+
+        ``label`` may be empty, and that means a source whose label has been backspaced to
+        nothing — not a config-level field, which has its own callback. Overloading it here made
+        the label the one field in the window that could not be retyped: clearing it left a source
+        nothing could address, and every keystroke after that was reported as an unknown option.
+        """
         label, field, value = str(label), str(field), str(value)
-        if not label:
-            self._config_changed(field, value)
-        elif field in ("liquibase_schema", "liquibase_table"):
+        if field in ("liquibase_schema", "liquibase_table"):
             self._liquibase_changed(label, field, value)
         elif field.startswith("ssh_"):
             self._ssh_changed(label, field, value)
@@ -560,6 +565,10 @@ class Application:
 
     def _check_rename(self, label: str, new_label: str) -> None:
         taken = {s.label for s in self.config.config.sources} - {label}
+        if new_label == "" and "" in taken:
+            # Both would be addressed by the same empty label and neither could be typed into
+            # again. Saying "a source labelled '' already exists" would read like a broken message.
+            raise GuiError("another source's label is empty; finish that one first", field="label")
         if new_label in taken:
             raise GuiError(f"a source labelled {new_label!r} already exists", field="label")
 

@@ -123,6 +123,7 @@ export component MainWindow inherits Window {
     callback save-ignores();
 
     callback source-changed(string, string, string);
+    callback config-changed(string, string);
     callback add-target();
     callback remove-target(string);
     callback check-connection(string);
@@ -319,6 +320,7 @@ export component MainWindow inherits Window {
                     include-grants <=> root.include-grants;
 
                     source-changed(l, f, v) => { root.source-changed(l, f, v); }
+                    config-changed(f, v) => { root.config-changed(f, v); }
                     add-target => { root.add-target(); }
                     remove-target(l) => { root.remove-target(l); }
                     check-connection(l) => { root.check-connection(l); }
