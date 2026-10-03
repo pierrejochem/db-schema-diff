@@ -1,9 +1,14 @@
 """Version-dependent catalog capabilities.
 
-The supported floor is PostgreSQL 12, because ``pg_attribute.attgenerated`` (12),
-``pg_index.indnkeyatts`` (11) and ``pg_sequence`` (10) are all needed and 12 is the first
-release with all of them. Everything in this platform is 15 or newer; the floor exists so an
-older server fails with a clear message rather than a confusing SQL error.
+The supported floor is PostgreSQL 11, because ``pg_index.indnkeyatts`` and ``pg_proc.prokind``
+arrived in 11 and are selected by name on every version. ``pg_sequence`` (10) is older than that,
+and the two columns that arrived in 12 — ``pg_attribute.attgenerated`` and a table's
+``pg_class.relam`` — are gated below, so neither is ever named in a query sent to an 11. The floor
+is therefore where 10 stops being inspectable, not where this tool stops being tested: 11 has its
+own integration coverage in ``tests/integration/test_pg11.py``.
+
+Most of this platform is 15 or newer. The floor exists so a server older than 11 fails with a
+clear message rather than a confusing SQL error.
 
 Feature flags are used for two different purposes, and mixing them up causes silent bugs:
 
@@ -18,9 +23,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..model.inventory import GENERATED_COLUMNS_FROM
+
 #: Oldest release this tool will inspect.
-MINIMUM_VERSION_NUM = 120000
-MINIMUM_VERSION_LABEL = "12"
+MINIMUM_VERSION_NUM = 110000
+MINIMUM_VERSION_LABEL = "11"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +51,14 @@ class ServerFeatures:
 
     @property
     def generated_columns(self) -> bool:
-        """``pg_attribute.attgenerated`` — ``GENERATED ALWAYS AS (...) STORED``. PG 12."""
-        return self.version_num >= 120000
+        """``pg_attribute.attgenerated`` — ``GENERATED ALWAYS AS (...) STORED``. PG 12.
+
+        An 11 reports every column as not generated. That is a fact about its catalog and not
+        about its schema, so a comparison across the boundary stops comparing the attribute
+        rather than reporting one difference per generated column — see
+        ``diff.engine._adjust_for_sources``.
+        """
+        return self.version_num >= GENERATED_COLUMNS_FROM
 
     @property
     def table_access_methods(self) -> bool:

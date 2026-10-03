@@ -55,6 +55,11 @@ def _register() -> None:
     _OBJECT_TYPES[ObjectKind.EXTENSION] = objects.Extension
 
 
+#: ``pg_attribute.attgenerated``, and so ``GENERATED ALWAYS AS (...) STORED``, arrived in
+#: PostgreSQL 12. The one version boundary a comparison has to know about by itself.
+GENERATED_COLUMNS_FROM = 120000
+
+
 @dataclass(frozen=True, slots=True)
 class SourceInfo:
     """What was inspected, and by which server.
@@ -79,6 +84,17 @@ class SourceInfo:
     def major_version(self) -> int:
         """PostgreSQL major release, e.g. ``15``."""
         return self.server_version_num // 10000
+
+    @property
+    def knows_generated_columns(self) -> bool:
+        """Whether this server could say if a column is generated.
+
+        ``pg_attribute.attgenerated`` arrived in 12. An 11 is sent a literal instead, so it
+        reports every column as not generated — a fact about its catalog, not its schema. Lives
+        here rather than beside the query gates because a saved inventory carries its version and
+        is compared offline, with no database and no ``db`` package in reach.
+        """
+        return self.server_version_num >= GENERATED_COLUMNS_FROM
 
     def to_json_dict(self) -> dict[str, Any]:
         return {

@@ -100,7 +100,11 @@ def dsn_for(base_dsn: str, database: str) -> str:
 
 
 def _recreate_database(base_dsn: str, database: str) -> None:
-    """Drop and recreate one database, so every session starts from nothing."""
+    """Drop and recreate one database, so every session starts from nothing.
+
+    ``WITH (FORCE)`` arrived in PostgreSQL 13, which is why the CI matrix starts there and why
+    ``test_pg11.py`` starts its own containers instead of using this harness.
+    """
     with psycopg.connect(base_dsn, autocommit=True) as connection, connection.cursor() as cursor:
         cursor.execute(
             sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(database))
