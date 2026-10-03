@@ -83,10 +83,14 @@ UNAME_S := $(shell uname -s)
 # launch. Nuitka also names the bundle after the compiled script, so `main.app` gets renamed below;
 # --macos-app-name only sets the display name inside the plist.
 #
+# The icon is generated from the design tokens by packaging/make_icon.py; without one Nuitka
+# warns and the dock shows a generic placeholder.
+#
 # Everywhere else, and for the command-line tool on every platform, --onefile is right: one file to
 # copy onto a machine that has no Python.
 ifeq ($(UNAME_S),Darwin)
-GUI_PACKAGING := --standalone --macos-create-app-bundle --macos-app-name="CUMO Schema Diff"
+GUI_PACKAGING := --standalone --macos-create-app-bundle --macos-app-name="CUMO Schema Diff" \
+	--macos-app-icon=packaging/cumo-schema-diff-gui.icns
 GUI_ARTIFACT := build/cumo-schema-diff-gui.app
 else
 GUI_PACKAGING := --onefile --output-filename=cumo-schema-diff-gui

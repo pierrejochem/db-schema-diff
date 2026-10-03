@@ -238,6 +238,34 @@ class TestMacosAppBundle:
         assert "mv build/main.app" in MAKEFILE
         assert "--macos-app-name=" in self.section()
 
+    def test_the_bundle_carries_an_icon(self):
+        """Without one Nuitka warns and the dock shows a generic placeholder.
+
+        The icon is generated from the design tokens rather than committed as an unexplained blob,
+        so it can be corrected when the brand is.
+        """
+        assert "--macos-app-icon=" in self.section()
+        icon = ROOT / "packaging" / "cumo-schema-diff-gui.icns"
+        assert icon.is_file(), "the icon the build points at does not exist"
+        assert icon.stat().st_size > 10_000, "an icns this small is not a full icon set"
+        assert (ROOT / "packaging" / "make_icon.py").is_file(), "the icon has no generator"
+
+    def test_the_icon_is_drawn_from_the_design_tokens(self):
+        """One palette. An icon in its own colours would be the first thing to drift."""
+        import re
+
+        generator = (ROOT / "packaging" / "make_icon.py").read_text(encoding="utf-8")
+        tokens = (ROOT / "src" / "cumo_schema_comparer" / "gui" / "ui" / "tokens.slint").read_text(
+            encoding="utf-8"
+        )
+        declared = dict(re.findall(r"out property <color> (\S+): #([0-9a-fA-F]{6});", tokens))
+        for name, constant in (("heading", "NAVY"), ("lime", "LIME")):
+            expected = declared[name].lower()
+            packed = re.search(rf"^{constant} = \(([^)]+)\)", generator, re.M)
+            assert packed, f"{constant} is not defined in the generator"
+            channels = [int(part.strip(), 16) for part in packed.group(1).split(",")]
+            assert "".join(f"{c:02x}" for c in channels) == expected, f"{constant} drifted"
+
     def test_other_platforms_still_get_one_file(self):
         first = MAKEFILE.index("ifeq ($(UNAME_S),Darwin)")
         start = MAKEFILE.index("else", first)
