@@ -32,8 +32,10 @@ export struct RunStep {
     // pending | running | ok | failed | skipped
     state: string,
     detail: string,
-    // A step inside a source's capture, indented under it.
-    nested: bool,
+    // How deep this row sits: 0 for a source or a run-wide phase, 1 for a step inside a capture,
+    // 2 for a breakdown of that step — "materialized views" is part of what the views query
+    // returned, not another query.
+    indent: int,
 }
 
 component InputRow inherits HorizontalLayout {
@@ -63,7 +65,7 @@ component StepRow inherits HorizontalLayout {
 
     spacing: Tokens.space-3;
 
-    Rectangle { width: root.step.nested ? Tokens.space-4 : 0px; }
+    Rectangle { width: root.step.indent * Tokens.space-4; }
     Text {
         // A glyph rather than a colour alone: the states have to be told apart without relying on
         // seeing colour at all.
@@ -82,7 +84,7 @@ component StepRow inherits HorizontalLayout {
     }
     Text {
         text: root.step.label;
-        font-size: root.step.nested ? Tokens.text-small : Tokens.text-body;
+        font-size: root.step.indent == 0 ? Tokens.text-body : Tokens.text-small;
         font-weight: root.step.state == "running" ? Tokens.weight-bold : Tokens.weight-regular;
         color: root.step.state == "pending" ? Tokens.muted : Tokens.heading;
     }

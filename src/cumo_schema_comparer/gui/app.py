@@ -72,10 +72,12 @@ from .ignores_vm import IgnoresDocument
 from .results_vm import ResultsModel, checked_delta_rows, checked_diff_rows
 from .session import (
     CAPTURE_PHASE,
-    CAPTURE_STEP_NAMES,
+    CAPTURE_ROWS,
     CHANGELOG_STEP,
     COMPARE_PHASE,
     REPORT_PHASE,
+    SCHEMA_STEP,
+    STEP_KINDS,
     ProgressEvent,
     RunDetail,
     Session,
@@ -294,6 +296,13 @@ class Application:
         #: ``(source label, step name)`` to row index. An empty label is a run-wide phase, and an
         #: empty step is the source's own heading row.
         self._run_step_index: dict[tuple[str, str], int] = {}
+        #: How many objects each source's capture reported, so a capture that found none can be
+        #: flagged. The checklist's own rows cannot be summed for this: a sub-row is a breakdown
+        #: of its step, and adding both would count every view twice.
+        self._run_found: dict[str, int] = {}
+        #: Each source's last reported state, so its heading row can be redrawn when either the
+        #: state or the count changes. The two arrive in no fixed order.
+        self._run_state: dict[str, str] = {}
         #: What to say about the saved configuration, and whether it is a failure. Held rather
         #: than announced on the spot: `_refresh` runs last and would leave the toast empty.
         notice = self._reopen()
@@ -1073,18 +1082,23 @@ class Application:
 
         rows: list[dict[str, Any]] = []
         self._run_step_index = {}
+        self._run_found = {}
+        self._run_state = {}
         skip_liquibase = bool(window.skip_liquibase)
-        steps = list(CAPTURE_STEP_NAMES) + ([] if skip_liquibase else [CHANGELOG_STEP])
+        steps = list(CAPTURE_ROWS) + ([] if skip_liquibase else [CHANGELOG_STEP])
         for source in config.sources:
             role = "master" if source.label == config.master.label else "target"
             self._run_step_index[(source.label, "")] = len(rows)
-            rows.append(_run_step(f"{source.label} ({role})", "pending", "", nested=False))
+            rows.append(_run_step(f"{source.label} ({role})", "pending", "", indent=0))
+            self._run_found[source.label] = 0
             for step in steps:
                 self._run_step_index[(source.label, step)] = len(rows)
-                rows.append(_run_step(step, "pending", "", nested=True))
+                # A sub-row sits a level deeper than the step it belongs to: "materialized views"
+                # is part of what the views query returned, not another query.
+                rows.append(_run_step(step, "pending", "", indent=2 if _is_sub_row(step) else 1))
         for phase, label in ((COMPARE_PHASE, "compare"), (REPORT_PHASE, "build report")):
             self._run_step_index[("", phase)] = len(rows)
-            rows.append(_run_step(label, "pending", "", nested=False))
+            rows.append(_run_step(label, "pending", "", indent=0))
         self._run_steps = slint.ListModel(rows)
         window.run_steps = self._run_steps
 
@@ -1113,14 +1127,45 @@ class Application:
             return
         existing = dict(self._run_steps[index])
         self._run_steps[index] = _run_step(
-            str(existing["label"]), state, detail, nested=bool(existing["nested"])
+            str(existing["label"]), state, detail, indent=int(existing["indent"])
         )
 
+    def _render_heading(self, label: str) -> None:
+        """Draw one source's heading row from its state and what it found.
+
+        Called from both sides, because the two arrive in no fixed order: a step report is queued
+        onto the loop from the capture's worker thread, while the source's state is emitted on the
+        loop itself. Deciding the row at either moment alone made a healthy capture read "no
+        objects found" whenever the state won the race — intermittently, and only in a full run.
+        """
+        state = self._run_state.get(label, "running")
+        found = self._run_found.get(label)
+        if state == "ok" and found == 0:
+            # Connected, and read nothing. One source's problem, said against that source: a
+            # schema filter can match on one server and not on another.
+            self._set_run_step((label, ""), "failed", "no objects found")
+            return
+        detail = "" if found is None or state == "running" else f"{found} objects"
+        self._set_run_step((label, ""), state, detail)
+
     def _on_detail(self, detail: RunDetail) -> None:
-        """One step of the run. Always on the loop thread; see ``Session._capture_observer``."""
+        """One row of the run. Always on the loop thread; see ``Session._capture_observer``."""
         if detail.phase == CAPTURE_PHASE:
-            self._set_run_step((detail.source, ""), "running")
-            self._set_run_step((detail.source, detail.step), "ok", f"{detail.count}")
+            self._run_state.setdefault(detail.source, "running")
+            # The schemas row says which ones matched; every other row says how many it found.
+            if detail.step == SCHEMA_STEP:
+                state = "ok" if detail.count else "failed"
+                self._set_run_step((detail.source, detail.step), state, detail.detail)
+            else:
+                self._set_run_step((detail.source, detail.step), "ok", f"{detail.count}")
+                # Sub-rows are a breakdown of their step, so counting both would double. The
+                # changelog is not an object either: a database with a DATABASECHANGELOG and no
+                # schema of its own has been looked at and found empty.
+                if not _is_sub_row(detail.step) and detail.step != CHANGELOG_STEP:
+                    self._run_found[detail.source] = (
+                        self._run_found.get(detail.source, 0) + detail.count
+                    )
+            self._render_heading(detail.source)
             return
         if detail.phase == COMPARE_PHASE:
             self._finish_pending_captures()
@@ -1384,7 +1429,8 @@ class Application:
         # The dialog's heading row for this source is its state, so it comes from here rather than
         # from the step observer: a source that fails to connect reports no steps at all, and its
         # heading would otherwise sit at "pending" for the rest of the run.
-        self._set_run_step((event.label, ""), _STEP_STATE.get(event.state, "running"))
+        self._run_state[event.label] = _STEP_STATE.get(event.state, "running")
+        self._render_heading(event.label)
 
     # -- the Results tab ---------------------------------------------------------------------
 
@@ -1602,9 +1648,14 @@ def _has_comments(path: Path) -> bool:
     return any(line.lstrip().startswith("#") for line in text.splitlines())
 
 
-def _run_step(label: str, state: str, detail: str, *, nested: bool) -> dict[str, Any]:
+def _run_step(label: str, state: str, detail: str, *, indent: int) -> dict[str, Any]:
     """One checklist row. Every field, because Slint neither defaults nor rejects a partial row."""
-    return {"label": label, "state": state, "detail": detail, "nested": nested}
+    return {"label": label, "state": state, "detail": detail, "indent": indent}
+
+
+def _is_sub_row(step: str) -> bool:
+    """Whether a row is a breakdown of the step above it rather than a step of its own."""
+    return any(step in subs for subs in STEP_KINDS.values())
 
 
 def _run_input(label: str, value: str, *, nested: bool = False) -> dict[str, Any]:

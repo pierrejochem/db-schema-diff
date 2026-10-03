@@ -359,10 +359,25 @@ shows the same masked text as the reports.
 fills in a checklist as it runs. The top half is read from the configuration — each source with its
 host, database, schemas and schema map, the gate, the per-run flags, the ruleset, the baseline — so
 a report that comes back clean can be told from a report of the wrong thing. The bottom half is one
-row per source and one per catalog step inside it (tables, columns, constraints, indexes, views,
-sequences, routines, triggers, types, extensions, then the Liquibase changelog), each showing what
-it found, followed by the diff and the report build. Those last two are otherwise invisible: a
-large comparison looks finished when the last source is captured, and then sits there.
+row per source and one per catalog step inside it, each showing what it found, followed by the diff
+and the report build. Those last two are otherwise invisible: a large comparison looks finished
+when the last source is captured, and then sits there.
+
+The first row under each source is the **schemas the server actually matched**, as opposed to the
+ones the config asked for. That is the number that explains all the others: a `schemas:` filter
+naming a schema the database does not have makes every count below it zero, and the zeros give no
+reason for themselves. A source that connects and reads nothing is marked `no objects found`.
+
+Steps that fetch several kinds in one query are broken down: `views` carries `plain views` and
+`materialized views` beneath it, `types` carries the enum, domain, composite and range counts. A
+matview holds data and has to be refreshed, so it is not the same thing as a view, and a single
+`views: 3` could not tell you how many of each you had.
+
+**A comparison that finds nothing on either side is an error, not a pass.** It used to report
+"No differences found" and exit 0 — the worst answer this tool can give, because there was no
+drift only in the sense that there was nothing to compare. Both sides empty now raises a note at
+ERROR, the verdict says so by name, and `compare` exits 1. Run `probe`, or **Check connection**,
+to see the schemas each server actually matches.
 
 Cancel is in the dialog, because a modal that hid the only way to stop a long run would be worse
 than no dialog. When the run ends the dialog stays, with the verdict and a button to the results —

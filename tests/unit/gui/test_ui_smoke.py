@@ -368,7 +368,7 @@ def declared_fields(struct_name):
     return {k.replace("-", "_") for k in dict(getattr(loaded, struct_name)())}
 
 
-RUN_STEP_FIELDS = ["label", "state", "detail", "nested"]
+RUN_STEP_FIELDS = ["label", "state", "detail", "indent"]
 RUN_INPUT_FIELDS = ["label", "value", "nested"]
 
 
@@ -384,7 +384,7 @@ def test_run_input_declares_exactly_the_expected_fields():
 def test_the_run_dialog_rows_round_trip(window):
     import slint
 
-    step = {"label": "tables", "state": "ok", "detail": "412", "nested": True}
+    step = {"label": "tables", "state": "ok", "detail": "412", "indent": 1}
     entry = {"label": "master", "value": "prod  db-prod/invoicing", "nested": False}
     window.run_steps = slint.ListModel([step])
     window.run_inputs = slint.ListModel([entry])
@@ -400,12 +400,18 @@ def test_the_run_dialog_is_wired_into_the_window(window):
     assert window.run_input_count() == 0
     window.run_open = True
     window.run_steps = slint.ListModel(
-        [{"label": "tables", "state": "pending", "detail": "", "nested": True}]
+        [{"label": "tables", "state": "pending", "detail": "", "indent": 1}]
     )
     window.run_inputs = slint.ListModel([{"label": "name", "value": "invoicing", "nested": False}])
     assert window.run_dialog_open() is True
     assert window.run_step_count() == 1
     assert window.run_input_count() == 1
+
+
+def test_a_sub_row_is_indented_deeper_than_its_step():
+    """ "materialized views" is part of what the views query returned, not another query."""
+    text = (UI / "run_dialog.slint").read_text()
+    assert "root.step.indent * Tokens.space-4" in text
 
 
 def test_the_run_dialog_is_the_last_child_so_it_covers_the_rail():

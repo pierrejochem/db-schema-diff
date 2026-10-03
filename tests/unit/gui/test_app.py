@@ -2172,6 +2172,131 @@ class TestTheRunDialog:
         assert (shown["columns"]["state"], shown["columns"]["detail"]) == ("ok", "97")
 
     @pytest.mark.asyncio
+    async def test_the_schemas_actually_matched_are_named(self, app):
+        """The one line that explains a wall of zeros.
+
+        Reported: "when comparing I see mostly 0 objects". The cause was a ``schemas:`` filter
+        matching no schema on the server, and the inputs block only said what had been *asked
+        for*. Every count read zero with no reason given for any of them.
+        """
+
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("schemas", 2, "cumo-invoicing, public")
+            observer("tables", 4, "")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await run_to_completion(app)
+
+        schemas = self.labelled(app)["schemas"]
+        assert str(schemas["detail"]) == "cumo-invoicing, public"
+        assert str(schemas["state"]) == "ok"
+
+    @pytest.mark.asyncio
+    async def test_matching_no_schema_is_marked_failed_on_the_schema_row(self, app):
+        """Not "ok, zero": the filter did not do what it was asked, and that is the fault."""
+
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("schemas", 0, "none matched")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await run_to_completion(app)
+
+        assert str(self.labelled(app)["schemas"]["state"]) == "failed"
+        assert "none matched" in str(self.labelled(app)["schemas"]["detail"])
+
+    @pytest.mark.asyncio
+    async def test_materialized_views_get_a_count_of_their_own(self, app):
+        """One query returns both, so a single "views: 3" could not answer how many matviews a
+        database has — and a matview holds data and must be refreshed, so it is a different
+        thing."""
+
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("views", 3, "")
+            observer("plain views", 2, "")
+            observer("materialized views", 1, "")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await run_to_completion(app)
+
+        shown = self.labelled(app)
+        assert str(shown["views"]["detail"]) == "3"
+        assert str(shown["plain views"]["detail"]) == "2"
+        assert str(shown["materialized views"]["detail"]) == "1"
+
+    @pytest.mark.asyncio
+    async def test_a_sub_row_sits_deeper_than_the_step_it_breaks_down(self, app):
+        with mock.patch(CAPTURE, ok_capture):
+            app.window.drive_start_run()
+            await app.wait_for_idle()
+        shown = self.labelled(app)
+        assert int(shown["views"]["indent"]) == 1
+        assert int(shown["materialized views"]["indent"]) == 2
+        assert int(shown["prod (master)"]["indent"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_a_capture_that_found_nothing_is_flagged_on_its_heading(self, app):
+        """A source that connected and read nothing. Said per source, because a schema filter can
+        match on one server and not on another."""
+
+        def nothing(source, dsn, *, observer=None, **kwargs):
+            observer("schemas", 0, "none matched")
+            for step in ("tables", "columns"):
+                observer(step, 0, "")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, nothing):
+            await run_to_completion(app)
+
+        heading = self.labelled(app)["prod (master)"]
+        assert str(heading["state"]) == "failed"
+        assert "no objects" in str(heading["detail"])
+
+    @pytest.mark.asyncio
+    async def test_the_changelog_does_not_count_as_an_object(self, app):
+        """A database with a DATABASECHANGELOG and no schema of its own has been looked at and
+        found empty; counting its changesets would hide that."""
+
+        def only_changelog(source, dsn, *, observer=None, **kwargs):
+            observer("schemas", 0, "none matched")
+            observer("changelog", 3, "")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, only_changelog):
+            await run_to_completion(app)
+
+        assert str(self.labelled(app)["prod (master)"]["state"]) == "failed"
+
+    @pytest.mark.asyncio
+    async def test_a_capture_that_found_objects_says_how_many(self, app):
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("tables", 4, "")
+            observer("columns", 20, "")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await run_to_completion(app)
+
+        assert str(self.labelled(app)["prod (master)"]["detail"]) == "24 objects"
+
+    @pytest.mark.asyncio
+    async def test_a_sub_row_is_not_added_to_the_total_twice(self, app):
+        """A sub-row is a breakdown of its step, so counting both would double every view."""
+
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("views", 3, "")
+            observer("plain views", 2, "")
+            observer("materialized views", 1, "")
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await run_to_completion(app)
+
+        assert str(self.labelled(app)["prod (master)"]["detail"]) == "3 objects"
+
+    @pytest.mark.asyncio
     async def test_a_step_that_never_reported_is_skipped_not_left_pending(self, app):
         """A source that cannot connect reports nothing. Ten rows still saying "pending" would
         read as a run that stalled there rather than one that never got in."""

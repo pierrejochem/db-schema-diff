@@ -25,13 +25,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from . import __version__
-from .build import CAPTURE_STEP_NAMES, CHANGELOG_STEP, build_inventory
+from .build import CAPTURE_ROWS, CHANGELOG_STEP, SCHEMA_STEP, STEP_KINDS, build_inventory
 
 #: Re-exported so a consumer can lay out a progress checklist without importing ``build``. The
 #: desktop application is held to a boundary — `tests/unit/gui/test_import_boundary.py` — that
 #: forbids it reaching into the comparison internals, and these names are the progress protocol's
 #: vocabulary rather than part of those internals.
-__all__ = ["CAPTURE_STEP_NAMES", "CHANGELOG_STEP"]
+__all__ = ["CAPTURE_ROWS", "CHANGELOG_STEP", "SCHEMA_STEP", "STEP_KINDS"]
 from .config.model import ComparerConfig, SourceRef
 from .config.secrets import Dsn, Secret
 from .db.connect import ConnectionOptions, open_connection, server_features
@@ -70,15 +70,15 @@ def capture(
     options: ConnectionOptions | None = None,
     skip_liquibase: bool = False,
     redact_literals: bool = True,
-    observer: Callable[[str, int], None] | None = None,
+    observer: Callable[[str, int, str], None] | None = None,
 ) -> CaptureResult:
     """Inventory one source, converting any expected failure into a result value.
 
     Returning the failure rather than raising is what lets the other sources finish.
 
-    ``observer`` is handed each capture step and how many objects it found, as it finishes; see
-    :func:`build.build_inventory`. Nothing is reported for a capture that fails before it connects,
-    because nothing was looked at.
+    ``observer`` is handed each capture row, how many objects it found and a detail string, as it
+    finishes; see :func:`build.build_inventory`. Nothing is reported for a capture that fails
+    before it connects, because nothing was looked at.
     """
     try:
         with open_connection(
