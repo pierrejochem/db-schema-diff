@@ -1,0 +1,117 @@
+// What this is, which version of it, and what it is made of.
+//
+// The facts come from the application rather than being written here: a version typed into markup
+// is a version that will be wrong. The typefaces are credited because they ship with the package
+// under the SIL Open Font License, which asks for that.
+
+import { ScrollView } from "std-widgets.slint";
+import { Card, FormRow, Eyebrow } from "widgets.slint";
+import { Tokens } from "tokens.slint";
+
+export component AboutTab inherits ScrollView {
+    in property <string> version;
+    in property <string> python-version;
+    in property <string> slint-version;
+    in property <string> config-path;
+    in property <bool> tunnelling-available;
+
+    VerticalLayout {
+        padding: Tokens.space-5;
+        spacing: Tokens.space-4;
+        alignment: start;
+
+        Card {
+            title: "CUMO SCHEMA DIFF";
+            VerticalLayout {
+                spacing: Tokens.space-2;
+                Text {
+                    text: "Finds structural drift between PostgreSQL databases that are "
+                        + "supposed to match, and says exactly what differs.";
+                    font-size: Tokens.text-control;
+                    color: Tokens.body;
+                    wrap: word-wrap;
+                }
+                FormRow {
+                    label: "version";
+                    Text {
+                        text: root.version;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.heading;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "saves to";
+                    Text {
+                        text: root.config-path;
+                        font-family: Tokens.family-mono;
+                        font-size: Tokens.text-small;
+                        color: Tokens.muted;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { }
+                }
+            }
+        }
+
+        Card {
+            title: "BUILT ON";
+            VerticalLayout {
+                spacing: Tokens.space-1;
+                FormRow {
+                    label: "python";
+                    Text {
+                        text: root.python-version;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.body;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "slint";
+                    Text {
+                        text: root.slint-version;
+                        font-family: Tokens.family-mono;
+                        color: Tokens.body;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { }
+                }
+                FormRow {
+                    label: "ssh tunnels";
+                    Text {
+                        text: root.tunnelling-available
+                            ? "available"
+                            : "not installed — pip install 'cumo-db-schema-comparer[ssh]'";
+                        font-family: Tokens.family-mono;
+                        font-size: Tokens.text-small;
+                        color: root.tunnelling-available ? Tokens.success : Tokens.muted;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { }
+                }
+            }
+        }
+
+        Card {
+            title: "TYPEFACES";
+            VerticalLayout {
+                spacing: Tokens.space-1;
+                Text {
+                    // Credited because they travel with the package under the SIL Open Font
+                    // License, which asks for the licence and the notice to go with them.
+                    text: "Archivo, Mulish and IBM Plex Mono ship with this application under "
+                        + "the SIL Open Font License 1.1. The licences are installed beside them.";
+                    font-size: Tokens.text-body;
+                    color: Tokens.muted;
+                    wrap: word-wrap;
+                }
+                Eyebrow { text: "SIL OPEN FONT LICENSE 1.1"; }
+            }
+        }
+    }
+}

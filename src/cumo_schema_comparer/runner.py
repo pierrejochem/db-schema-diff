@@ -138,6 +138,13 @@ def check_tunnel(
     return TunnelStatus(label=source.label, ok=True, detail=detail + note)
 
 
+def tunnelling_supported() -> bool:
+    """Whether the optional extra that provides SSH tunnelling is installed."""
+    from .db.tunnel import available
+
+    return available()
+
+
 def require_tunnel_support(config: ComparerConfig) -> None:
     """Fail now, once, if this config needs tunnelling and cannot do it.
 

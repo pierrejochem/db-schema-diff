@@ -1,4 +1,13 @@
-"""One policy for the whole GUI package: the cyclic collector runs on the main thread only.
+"""Two policies for the whole GUI package: where its home directory is, and when the collector runs.
+
+The application keeps configurations in ``~/.cumo_db_schema_comparer`` and, with no argument,
+reopens the most recent one it finds there. A test that reads or writes the home directory of
+whoever is running it is a test that has already failed — it would open their real configuration,
+or leave files behind — so every test in this package is pointed at a temporary directory instead.
+
+The rest of this file is about the collector.
+
+One policy for the whole GUI package: the cyclic collector runs on the main thread only.
 
 Slint's Python values are pyo3 ``unsendable`` classes. Freeing one on a thread other than the one
 that created it does not raise — it aborts the process:
@@ -24,6 +33,14 @@ import gc
 from collections.abc import Iterator
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _own_home(tmp_path_factory, monkeypatch):
+    """Point the application's home directory at a temporary one, for every test in this package."""
+    from cumo_schema_comparer.gui import home
+
+    monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path_factory.mktemp("cumo-home")))
 
 
 @pytest.fixture(autouse=True)

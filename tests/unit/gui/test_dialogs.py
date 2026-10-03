@@ -102,7 +102,7 @@ class TestMacos:
 
     def test_an_empty_field_omits_the_starting_directory(self, monkeypatch, recorded):
         on_platform(monkeypatch, "darwin", found={"osascript"})
-        dialogs.choose("config", "")
+        dialogs.choose("baseline", "")
         assert "default location" not in recorded[0][2]
 
 
@@ -131,7 +131,7 @@ class TestAppleScriptQuoting:
         hostile = tmp_path / 'x" & (do shell script "id") & "'
         hostile.mkdir()
         on_platform(monkeypatch, "darwin", found={"osascript"})
-        dialogs.choose("config", str(hostile))
+        dialogs.choose("baseline", str(hostile))
         script = recorded[0][2]
         # Every quote the path contributed is escaped, so the literal still closes where the
         # script says it does and `do shell script` stays inside it as text.

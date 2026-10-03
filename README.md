@@ -304,7 +304,7 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 
 ```sh
 pip install --pre '.[gui]'     # needs Python 3.12+; --pre because the Slint binding is a beta
-cumo-schema-diff-gui config/invoicing.yaml
+cumo-schema-diff-gui
 ```
 
 Five views, chosen from the rail on the left: **Config** (every parameter of the config file, with
@@ -331,6 +331,26 @@ finished run that found nothing. Cancelling stops sources that have not started,
 already connected is abandoned rather than interrupted — PostgreSQL work in flight ends on its own
 `statement_timeout`, which at the defaults can be minutes.
 
+### Where it keeps configurations
+
+**The application does not open configuration files.** There is no Open button, a path on the
+command line is refused with a message rather than ignored, and nothing is reopened on start-up: it
+starts empty every time. You build a configuration in the window and save it.
+
+On start-up it creates `~/.cumo_db_schema_comparer` if it is missing, and **Save** writes
+`config.yaml` there. Before this a configuration made in the GUI could not be saved at all, because
+saving needed a path nobody had chosen yet.
+
+There is one file and no name to choose. A configuration's `name` becomes the report title and the
+JUnit suite name, so it has to be something; the window defaults it rather than asking, because
+naming a comparison you cannot reopen adds nothing to it. **Saving again replaces that file.**
+
+`CUMO_SCHEMA_DIFF_HOME` points the folder somewhere else. The test suite sets it, because a test
+that reads or writes the home directory of whoever runs it has already failed.
+
+Editing an existing configuration is a job for an editor, or for the command-line tool, which reads
+any path you give it.
+
 The application follows the Cubic design system. Sections are cards with an uppercase eyebrow
 heading; every form label in every view comes from one shared column, so fields line up when you
 move between views; and every list names its columns. On the Results view the findings and the
@@ -355,7 +375,7 @@ finding.
 The GUI is an optional extra: installing the CLI alone keeps its Python 3.11 floor and its five
 dependencies.
 
-**Open…** and the two **Choose…** buttons open a native picker. Slint's binding has none, and a
+The two **Choose…** buttons open a native picker. Slint's binding has none, and a
 second GUI toolkit inside its event loop would risk the window, so each dialog runs in a
 subprocess — `osascript` on macOS, `zenity` or `kdialog` on a Linux desktop. The dialog opens
 wherever the field already points. Windows has no backend: the same approach would work through
