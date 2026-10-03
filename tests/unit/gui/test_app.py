@@ -25,6 +25,7 @@ import pytest
 
 pytest.importorskip("slint", reason="the GUI extra is not installed")
 
+from cumo_schema_comparer.config.loader import load_config_files
 from cumo_schema_comparer.errors import ProbeError
 from cumo_schema_comparer.gui import app as app_module
 from cumo_schema_comparer.gui.app import Application
@@ -173,10 +174,13 @@ def adopt(app: Application, path) -> Application:
     """Put a configuration into a window.
 
     The application cannot do this itself any more — it has no Open button, takes no path on the
-    command line and reopens nothing — so the harness does it directly. One place touches the
-    internals, deliberately, rather than keeping a production method alive that only tests call.
+    command line and reopens nothing, and `ConfigDocument` no longer reads files either. The
+    harness uses the library's own loader, which the command-line tool uses and which is not part
+    of the GUI, and puts the result in directly. One place touches the internals, deliberately,
+    rather than keeping production code alive that only tests call.
     """
-    app.config = ConfigDocument.load(path)
+    ((_, config),) = load_config_files([path])
+    app.config = ConfigDocument(path=path, config=config)
     app._adopt_documents()
     app._refresh()
     return app

@@ -1,8 +1,10 @@
-"""The configuration the Config tab edits, read from and written to the CLI's own YAML.
+"""The configuration the Config tab edits, written out as the CLI's own YAML.
 
-A saved file must stay hand-editable, so only the fields the file actually set are written back.
-Loading an untouched file and saving it again produces the same bytes; comments are the one thing
-that cannot survive a YAML round trip, which is what :meth:`ConfigDocument.had_comments` is for.
+A document is built here and saved; it is never read back. The application has no way to open a
+configuration file, so this has no way either — what used to preserve a loaded file's comments and
+key order went with it, because there is no loaded file to preserve anything of.
+
+A saved file must stay hand-editable, so only the fields that were actually set are written back.
 
 The file is non-secret and committed to git, so a document refuses to be written when a value
 looks like a pasted connection string (a URL, or ``keyword=value`` pairs) or when ``dsn_env`` is
@@ -18,16 +20,14 @@ import contextlib
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
-from ..config.loader import load_config_files
 from ..config.model import ComparerConfig, SourceRef
-from ..errors import ConfigError
 from .errors import GuiError
 from .shape import looks_like_connection_string
 
@@ -58,30 +58,6 @@ class ConfigDocument:
     path: Path | None
     config: ComparerConfig
     dirty: bool = False
-    _had_comments: bool = field(default=False, repr=False)
-    _key_order: Any = field(default=None, repr=False, compare=False)
-
-    @classmethod
-    def load(cls, path: Path) -> ConfigDocument:
-        if path.is_dir():
-            raise GuiError(f"{path}: a single config file is required, not a directory")
-        try:
-            loaded = load_config_files([path])
-        except ConfigError as exc:
-            raise GuiError(str(exc)) from exc
-        ((_, config),) = loaded
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as exc:
-            raise GuiError(f"{path}: cannot read ({exc.strerror})") from exc
-        try:
-            key_order = yaml.safe_load(text)
-        except yaml.YAMLError:  # pragma: no cover - the loader already parsed this text
-            key_order = None
-        commented = any(line.lstrip().startswith("#") for line in text.splitlines())
-        return cls(
-            path=path, config=config, dirty=False, _had_comments=commented, _key_order=key_order
-        )
 
     @classmethod
     def blank(cls, name: str = DEFAULT_NAME) -> ConfigDocument:
@@ -92,10 +68,6 @@ class ConfigDocument:
             targets=(SourceRef(label="qa", dsn_env="QA_DSN"),),
         )
         return cls(path=None, config=config, dirty=False)
-
-    def had_comments(self) -> bool:
-        """Whether the file as loaded had comment lines that a save will drop."""
-        return self._had_comments
 
     def to_yaml(self) -> str:
         """The YAML for this document. Refuses an invalid one rather than writing it."""
@@ -116,7 +88,6 @@ class ConfigDocument:
             ordered["master"] = _order_source(ordered["master"])
         if "targets" in ordered:
             ordered["targets"] = [_order_source(t) for t in ordered["targets"]]
-        ordered = _follow(ordered, self._key_order)
         return yaml.dump(
             ordered,
             Dumper=_IndentedDumper,
@@ -241,29 +212,6 @@ def _order_source(data: dict[str, Any]) -> dict[str, Any]:
     known = {k: data[k] for k in _SOURCE_KEY_ORDER if k in data}
     known.update({k: v for k, v in data.items() if k not in known})
     return known
-
-
-def _follow(data: Any, reference: Any) -> Any:
-    """``data`` with mapping keys in the order the loaded file used, so a re-save is a no-op.
-
-    Keys the file did not have keep their canonical position after those it did. List items are
-    matched to the reference by ``label`` where they have one, otherwise by position.
-    """
-    if isinstance(data, dict) and isinstance(reference, dict):
-        seen = [k for k in reference if k in data]
-        rest = [k for k in data if k not in reference]
-        return {k: _follow(data[k], reference.get(k)) for k in (*seen, *rest)}
-    if isinstance(data, list) and isinstance(reference, list):
-        by_label = {r["label"]: r for r in reference if isinstance(r, dict) and "label" in r}
-        out = []
-        for index, item in enumerate(data):
-            if isinstance(item, dict) and "label" in item:
-                ref = by_label.get(item["label"])
-            else:
-                ref = reference[index] if index < len(reference) else None
-            out.append(_follow(item, ref))
-        return out
-    return data
 
 
 def _string_fields(node: Any, path: str = "") -> list[tuple[str, str]]:
