@@ -187,6 +187,60 @@ class Dsn:
         return summary
 
 
+class Secret:
+    """Any other credential from the environment, redacting itself exactly as :class:`Dsn` does.
+
+    An SSH key passphrase is the first of these. It is a different kind of secret from a connection
+    string — there is nothing in it worth summarising — so it has no ``safe_summary``; the only
+    thing it will say about itself is where it came from.
+    """
+
+    __slots__ = ("_env_name", "_value")
+
+    def __init__(self, value: str, *, env_name: str) -> None:
+        self._value = value
+        self._env_name = env_name
+
+    @property
+    def value(self) -> str:
+        """The raw secret. The only way to obtain it."""
+        return self._value
+
+    @property
+    def env_name(self) -> str:
+        return self._env_name
+
+    @property
+    def redacted(self) -> str:
+        return f"<Secret from ${self._env_name}>"
+
+    def __repr__(self) -> str:
+        return self.redacted
+
+    def __str__(self) -> str:
+        return self.redacted
+
+    def __format__(self, spec: str) -> str:
+        # The spec is ignored deliberately, for the reason given on Dsn.__format__.
+        return self.redacted
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Secret):
+            return self._value == other._value
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._value)
+
+
+def resolve_secret(env_name: str, *, role: str) -> Secret:
+    """Read one non-DSN credential from the environment, with the same failure as a missing DSN."""
+    raw = os.environ.get(env_name)
+    if raw is None or not raw.strip():
+        raise MissingCredentialsError(format_missing([(env_name, role)]))
+    return Secret(raw.strip(), env_name=env_name)
+
+
 def resolve_dsn(env_name: str, *, role: str) -> Dsn:
     """Read one credential from the environment.
 

@@ -39,12 +39,21 @@ dev = [
   "mypy>=1.11",
   "types-PyYAML>=6",
   "build>=1.2",
+  # Also in the `ssh` extra, which is what users install. Here as well so the tunnel is covered by
+  # the unit job rather than skipped in the one environment that runs it.
+  "paramiko>=3,<4",
 ]
 gui = [
   # Every slint Python release is a pre-release; the pin is explicit so an install cannot
   # silently pick up a different one.
   "slint>=1.18.1b1,<2",
   "keyring>=25,<26",
+]
+# Reaching a database through a bastion. An extra rather than a runtime dependency: paramiko pulls
+# in `cryptography`, and most configurations connect directly. A config that names an `ssh:` block
+# without this installed fails with a config error naming the extra, not an ImportError.
+ssh = [
+  "paramiko>=3,<4",
 ]
 # Kept out of `dev` on purpose: compiling needs a C toolchain, takes minutes, and no test or CI
 # job needs it. `make exe` installs it on demand.
@@ -99,9 +108,9 @@ strict = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["keyring", "slint"]
-# Optional (gui extra); absent from the plain dev environment, where mypy runs. Both ship their
-# own types, so this is about them not being installed rather than about them being untyped.
+module = ["keyring", "slint", "paramiko"]
+# Optional extras (gui, ssh); absent from the plain dev environment, where mypy runs. All ship
+# their own types, so this is about them not being installed rather than about them being untyped.
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

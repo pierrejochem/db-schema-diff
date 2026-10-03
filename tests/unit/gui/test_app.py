@@ -27,6 +27,7 @@ pytest.importorskip("slint", reason="the GUI extra is not installed")
 from cumo_schema_comparer.errors import ProbeError
 from cumo_schema_comparer.gui import app as app_module
 from cumo_schema_comparer.gui.app import Application
+from cumo_schema_comparer.gui.errors import GuiError
 from cumo_schema_comparer.gui.session import Session
 from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus
 from tests.support.builders import col, inventory, table
@@ -64,6 +65,10 @@ SOURCE_ROW_FIELDS = {
     "schema_map",
     "liquibase_schema",
     "liquibase_table",
+    "ssh_host",
+    "ssh_user",
+    "ssh_key",
+    "ssh_passphrase_env",
     "is_master",
     "credential_source",
     "connection_status",
@@ -250,7 +255,7 @@ class TestLoading:
         assert "postgresql://" not in str(rows(app.window.credentials))
         assert "postgresql://" not in str(rows(app.window.sources))
 
-    def test_every_source_row_carries_all_thirteen_fields(self, app):
+    def test_every_source_row_carries_every_field(self, app):
         for row in rows(app.window.sources):
             assert set(row) == SOURCE_ROW_FIELDS
 
@@ -1529,3 +1534,107 @@ class TestEntryPoint:
         with mock.patch.object(app_module, "CredentialStore", spy):
             Application(environ={})
         assert seen == [{"environ": {}}]
+
+
+class TestSshGateway:
+    """Four widgets over one submodel, with the same shape as the liquibase pair.
+
+    The rule being defended: the config file is committed, so it may hold a key *path* and a
+    variable *name* — never a key and never a passphrase.
+    """
+
+    def test_naming_a_gateway_creates_the_block(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        assert app.config.config.targets[0].ssh.host == "bastion.internal"
+        assert app.config.dirty is True
+
+    def test_the_other_fields_fill_in_around_it(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_user", "deploy")
+        app.window.source_changed("qa", "ssh_key", "~/.ssh/id_ed25519")
+        app.window.source_changed("qa", "ssh_passphrase_env", "QA_SSH_PASSPHRASE")
+
+        ssh = app.config.config.targets[0].ssh
+        assert (ssh.host, ssh.user) == ("bastion.internal", "deploy")
+        assert (ssh.private_key, ssh.passphrase_env) == (
+            "~/.ssh/id_ed25519",
+            "QA_SSH_PASSPHRASE",
+        )
+
+    def test_a_key_with_no_gateway_is_refused(self, app):
+        """A key with nothing to use it on cannot connect to anything.
+
+        The liquibase pair refuses the same shape for the same reason: a half-filled submodel is a
+        setting that cannot mean what it looks like it means.
+        """
+        app.window.source_changed("qa", "ssh_key", "~/.ssh/id_ed25519")
+        assert app.window.status_is_error is True
+        assert "gateway" in app.window.status_message
+        assert app.config.config.targets[0].ssh is None
+
+    def test_clearing_the_gateway_clears_the_whole_block(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_key", "~/.ssh/id_ed25519")
+        app.window.source_changed("qa", "ssh_host", "")
+        assert app.config.config.targets[0].ssh is None
+
+    def test_a_source_with_no_gateway_sends_empty_strings_not_missing_keys(self, app):
+        """Slint accepts a partial row and then dies at repaint, so every key must be present."""
+        row = rows(app.window.sources)[0]
+        assert row["ssh_host"] == ""
+        assert set(row) == SOURCE_ROW_FIELDS
+
+    def test_the_gateway_reaches_the_window(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_user", "deploy")
+        row = next(r for r in rows(app.window.sources) if r["label"] == "qa")
+        assert row["ssh_host"] == "bastion.internal"
+        assert row["ssh_user"] == "deploy"
+
+    def test_a_pasted_connection_string_is_refused_in_an_ssh_field(self, app, tmp_path):
+        """Every free-text field on a source is a place someone might paste a DSN."""
+        app.window.source_changed("qa", "ssh_host", "postgresql://u:s3cret@h/db")
+        app.config.path = tmp_path / "c.yaml"
+        with pytest.raises(GuiError):
+            app.config.save()
+        assert not (tmp_path / "c.yaml").exists()
+
+    def test_no_passphrase_value_can_reach_the_config_file(self, app):
+        """The field holds a variable name. Storing the value itself is what `dsn_env` prevents."""
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_passphrase_env", "QA_SSH_PASSPHRASE")
+        text = app.config.to_yaml()
+        assert "QA_SSH_PASSPHRASE" in text
+        assert "passphrase:" not in text
+
+
+class TestTheGatewayStaysReadableInTheWindow:
+    """`_sanitise` redacts any token holding `@` or `://` on its way to a property.
+
+    That is why the tunnel names a gateway as "gateway host:port as user" and not the usual
+    `user@host`. Spelled the usual way the whole token becomes `***`, and a person staring at a
+    failed connection is told nothing at all. The two modules are checked together because each one
+    alone looks correct.
+    """
+
+    def gateway(self, **kwargs):
+        from cumo_schema_comparer.config.model import SshRef
+        from cumo_schema_comparer.db.tunnel import describe
+
+        return describe(SshRef(host="bastion.internal", port=2222, **kwargs))
+
+    def test_a_gateway_failure_survives_sanitising_intact(self):
+        message = f"{self.gateway(user='deploy')}: authentication was refused."
+        cleaned = app_module._sanitise(message)
+        assert "bastion.internal" in cleaned
+        assert "2222" in cleaned
+        assert "deploy" in cleaned
+        assert "***" not in cleaned
+
+    def test_the_usual_spelling_would_not_have_survived(self):
+        """The counter-example, so the reason for the odd spelling is on the record."""
+        assert app_module._sanitise("deploy@bastion.internal:2222 refused") == "*** refused"
+
+    def test_a_passphrase_that_somehow_reached_a_message_would_still_be_cut(self):
+        # The gateway description is safe by construction; this is the layer behind it.
+        assert "hunter2" not in app_module._sanitise("sslpassword=hunter2 gateway b:22")

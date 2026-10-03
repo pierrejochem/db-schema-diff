@@ -27,6 +27,18 @@ targets:
   - label: qa
     host: db-qa.internal
     dsn_env: QA_INVOICING_DSN
+    # Reached through a bastion. The DSN above names the database as the *gateway* sees it, so the
+    # same DSN works with or without the tunnel and no local port number lands in this file.
+    # Needs the optional extra: pip install 'cumo-db-schema-comparer[ssh]'
+    ssh:
+      host: bastion-qa.internal
+      # port: 22
+      user: deploy
+      private_key: ~/.ssh/id_ed25519
+      # The *name* of the variable holding the key's passphrase, never the passphrase. Omit it
+      # when the key is loaded in your ssh agent, which is the usual case.
+      passphrase_env: QA_SSH_KEY_PASSPHRASE
+      # known_hosts: ~/.ssh/known_hosts
 
   - label: dev
     host: db-dev.internal

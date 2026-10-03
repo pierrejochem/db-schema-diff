@@ -211,6 +211,7 @@ def compare_command(
         rules = _build_ignores(
             config, config_path, ignores_path, no_default_ignores=no_default_ignores
         )
+        runner.require_tunnel_support(config)
         credentials = config.resolve_credentials()
         configure(
             cli_options.get("verbose", 0),
@@ -224,6 +225,7 @@ def compare_command(
         report = runner.compare(
             config,
             credentials,
+            ssh_passphrases=config.resolve_ssh_passphrases(),
             targets=target_labels or None,
             sequential=sequential,
             diff_options=DiffOptions(
@@ -311,6 +313,7 @@ def inventory_command(
     cli_options = ctx.obj or {}
     config = load_config([config_path])[0]
     source = config.master if label == config.master.label else config.target(label)
+    runner.require_tunnel_support(config)
     credentials = config.resolve_credentials()
     configure(
         cli_options.get("verbose", 0),
@@ -321,6 +324,7 @@ def inventory_command(
     result = runner.capture(
         source,
         credentials[label],
+        ssh_passphrase=config.resolve_ssh_passphrases().get(label),
         exclude_schemas=config.exclude_schemas,
         options=runner.connection_options(config),
         skip_liquibase=skip_liquibase,
@@ -526,6 +530,7 @@ def probe_command(ctx: click.Context, config_path: Path) -> None:
     """
     cli_options = ctx.obj or {}
     config = load_config([config_path])[0]
+    runner.require_tunnel_support(config)
     credentials = config.resolve_credentials()
     configure(
         cli_options.get("verbose", 0),
@@ -533,10 +538,12 @@ def probe_command(ctx: click.Context, config_path: Path) -> None:
         dsns=credentials.values(),
     )
 
+    passphrases = config.resolve_ssh_passphrases()
     statuses = [
         runner.check_connection(
             source,
             credentials[source.label],
+            ssh_passphrase=passphrases.get(source.label),
             options=runner.connection_options(config),
             exclude_schemas=config.exclude_schemas,
         )

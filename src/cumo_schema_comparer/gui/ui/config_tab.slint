@@ -17,6 +17,12 @@ export struct SourceRow {
     schema_map: string,       // "from=to, from=to"
     liquibase_schema: string,
     liquibase_table: string,
+    // The gateway to reach this source through; empty means connect directly. The key is a path
+    // and the passphrase is a variable *name* — neither is ever a secret in itself.
+    ssh_host: string,
+    ssh_user: string,
+    ssh_key: string,
+    ssh_passphrase_env: string,
     is_master: bool,
     credential_source: string,   // keychain | environment | unset
     connection_status: string,
@@ -215,6 +221,48 @@ export component ConfigTab inherits ScrollView {
                             placeholder-text: "DATABASECHANGELOG";
                             edited(v) => {
                                 root.source-changed(row.label, "liquibase_table", v);
+                            }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "ssh gateway";
+                        LineEdit {
+                            text: row.ssh_host;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "bastion.internal (optional)";
+                            edited(v) => { root.source-changed(row.label, "ssh_host", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "ssh user";
+                        LineEdit {
+                            text: row.ssh_user;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "defaults to your local user";
+                            edited(v) => { root.source-changed(row.label, "ssh_user", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "ssh key";
+                        LineEdit {
+                            text: row.ssh_key;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "~/.ssh/id_ed25519 (agent if empty)";
+                            edited(v) => { root.source-changed(row.label, "ssh_key", v); }
+                        }
+                        Rectangle { }
+                    }
+                    FormRow {
+                        label: "ssh passphrase variable";
+                        LineEdit {
+                            text: row.ssh_passphrase_env;
+                            max-width: Tokens.field-max;
+                            placeholder-text: "QA_SSH_PASSPHRASE";
+                            edited(v) => {
+                                root.source-changed(row.label, "ssh_passphrase_env", v);
                             }
                         }
                         Rectangle { }

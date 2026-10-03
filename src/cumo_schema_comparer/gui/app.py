@@ -48,7 +48,14 @@ from typing import Any
 
 import slint
 
-from ..config.model import ComparerConfig, FailOn, IgnoreConfig, LiquibaseRef, SourceRef
+from ..config.model import (
+    ComparerConfig,
+    FailOn,
+    IgnoreConfig,
+    LiquibaseRef,
+    SourceRef,
+    SshRef,
+)
 from ..diff.changelog import ChangelogOptions
 from ..diff.ignores import IgnoreRuleSet, load_default_ignores
 from ..diff.model import ComparisonReport
@@ -70,6 +77,14 @@ UI = Path(__file__).parent / "ui" / "main.slint"
 FAIL_ON_CHOICES: tuple[str, ...] = ("error", "warning", "any", "never")
 
 #: Config-level fields the Config tab edits through ``source_changed("", field, value)``.
+#: The ssh widgets in the Config tab, and the ``SshRef`` field each one stands for.
+_SSH_FIELDS = {
+    "ssh_host": "host",
+    "ssh_user": "user",
+    "ssh_key": "private_key",
+    "ssh_passphrase_env": "passphrase_env",
+}
+
 _OPTION_INTS = (
     "connect_timeout_seconds",
     "statement_timeout_seconds",
@@ -391,8 +406,9 @@ class Application:
         return None if len(chosen) == 3 else frozenset(chosen)
 
     def _source_row(self, source: SourceRef, credential: CredentialStatus) -> dict[str, Any]:
-        """All thirteen ``SourceRow`` fields. Slint neither defaults nor rejects a partial row."""
+        """All seventeen ``SourceRow`` fields. Slint neither defaults nor rejects a partial row."""
         status = self._checks.get(source.label)
+        ssh = source.ssh
         return {
             "label": source.label,
             "dsn_env": source.dsn_env,
@@ -402,6 +418,12 @@ class Application:
             "schema_map": ", ".join(f"{k}={v}" for k, v in source.schema_map.items()),
             "liquibase_schema": "" if source.liquibase is None else source.liquibase.schema_name,
             "liquibase_table": "" if source.liquibase is None else source.liquibase.table,
+            "ssh_host": "" if ssh is None else ssh.host,
+            "ssh_user": "" if ssh is None or ssh.user is None else ssh.user,
+            "ssh_key": "" if ssh is None or ssh.private_key is None else ssh.private_key,
+            "ssh_passphrase_env": (
+                "" if ssh is None or ssh.passphrase_env is None else ssh.passphrase_env
+            ),
             "is_master": source.label == self.config.config.master.label,
             "credential_source": str(credential.source),
             "connection_status": "" if status is None else _describe_check(status),
@@ -509,6 +531,8 @@ class Application:
             self._config_changed(field, value)
         elif field in ("liquibase_schema", "liquibase_table"):
             self._liquibase_changed(label, field, value)
+        elif field.startswith("ssh_"):
+            self._ssh_changed(label, field, value)
         else:
             if field == "label":
                 self._check_rename(label, value)
@@ -548,6 +572,55 @@ class Application:
             label,
             "liquibase",
             LiquibaseRef(schema=schema, table=table or "DATABASECHANGELOG"),
+        )
+
+    def _ssh_changed(self, label: str, field: str, value: str) -> None:
+        """Four widgets over one submodel, as the liquibase pair already is.
+
+        Clearing the gateway clears the whole block: a key or a passphrase with nothing to connect
+        to is not a half-finished setting, it is a setting that cannot mean anything.
+        """
+        source = self._source(label)
+        current = source.ssh
+        parts = {
+            "host": "" if current is None else current.host,
+            "user": "" if current is None or current.user is None else current.user,
+            "private_key": (
+                "" if current is None or current.private_key is None else current.private_key
+            ),
+            "passphrase_env": (
+                "" if current is None or current.passphrase_env is None else current.passphrase_env
+            ),
+        }
+        parts[_SSH_FIELDS[field]] = value.strip()
+
+        if field == "ssh_host" and not parts["host"]:
+            # Clearing the gateway clears the block, exactly as clearing the liquibase schema
+            # clears that reference: the rest of it cannot mean anything on its own.
+            self.config.update_source(label, "ssh", None)
+            return
+
+        if not parts["host"]:
+            if any(parts.values()):
+                raise GuiError(
+                    "name the ssh gateway before its key; a key with no host to use it on "
+                    "cannot connect to anything",
+                    field="ssh",
+                )
+            self.config.update_source(label, "ssh", None)
+            return
+
+        self.config.update_source(
+            label,
+            "ssh",
+            SshRef(
+                host=parts["host"],
+                port=22 if current is None else current.port,
+                user=parts["user"] or None,
+                private_key=parts["private_key"] or None,
+                passphrase_env=parts["passphrase_env"] or None,
+                known_hosts=None if current is None else current.known_hosts,
+            ),
         )
 
     def _config_changed(self, field: str, value: str) -> None:
