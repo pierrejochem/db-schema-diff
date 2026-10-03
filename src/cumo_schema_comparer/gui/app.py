@@ -92,6 +92,10 @@ UI = Path(__file__).parent / "ui" / "main.slint"
 #: this mapping in `test_ui_smoke`.
 RESULTS_VIEW = 2
 
+#: Source fields the stored connection string is built from. Changing one makes what is in the
+#: keychain disagree with what the window shows, so the entry is rebuilt — see `_restore_password`.
+_CONNECTION_FIELDS = frozenset({"host", "port", "database", "user", "sslmode"})
+
 #: A source's state, as the run dialog's heading row for it. ``CAPTURING`` has no entry: it is
 #: the running state, which is this mapping's default.
 _STEP_STATE = {
@@ -654,6 +658,8 @@ class Application:
                 was = self._source(label).dsn_env
             parsed: Any = _parse_schema_map(value) if field == "schema_map" else value
             self.config.update_source(label, field, parsed)
+            if field in _CONNECTION_FIELDS:
+                self._rebuild_credential(label if field != "label" else str(value))
             if field == "label" and label != value:
                 self._restore_password(was, self._source(value).dsn_env)
                 self._checks.pop(label, None)
@@ -912,6 +918,34 @@ class Application:
             raise GuiError(_sanitise(str(exc))) from None
         self._described.pop(source.dsn_env, None)
         self._ok(f"Password forgotten for {label}.")
+
+    def _rebuild_credential(self, label: str) -> None:
+        """Rewrite one source's stored connection string from the fields as they now stand.
+
+        The password is the only part nobody can retype — it cannot be read back out of the
+        window — so it is carried over from the entry being replaced and everything else is taken
+        from the configuration.
+
+        Only an entry this application put in the keychain is touched. A credential coming from
+        the environment belongs to whoever exported it, and the command line is still reading that
+        same variable; shadowing it in the keychain would make the window the quiet authority on
+        somebody else's connection.
+
+        Never raises. This runs on a keystroke, and a keychain that refuses must not stop the
+        field being typed into — pressing Store again does the same job and reports properly.
+        """
+        source = self._source(label)
+        env_name = source.dsn_env
+        if self._describe(env_name).source is not CredentialSource.KEYCHAIN:
+            return
+        try:
+            existing = self.credentials.resolve(env_name)
+            rebuilt = connection.build(source, existing.password() or "", env_name=env_name)
+            self.credentials.store(env_name, rebuilt.value)
+        except Exception as exc:
+            log.warning("could not update the stored credential (%s)", type(exc).__name__)
+            return
+        self._described.pop(env_name, None)
 
     def _restore_password(self, old_env: str, new_env: str) -> None:
         """Move a stored credential when a rename moves the variable it is filed under.
