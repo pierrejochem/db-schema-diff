@@ -157,11 +157,14 @@ class ProgressEvent:
     """Already redacted. Never contains a connection string."""
 
 
-#: The steps one capture reports, and the changelog step that follows them. Taken from the
+#: Every row one capture reports, the changelog row that follows them, and the schema row that
+#: comes first. Taken from the
 #: library through ``runner`` rather than from ``build``, which the window layer may not import:
 #: the session is where this package meets the comparison.
-CAPTURE_STEP_NAMES = runner.CAPTURE_STEP_NAMES
+CAPTURE_ROWS = runner.CAPTURE_ROWS
 CHANGELOG_STEP = runner.CHANGELOG_STEP
+SCHEMA_STEP = runner.SCHEMA_STEP
+STEP_KINDS = runner.STEP_KINDS
 
 #: The phases of a comparison, in order, as the window lays them out before anything runs.
 CAPTURE_PHASE = "capture"
@@ -178,14 +181,17 @@ class RunDetail:
     down the same channel would grow that list by a row per object kind. Different shape, different
     lifetime, different consumer.
 
-    ``step`` is empty for a phase that is not inside a capture, and ``count`` is what the step
-    found. Never carries a credential: ``source`` is a label and ``step`` is a fixed name.
+    ``step`` is empty for a phase that is not inside a capture, ``count`` is what the row found and
+    ``detail`` is whatever that row has to say for itself — the schema row names the schemas it
+    matched. Never carries a credential: ``source`` is a label, ``step`` is a fixed name, and a
+    schema name is in the configuration file already.
     """
 
     phase: str
     source: str = ""
     step: str = ""
     count: int = 0
+    detail: str = ""
 
 
 class Session:
@@ -684,7 +690,7 @@ class Session:
 
     def _capture_observer(
         self, loop: asyncio.AbstractEventLoop, label: str
-    ) -> Callable[[str, int], None]:
+    ) -> Callable[[str, int, str], None]:
         """An observer for ``runner.capture``, which runs on a worker thread.
 
         Hands the event to the loop and does nothing else. The consumer writes Slint properties,
@@ -692,10 +698,10 @@ class Session:
         this function is deliberately incapable of doing anything but scheduling.
         """
 
-        def observe(step: str, count: int) -> None:
+        def observe(step: str, count: int, detail: str = "") -> None:
             loop.call_soon_threadsafe(
                 self._detail,
-                RunDetail(phase=CAPTURE_PHASE, source=label, step=step, count=count),
+                RunDetail(phase=CAPTURE_PHASE, source=label, step=step, count=count, detail=detail),
             )
 
         return observe

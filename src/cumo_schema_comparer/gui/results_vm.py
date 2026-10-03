@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from ..diff.changelog import ChangelogDiff, ChangelogStatus
-from ..diff.model import ComparisonReport, ObjectFinding, TargetDiff
+from ..diff.model import ComparisonReport, NoteKind, ObjectFinding, TargetDiff
 from ..diff.severity import Severity
 from ..model.kinds import KIND_ORDER
 from ..report.base import Reporter, render_to_path
@@ -71,6 +71,20 @@ class ResultsModel:
         through ``probe_failed`` or only through a skipped target.
         """
         report = self._report
+        vacuous = [
+            target.target_label
+            for target in report.targets
+            if any(note.kind is NoteKind.NOTHING_COMPARED for note in target.notes)
+        ]
+        if vacuous:
+            # Before naming any severity: "Drift found at error" is what this used to say, which
+            # is both wrong and reassuring — there was no drift because there was nothing to
+            # compare.
+            return (
+                "error",
+                f"Nothing was compared for {', '.join(vacuous)}: no objects were found on either "
+                "side. Check that the configured schemas exist.",
+            )
         skipped = [t.target_label for t in report.targets if t.skipped]
         if report.probe_failed or skipped:
             sentence = INCOMPLETE

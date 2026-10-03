@@ -55,6 +55,13 @@ from .normalize.types import canonical_type
 log = logging.getLogger(__name__)
 
 
+#: The first thing a capture reports: which schemas the server actually matched.
+#:
+#: Its own step because it is the one number that explains all the others. A ``schemas:`` filter
+#: naming a schema that does not exist makes every count below it zero, and without this the
+#: checklist showed ten zeros and no reason for them.
+SCHEMA_STEP = "schemas"
+
 #: Names of the steps a capture reports, in order. The table itself is at the foot of this module,
 #: where the converters it names have been defined.
 CAPTURE_STEP_NAMES: tuple[str, ...] = (
@@ -70,6 +77,35 @@ CAPTURE_STEP_NAMES: tuple[str, ...] = (
     "extensions",
 )
 
+#: Steps that fetch more than one kind in one query, and the sub-rows they report.
+#:
+#: A step is one catalog query, so views and materialized views arrive together — and a single
+#: ``views: 3`` cannot answer "how many matviews does it have". A matview holds data and must be
+#: refreshed, so it is a different thing from a view, and the checklist says so.
+STEP_KINDS: dict[str, tuple[str, ...]] = {
+    "views": ("plain views", "materialized views"),
+    "types": ("enum types", "domain types", "composite types", "range types"),
+}
+
+#: The kind behind each sub-row, in the same order as :data:`STEP_KINDS`. Kept beside it rather
+#: than inside it so the names stay readable; ``test_capture_steps`` holds the two in step.
+_STEP_SUBKINDS: dict[str, tuple[ObjectKind, ...]] = {
+    "views": (ObjectKind.VIEW, ObjectKind.MATVIEW),
+    "types": (
+        ObjectKind.ENUM_TYPE,
+        ObjectKind.DOMAIN_TYPE,
+        ObjectKind.COMPOSITE_TYPE,
+        ObjectKind.RANGE_TYPE,
+    ),
+}
+
+#: Every row a capture reports, in order: each step, with its sub-rows after it. What a caller lays
+#: the checklist out from.
+CAPTURE_ROWS: tuple[str, ...] = (
+    SCHEMA_STEP,
+    *(name for step in CAPTURE_STEP_NAMES for name in (step, *STEP_KINDS.get(step, ()))),
+)
+
 #: The step reported for the Liquibase changelog, which is read after the catalog and only when it
 #: is not skipped. Named here so a caller can lay out the whole checklist before anything runs.
 CHANGELOG_STEP = "changelog"
@@ -82,7 +118,7 @@ def build_inventory(
     exclude_schemas: tuple[str, ...] = (),
     skip_liquibase: bool = False,
     redact_literals: bool = True,
-    observer: Callable[[str, int], None] | None = None,
+    observer: Callable[[str, int, str], None] | None = None,
 ) -> Inventory:
     """Capture one database as a canonical inventory.
 
@@ -90,11 +126,12 @@ def build_inventory(
     here, as the inventory is built, so they never enter the in-memory model and every consumer
     inherits that. See :func:`redact_inventory`.
 
-    ``observer`` is called with each step's name and how many objects it found, as it finishes, so
-    a caller can show what is happening during a capture that takes a while. It is called on
-    whatever thread this runs on — a capture runs on a worker — so an implementation must not touch
-    anything belonging to another thread. It may not raise: a broken progress display is not a
-    reason to fail a capture, so anything it throws is logged and dropped.
+    ``observer`` is called with each row's name, how many objects it found and a detail string, as
+    it finishes; the rows it will see are :data:`CAPTURE_ROWS`, in order, plus
+    :data:`CHANGELOG_STEP` unless the changelog is skipped. It is called on whatever thread this
+    runs on — a capture runs on a worker — so an implementation must not touch anything belonging
+    to another thread. It may not raise: a broken progress display is not a reason to fail a
+    capture, so anything it throws is logged and dropped.
     """
     features = server_features(connection)
     introspector = Introspector(connection, features)
@@ -103,13 +140,17 @@ def build_inventory(
     schemas = introspector.schemas(exclude=exclude_schemas, only=source.schemas)
     log.info("%s: inventorying %d schema(s)", source.label, len(schemas))
 
-    def report(step: str, found: int) -> None:
+    def report(step: str, found: int, detail: str = "") -> None:
         if observer is None:
             return
         try:
-            observer(step, found)
+            observer(step, found, detail)
         except Exception as exc:  # pragma: no cover - defended, not expected
             log.warning("progress observer failed (%s)", type(exc).__name__)
+
+    # First, and named: a filter that matched no schema makes every count below it zero, and the
+    # zeros on their own give no reason for themselves.
+    report(SCHEMA_STEP, len(schemas), ", ".join(schemas) or "none matched")
 
     objects: dict[ObjectKey, Any] = {}
     for name, query, convert in _CAPTURE_STEPS:
@@ -118,6 +159,8 @@ def build_inventory(
         found = convert(query(introspector, schemas)) if schemas else {}
         objects.update(found)
         report(name, len(found))
+        for sub, kind in zip(STEP_KINDS.get(name, ()), _STEP_SUBKINDS.get(name, ()), strict=True):
+            report(sub, sum(1 for key in found if key.kind is kind))
 
     changelog = None if skip_liquibase else _changelog(introspector, source)
     if not skip_liquibase:

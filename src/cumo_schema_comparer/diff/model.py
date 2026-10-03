@@ -45,6 +45,9 @@ class NoteKind(StrEnum):
 
     TARGET_EMPTY = "target_empty"
     """The target has no objects at all. Reported once instead of thousands of times."""
+    NOTHING_COMPARED = "nothing_compared"
+    """Neither side had a comparable object, so the comparison proved nothing. Reported at ERROR
+    because the alternative is a green verdict and exit 0 from a run that inspected nothing."""
     VERSION_SKEW = "version_skew"
     """The two servers are different PostgreSQL majors, so printed definitions differ by
     formatting alone and body comparisons were downgraded."""

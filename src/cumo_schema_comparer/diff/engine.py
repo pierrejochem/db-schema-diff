@@ -71,6 +71,33 @@ def diff_inventories(
 
     changelog = diff_changelog(master.changelog, target.changelog, options=changelog_options)
 
+    if master.is_empty and target.is_empty:
+        # Both sides empty is not agreement. Without this the comparison falls through every
+        # check, finds no differences because there was nothing to differ, and reports a green
+        # verdict at exit 0 — the worst answer this tool can give. The usual cause is a schema
+        # filter that matched nothing, so the note says where to look rather than merely that
+        # something is wrong.
+        notes.append(
+            Note(
+                kind=NoteKind.NOTHING_COMPARED,
+                message=(
+                    f"neither {master.source.label!r} nor {target.source.label!r} had a single "
+                    "comparable object, so this comparison proves nothing; check that the "
+                    "configured schemas exist on both servers — Check connection, or `probe`, "
+                    "reports the schemas each one actually matched"
+                ),
+                severity=Severity.ERROR,
+            )
+        )
+        return TargetDiff(
+            master_label=master.source.label,
+            target_label=target.source.label,
+            master_source=master.source,
+            target_source=target.source,
+            notes=tuple(notes),
+            changelog=changelog,
+        )
+
     if target.is_empty and not master.is_empty:
         # One finding, not thousands. A fresh database is a deployment that has not happened,
         # and listing every object it lacks buries that single fact.

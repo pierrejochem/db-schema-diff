@@ -84,9 +84,50 @@ class TestEmptyTarget:
         assert result.worst_severity() is Severity.ERROR
 
     def test_an_empty_master_is_not_treated_as_an_empty_target(self):
+        """And not as "nothing compared" either: everything in the target is extra, which is a
+        loud result rather than a silent one."""
         result = diff({}, table("public", "scratch"))
         assert [n.kind for n in result.notes] == []
         assert result.findings
+
+
+class TestNothingCompared:
+    """Two empty sides used to report "No differences found" — the worst answer this tool can give.
+
+    The guard above only fired when the *target* alone was empty, so a comparison that inspected
+    nothing at all fell through it and came back clean, at exit 0. The commonest way to arrive
+    there is a ``schemas:`` filter that matches no schema: a typo, or a schema renamed per
+    environment with no ``schema_map``. Every count reads zero and the verdict reads green.
+    """
+
+    def test_two_empty_sides_are_an_error_not_a_clean_run(self):
+        result = diff({}, {})
+        assert [n.kind for n in result.notes] == [NoteKind.NOTHING_COMPARED]
+        assert result.worst_severity() is Severity.ERROR
+
+    def test_the_note_says_what_to_go_and_look_at(self):
+        """A bare "nothing compared" sends nobody anywhere. The schema filter is the usual cause."""
+        ((note,)) = diff({}, {}).notes
+        assert "schema" in note.message
+
+    def test_it_fails_a_gate_rather_than_passing_one(self):
+        """The whole point: a scripted run must not come back 0 having looked at nothing."""
+        assert diff({}, {}).worst_severity() >= Severity.ERROR
+
+    def test_an_extension_on_both_sides_is_still_nothing_compared(self):
+        """``plpgsql`` exists in every database, so counting it would make an empty schema look
+        inspected and the guard would never fire."""
+        from cumo_schema_comparer.model.keys import ObjectKey
+        from cumo_schema_comparer.model.kinds import ObjectKind
+        from cumo_schema_comparer.model.objects import Extension
+
+        key = ObjectKey(ObjectKind.EXTENSION, "public", "plpgsql")
+        only_extension = {key: Extension(key=key, version="1.0")}
+        result = diff(only_extension, only_extension)
+        assert [n.kind for n in result.notes] == [NoteKind.NOTHING_COMPARED]
+
+    def test_one_object_on_either_side_is_enough_to_be_a_real_comparison(self):
+        assert [n.kind for n in diff(table("public", "a"), table("public", "a")).notes] == []
 
 
 class TestColumnAttributes:
