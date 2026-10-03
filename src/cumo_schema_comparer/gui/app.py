@@ -446,15 +446,25 @@ class Application:
 
         return handler
 
+    def _announce(self, message: str, *, is_error: bool) -> None:
+        """Put one message in front of the person, as a toast.
+
+        The token is what makes a repeat visible. Two failed checks of the same source produce the
+        same text, and the toast is driven by property changes, so without a token the second would
+        change nothing on screen and the run would look like it had stopped.
+        """
+        self.window.status_message = _sanitise(message)
+        self.window.status_is_error = is_error
+        self.window.status_token = int(self.window.status_token) + 1
+
     def _fail(self, exc: BaseException | str) -> None:
-        self.window.status_message = _sanitise(str(exc))
-        self.window.status_is_error = True
+        self._announce(str(exc), is_error=True)
 
     def _ok(self, message: str) -> None:
-        self.window.status_message = _sanitise(message)
-        self.window.status_is_error = False
+        self._announce(message, is_error=False)
 
     def _clear_status(self) -> None:
+        # Not a message: nothing to show, and nothing to re-show, so the token stays where it is.
         self.window.status_message = ""
         self.window.status_is_error = False
 
