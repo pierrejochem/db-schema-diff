@@ -7,6 +7,7 @@ import { Tokens } from "tokens.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
 import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
+import { AboutTab } from "about_tab.slint";
 import { RunTab, ProgressRow } from "run_tab.slint";
 import { ResultsTab, FindingRow, DeltaRow, DiffLine } from "results_tab.slint";
 
@@ -32,7 +33,6 @@ export component MainWindow inherits Window {
     in-out property <length> column-width: min(
         root.width - Tokens.rail-width - 2 * Tokens.space-5, Tokens.container-max);
     in-out property <int> current-view: 0;
-    in-out property <string> config-name;
     in-out property <string> config-path;
     in-out property <bool> dirty;
     in-out property <string> status-message;
@@ -63,6 +63,14 @@ export component MainWindow inherits Window {
     in property <[CredentialRow]> credentials;
     in property <bool> keychain-available;
     in property <string> keychain-problem;
+
+    // What the About view shows. Supplied by the application: a version written into markup
+    // is a version that will be wrong.
+    in property <string> about-version;
+    in property <string> about-python;
+    in property <string> about-slint;
+    in property <string> about-config-path;
+    in property <bool> about-tunnelling;
 
     // Run. Defaults are the CLI's defaults.
     in-out property <bool> running: false;
@@ -116,7 +124,6 @@ export component MainWindow inherits Window {
     callback check-all();
     callback validate-config();
     callback save-config();
-    callback load-config();
 
     // Read-backs and a driver for tests. Python cannot click, and a callback it assigns replaces
     // the handler it would be testing, so these run the real forwarding chain instead.
@@ -164,9 +171,10 @@ export component MainWindow inherits Window {
             : index == 2 ? results-tab.visible
             : index == 3 ? ignores-tab.visible
             : index == 4 ? credentials-tab.visible
+            : index == 5 ? about-tab.visible
             : false;
     }
-    out property <int> view-count: 5;
+    out property <int> view-count: 6;
     public function run-start-enabled() -> bool { return run-tab.start-enabled; }
     public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
     public function results-banner-kind() -> string { return results-tab.banner-kind; }
@@ -248,33 +256,29 @@ export component MainWindow inherits Window {
                     selected: root.current-view == 4;
                     clicked => { root.current-view = 4; }
                 }
+                NavItem {
+                    label: "About";
+                    selected: root.current-view == 5;
+                    clicked => { root.current-view = 5; }
+                }
 
                 // Takes the slack, so the config block below sits at the foot of the rail.
                 Rectangle { }
 
                 Rectangle { height: Tokens.hairline-width; background: Tokens.navy-selected; }
+                // No path and no label: the application writes to one place and does not open
+                // files, so a path in the navigation told nobody anything they could act on. What
+                // is still worth saying is whether there is anything unsaved.
                 VerticalLayout {
                     padding-left: Tokens.space-4;
                     padding-right: Tokens.space-4;
                     padding-top: Tokens.space-3;
-                    spacing: Tokens.space-1;
-                    RailLabel { text: "CONFIG"; }
-                    // Wrapped rather than elided: vertical space is what the rail has, and a
-                    // truncated path with no tooltip to recover it is worse than two lines.
                     Text {
-                        text: root.config-path == "" ? "(unsaved)" : root.config-path;
-                        font-family: Tokens.family-mono;
-                        font-size: Tokens.text-small;
-                        color: root.config-path == "" ? Tokens.lime : Tokens.inverse;
-                        wrap: word-wrap;
-                    }
-                    Text {
-                        text: root.dirty ? "• modified" : "";
+                        text: root.dirty ? "• unsaved changes" : "";
                         font-size: Tokens.text-small;
                         color: Tokens.caution-inverse;
                         height: root.dirty ? Tokens.space-4 : 0px;
                     }
-                    Button { text: "Open…"; clicked => { root.load-config(); } }
                 }
             }
         }
@@ -292,7 +296,6 @@ export component MainWindow inherits Window {
                     x: (parent.width - root.column-width) / 2;
                     width: root.column-width;
                     height: parent.height;
-                    config-name <=> root.config-name;
                     sources: root.sources;
                     exclude-schemas-text <=> root.exclude-schemas-text;
                     connect-timeout-seconds <=> root.connect-timeout-seconds;
@@ -397,6 +400,20 @@ export component MainWindow inherits Window {
                     store-credential(e, s) => { root.store-credential(e, s); }
                     forget-credential(e) => { root.forget-credential(e); }
                     }
+
+                about-tab := AboutTab {
+                    // Every view is instantiated; the rail chooses which is drawn.
+                    visible: root.current-view == 5;
+                    x: (parent.width - root.column-width) / 2;
+                    width: root.column-width;
+                    height: parent.height;
+
+                    version: root.about-version;
+                    python-version: root.about-python;
+                    slint-version: root.about-slint;
+                    config-path: root.about-config-path;
+                    tunnelling-available: root.about-tunnelling;
+                }
 
                 // Drawn last, so it floats over whichever view is showing rather than displacing
                 // it. Bottom right, clear of the rail.

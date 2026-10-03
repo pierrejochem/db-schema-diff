@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import gc
+import sys
 import textwrap
 import threading
 import time
@@ -27,6 +28,7 @@ pytest.importorskip("slint", reason="the GUI extra is not installed")
 from cumo_schema_comparer.errors import ProbeError
 from cumo_schema_comparer.gui import app as app_module
 from cumo_schema_comparer.gui.app import Application
+from cumo_schema_comparer.gui.config_vm import ConfigDocument
 from cumo_schema_comparer.gui.errors import GuiError
 from cumo_schema_comparer.gui.session import Session
 from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus
@@ -167,13 +169,25 @@ def write_config(tmp_path, text: str = CONFIG):
     return path
 
 
+def adopt(app: Application, path) -> Application:
+    """Put a configuration into a window.
+
+    The application cannot do this itself any more — it has no Open button, takes no path on the
+    command line and reopens nothing — so the harness does it directly. One place touches the
+    internals, deliberately, rather than keeping a production method alive that only tests call.
+    """
+    app.config = ConfigDocument.load(path)
+    app._adopt_documents()
+    app._refresh()
+    return app
+
+
 def application(tmp_path, *, environ=None, keychain=None, text: str = CONFIG) -> Application:
     app = Application(
         environ=dict(BOTH) if environ is None else environ,
         keychain=FakeKeychain() if keychain is None else keychain,
     )
-    app.open_config(write_config(tmp_path, text))
-    return app
+    return adopt(app, write_config(tmp_path, text))
 
 
 @pytest.fixture
@@ -238,7 +252,6 @@ async def run_to_completion(app: Application) -> None:
 
 class TestLoading:
     def test_opening_a_config_populates_the_window(self, app):
-        assert app.window.config_name == "invoicing"
         assert [row["label"] for row in app.window.sources] == ["prod", "qa"]
 
     def test_the_window_shows_every_option(self, app):
@@ -282,17 +295,10 @@ class TestLoading:
         assert list(app.window.exclude_schemas) == ["quartz", "audit_archive"]
         assert app.window.exclude_schemas_text == "quartz, audit_archive"
 
-    def test_a_directory_becomes_a_status_message(self, tmp_path):
-        app = Application(environ={}, keychain=FakeKeychain())
-        app.open_config(tmp_path)
-        assert app.window.status_is_error is True
-        assert "Traceback" not in app.window.status_message
-
     def test_an_unreadable_ignores_file_still_leaves_a_usable_window(self, tmp_path):
         app = application(tmp_path, text=CONFIG + "ignores_file: ../nowhere/rules.yaml\n")
         # Declared but absent is allowed (the tab can create it); a broken one must not crash.
         assert app.ignores is not None
-        assert app.window.config_name == "invoicing"
 
 
 class TestEditing:
@@ -453,8 +459,7 @@ class TestCredentials:
         assert by_env(app)["QA_DSN"]["source"] == "unset"
 
     def test_an_unavailable_keychain_is_explained_rather_than_hidden(self, tmp_path):
-        application_ = Application(environ={}, keychain=None)
-        application_.open_config(write_config(tmp_path))
+        application_ = adopt(Application(environ={}, keychain=None), write_config(tmp_path))
         assert application_.window.keychain_available is False
         assert application_.window.keychain_problem != ""
 
@@ -914,15 +919,6 @@ class TestRunning:
         assert app._effective_config().options.fail_on == "any"
         assert "--fail-on any" in app.window.verdict
 
-    def test_loading_another_config_brings_its_own_gate(self, tmp_path):
-        app = application(tmp_path, text=CONFIG + "options:\n  fail_on: never\n")
-        app.window.run_fail_on = "any"
-        other = tmp_path / "other.yaml"
-        other.write_text(CONFIG + "options:\n  fail_on: warning\n")
-        app.open_config(other)
-        assert app.window.run_fail_on == "warning"
-        assert app._effective_config().options.fail_on == "warning"
-
     def test_editing_the_configs_gate_carries_the_run_tab_with_it(self, tmp_path):
         app = application(tmp_path)
         app.window.source_changed("", "fail_on", "any")
@@ -1058,7 +1054,7 @@ class TestChecking:
 
 
 class TestStatusPolarity:
-    """StatusLine has two colours and is always on screen, so every message picks one.
+    """The toast has two colours, so every message picks one.
 
     A flip in either direction is invisible to a test that only checks the text, and the Task 10
     banner defect was exactly that. These assert the colour, not the words.
@@ -1071,7 +1067,8 @@ class TestStatusPolarity:
             assert app.window.status_is_error is False, f"{what}: {app.window.status_message}"
             assert app.window.status_message != "", f"{what}: no message at all"
 
-        green("loading a config")
+        # No "loading a config" case: the application does not open configuration files, and the
+        # harness puts one in without going through a handler, so there is no notice to colour.
         app.window.add_target()
         green("adding a target")
         app.window.remove_target("target")
@@ -1434,16 +1431,28 @@ class TestEntryPoint:
         with mock.patch.object(app_module, "Application", side_effect=RuntimeError("no display")):
             assert app_module.run([]) == 1
 
-    def test_run_opens_a_config_named_on_the_command_line(self, tmp_path):
+    def test_a_path_on_the_command_line_opens_nothing_and_says_so(self, tmp_path, capsys):
+        """The application does not open configuration files at all any more.
+
+        Silently ignoring an argument would leave someone staring at an empty window wondering
+        which file they were looking at.
+        """
         path = write_config(tmp_path)
-        opened: list[Any] = []
+        built: list[Application] = []
+        original = Application.__init__
+
+        def remember(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            built.append(self)
 
         with (
             mock.patch.object(app_module.slint, "run_event_loop", lambda coro: coro.close()),
-            mock.patch.object(Application, "open_config", lambda self, p: opened.append(p)),
+            mock.patch.object(Application, "__init__", remember),
         ):
             assert app_module.run([str(path)]) == 0
-        assert opened == [path]
+
+        assert built and built[0].config.path is None, "nothing should have been opened"
+        assert "does not open a configuration file" in capsys.readouterr().err
 
     def test_run_installs_the_real_pickers(self, tmp_path):
         """The default chooser is inert, and `run` is what makes it real.
@@ -1912,3 +1921,129 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
         assert "QA_SSH_PASSPHRASE" in message
         assert "libpq" not in message
         assert "clear the field" in message
+
+
+class TestTheApplicationsOwnFolder:
+    """Where a configuration goes when it has none of its own, and what opens with no argument."""
+
+    def home(self):
+        from cumo_schema_comparer.gui import home
+
+        return home
+
+    def test_a_new_configuration_saves_into_the_folder(self, app):
+        """Before this, a config made here could not be saved at all: `save` wants a path."""
+        app.config = app.config.__class__.blank("invoicing")
+        app.window.save_config()
+
+        expected = self.home().directory() / "config.yaml"
+        assert app.config.path == expected
+        assert expected.is_file()
+        assert app.window.status_is_error is False
+
+    def test_an_opened_configuration_still_saves_where_it_came_from(self, app, tmp_path):
+        """A repository's config belongs to the repository. This is a default, not a destination."""
+        elsewhere = tmp_path / "repo" / "invoicing.yaml"
+        elsewhere.parent.mkdir()
+        app.config.save(elsewhere)
+
+        app.window.source_changed("qa", "host", "db-qa.internal")
+        app.window.save_config()
+
+        assert app.config.path == elsewhere
+        assert not (self.home().directory() / "config.yaml").exists()
+
+    def test_the_folder_is_made_when_it_is_missing(self, app, monkeypatch, tmp_path):
+        target = tmp_path / "not-yet"
+        monkeypatch.setenv(self.home().HOME_VARIABLE, str(target))
+        app.config = app.config.__class__.blank("invoicing")
+
+        app.window.save_config()
+
+        assert (target / "config.yaml").is_file()
+
+    def test_a_folder_that_cannot_be_made_is_reported_rather_than_crashing(
+        self, app, monkeypatch, tmp_path
+    ):
+        blocked = tmp_path / "a-file"
+        blocked.write_text("not a directory")
+        monkeypatch.setenv(self.home().HOME_VARIABLE, str(blocked / "home"))
+        app.config = app.config.__class__.blank("invoicing")
+
+        app.window.save_config()
+
+        assert app.window.status_is_error is True
+        assert "cannot create" in app.window.status_message
+
+
+class TestWhatOpensOnStartUp:
+    """Nothing. The application starts empty every time and only ever saves."""
+
+    def start(self, arguments):
+        """Returns the configuration path the window ended up with, which should always be none."""
+        built: list[Application] = []
+        original = Application.__init__
+
+        def remember(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            built.append(self)
+
+        with (
+            mock.patch.object(app_module.slint, "run_event_loop", lambda coro: coro.close()),
+            mock.patch.object(Application, "__init__", remember),
+        ):
+            assert app_module.run(arguments) == 0
+        return [app.config.path for app in built if app.config.path is not None]
+
+    def test_the_folder_is_created_even_though_nothing_is_read_from_it(self, monkeypatch, tmp_path):
+        """It is still where a configuration goes, so it still has to exist."""
+        from cumo_schema_comparer.gui import home
+
+        target = tmp_path / "fresh"
+        monkeypatch.setenv(home.HOME_VARIABLE, str(target))
+        self.start([])
+        assert target.is_dir()
+
+    def test_a_configuration_sitting_in_the_folder_is_not_opened(self, monkeypatch, tmp_path):
+        from cumo_schema_comparer.gui import home
+
+        monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path))
+        (tmp_path / "invoicing.yaml").write_text("version: 1\nname: x\n")
+        assert self.start([]) == []
+
+
+class TestTheAboutView:
+    """What it says has to be true, which means none of it is written into the markup."""
+
+    def test_the_version_is_the_installed_one(self, app):
+        from cumo_schema_comparer import __version__
+
+        assert app.window.about_version == __version__
+        assert app.window.about_version != ""
+
+    def test_the_python_version_is_this_interpreter(self, app):
+        assert app.window.about_python.startswith(
+            ".".join(str(part) for part in sys.version_info[:2])
+        )
+
+    def test_it_names_the_slint_it_is_running_on(self, app):
+        import slint
+
+        assert app.window.about_slint == str(getattr(slint, "__version__", "unknown"))
+
+    def test_it_names_the_file_it_writes(self, app):
+        """The whole path. The window cannot open what it saved, so this is how it is found."""
+        from cumo_schema_comparer.gui import home
+
+        assert app.window.about_config_path == str(home.default_path())
+        assert app.window.about_config_path.endswith("config.yaml")
+
+    def test_it_reports_whether_tunnelling_is_installed(self, app):
+        from cumo_schema_comparer.runner import tunnelling_supported
+
+        assert app.window.about_tunnelling is tunnelling_supported()
+
+    def test_no_credential_reaches_it(self, app):
+        """It is static text, but it is still a surface, and every surface gets checked."""
+        for name in ("about_version", "about_python", "about_slint", "about_config_path"):
+            assert SECRET not in str(getattr(app.window, name))

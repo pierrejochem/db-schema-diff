@@ -33,6 +33,11 @@ from .shape import looks_like_connection_string
 
 #: Keys of a source, in the order a person writes them: identity, then connection, then scope.
 _SOURCE_KEY_ORDER = ("label", "host", "database", "dsn_env", "schemas", "schema_map", "liquibase")
+#: What a configuration is called when nobody is asked. It is the report title and the JUnit suite
+#: name, so it has to be something; it is not a field in the window because naming the comparison
+#: adds nothing to it — there is one configuration and one place it goes.
+DEFAULT_NAME = "comparison"
+
 _OPTIONAL_TEXT_FIELDS = ("host", "database")
 #: POSIX environment variable name. The config holds names, never DSNs, and this is what keeps a
 #: pasted connection string from being written into a file that is committed to git.
@@ -79,7 +84,7 @@ class ConfigDocument:
         )
 
     @classmethod
-    def blank(cls, name: str = "new-service") -> ConfigDocument:
+    def blank(cls, name: str = DEFAULT_NAME) -> ConfigDocument:
         config = ComparerConfig(
             version=1,
             name=name,

@@ -31,7 +31,6 @@ def window():
 
 # (python name, a value of the declared type different from the default, i.e. what Task 11 sets)
 PROPERTIES = [
-    ("config_name", "cumo-invoicing"),
     ("config_path", "/work/config.yaml"),
     ("dirty", True),
     ("status_message", "saved"),
@@ -58,7 +57,6 @@ CALLBACKS = {
     "check_all": (),
     "validate_config": (),
     "save_config": (),
-    "load_config": (),
     "rule_changed": ("quartz-runtime", "action", "warn"),
     "add_rule": (),
     "remove_rule": ("quartz-runtime",),
@@ -426,7 +424,8 @@ def test_a_stored_secret_reaches_no_property_on_the_window(window):
         for n in dir(window)
         if not n.startswith("_") and n not in {"run", "show", "hide"} and n not in CALLBACKS
     ]
-    assert {"credentials", "status_message", "keychain_problem", "config_name"} <= set(names)
+    # A few names that must really be there, so the scan below cannot pass vacuously.
+    assert {"credentials", "status_message", "keychain_problem", "config_path"} <= set(names)
     for name in names:
         value = getattr(window, name)
         if callable(value):
@@ -1070,7 +1069,7 @@ def test_the_rail_reaches_every_view_and_only_one_is_drawn(window):
     between a rail entry and the view it selects fails here.
     """
     count = window.view_count
-    assert count == 5
+    assert count == 6
     for index in range(count):
         window.drive_select_view(index)
         drawn = [i for i in range(count) if window.view_visible(i)]
@@ -1085,8 +1084,8 @@ def test_an_out_of_range_view_draws_nothing_rather_than_guessing(window):
 
 def test_the_rail_has_an_entry_per_view():
     shell = (UI / "main.slint").read_text()
-    assert shell.count("NavItem {") == 5
-    for label in ("Config", "Run", "Results", "Ignores", "Credentials"):
+    assert shell.count("NavItem {") == 6
+    for label in ("Config", "Run", "Results", "Ignores", "Credentials", "About"):
         assert f'label: "{label}";' in shell
 
 
@@ -1258,12 +1257,17 @@ def test_nothing_sits_above_the_views_at_all():
         win.hide()
 
 
-def test_the_rail_carries_the_config_block():
+def test_the_rail_carries_no_file_details():
+    """It writes to one place and opens nothing, so a path there named something unactionable.
+
+    What is left is whether there is anything unsaved, which is the only part a person can do
+    something about.
+    """
     shell = (UI / "main.slint").read_text()
     rail = shell[shell.index('text: "cumo";') : shell.index("content := Rectangle")]
-    assert 'RailLabel { text: "CONFIG"; }' in rail
-    assert "root.config-path" in rail, "the config path must live inside the rail"
-    assert 'Button { text: "Open…"' in rail
+    assert "Open…" not in rail
+    assert "config-path" not in rail
+    assert "unsaved changes" in rail
     # Blue on navy fails contrast, so rail labels are lime; a plain Eyebrow here would be a defect.
     assert "Eyebrow {" not in rail
 

@@ -50,7 +50,6 @@ class Request:
 #: The purposes the application asks for, by the names it uses. An unknown purpose is never
 #: guessed at: a picker that opens the wrong kind of dialog is a worse answer than none.
 REQUESTS: dict[str, Request] = {
-    "config": Request("Open a configuration file", directory=False),
     "baseline": Request("Choose a baseline report", directory=False),
     "output-directory": Request("Choose where to write the reports", directory=True),
     "ssh-key": Request("Choose the private key for this gateway", directory=False),

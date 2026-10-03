@@ -60,7 +60,6 @@ component CardTab inherits Rectangle {
 }
 
 export component ConfigTab inherits ScrollView {
-    in-out property <string> config-name;
     in property <[SourceRow]> sources;
     in-out property <string> exclude-schemas-text;
 
@@ -93,16 +92,6 @@ export component ConfigTab inherits ScrollView {
 
         Card {
             title: "CONFIGURATION";
-            FormRow {
-                label: "name";
-                LineEdit {
-                    text <=> root.config-name;
-                    placeholder-text: "invoicing";
-                    max-width: Tokens.field-max;
-                    edited(v) => { root.source-changed("", "name", v); }
-                }
-                Rectangle { }
-            }
             FormRow {
                 label: "exclude schemas";
                 LineEdit {

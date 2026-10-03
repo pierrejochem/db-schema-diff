@@ -48,6 +48,7 @@ from typing import Any
 
 import slint
 
+from .. import __version__
 from ..config.model import (
     ComparerConfig,
     FailOn,
@@ -61,7 +62,7 @@ from ..diff.ignores import IgnoreRuleSet, load_default_ignores
 from ..diff.model import ComparisonReport
 from ..errors import ComparerError
 from ..runner import ConnectionStatus
-from . import dialogs
+from . import dialogs, home
 from .config_vm import ConfigDocument
 from .credentials import CredentialStatus, CredentialStore
 from .errors import GuiError
@@ -181,6 +182,18 @@ def _sanitise(text: str) -> str:
     )
 
 
+def tunnelling_available() -> bool:
+    """Whether SSH tunnelling can be used, for the About view to say so.
+
+    Asked through the runner rather than imported here: `tests/unit/gui/test_import_boundary.py`
+    forbids any module under `gui/` from importing `cumo_schema_comparer.db`, and the tunnel lives
+    there.
+    """
+    from ..runner import tunnelling_supported
+
+    return tunnelling_supported()
+
+
 def _no_dialog(purpose: str, current: str) -> str | None:
     """The default path chooser: there is none.
 
@@ -247,31 +260,11 @@ class Application:
         self._progress: Any = slint.ListModel([])
         self._progress_index: dict[str, int] = {}
         self._adopt_documents()
+        self._describe_itself()
         self._bind()
         self._refresh()
 
     # -- loading -----------------------------------------------------------------------------
-
-    def open_config(self, path: Path | str) -> None:
-        """Load a configuration file into the window. A failure becomes a status message."""
-        self._guard(self._open_config)(Path(path))
-
-    def _open_config(self, path: Path) -> None:
-        document = ConfigDocument.load(path)
-        self._release_session()
-        self.config = document
-        self._adopt_documents()
-        self.results = None
-        self._verdict = ("", "")
-        self._checks.clear()
-        self._described.clear()
-        # A new configuration brings its own gate, so re-arm the seeding: a per-run override
-        # belongs to the configuration it was chosen for, not to the window.
-        self._seeded_gate = str(self.window.run_fail_on)
-        message = f"Loaded {path}."
-        if document.had_comments():
-            message += " It has comments, which a save from here cannot preserve."
-        self._ok(message)
 
     def _adopt_documents(self) -> None:
         """Attach the ignore ruleset that belongs to the current configuration.
@@ -282,23 +275,20 @@ class Application:
         self.ignores = IgnoresDocument(path=None, config=IgnoreConfig())
         self.ignores = IgnoresDocument.for_config(self.config)
 
-    def _load_config(self) -> None:
-        """The "Open…" button.
+    def _describe_itself(self) -> None:
+        """The About view's facts, read from what is actually installed.
 
-        With no picker — or with one the person cancelled — the window's own path is the only
-        candidate, which makes this a reload rather than an error.
+        Written once at start-up rather than in `_refresh`: none of it can change while the window
+        is open, and a version typed into markup is a version that will be wrong.
         """
-        chosen = self.choose_path("config", str(self.window.config_path)) or str(
-            self.window.config_path
-        )
-        if not chosen.strip():
-            raise GuiError(
-                "no configuration to open: pass a path on the command line "
-                "(cumo-schema-diff-gui config/invoicing.yaml)"
-            )
-        if self.config.dirty:
-            raise GuiError("there are unsaved changes; save them first, or they would be lost")
-        self._open_config(Path(chosen))
+        window = self.window
+        window.about_version = __version__
+        window.about_python = ".".join(str(part) for part in sys.version_info[:3])
+        window.about_slint = str(getattr(slint, "__version__", "unknown"))
+        # The whole path, not the folder: it is the one file this writes, and knowing where
+        # it lands is the only way to find it again — the window cannot open it.
+        window.about_config_path = str(home.default_path())
+        window.about_tunnelling = tunnelling_available()
 
     # -- the window's view of everything -----------------------------------------------------
 
@@ -329,7 +319,6 @@ class Application:
         """
         window = self.window
         config = self.config.config
-        window.config_name = config.name
         window.config_path = "" if self.config.path is None else str(self.config.path)
         window.dirty = self.config.dirty
 
@@ -538,7 +527,6 @@ class Application:
         window.check_all = self._guard(self._check_all)
         window.validate_config = self._guard(self._validate_config)
         window.save_config = self._guard(self._save_config)
-        window.load_config = self._guard(self._load_config)
 
         window.rule_changed = self._guard(self._rule_changed)
         window.add_rule = self._guard(self._add_rule)
@@ -665,9 +653,7 @@ class Application:
 
     def _config_changed(self, field: str, value: str) -> None:
         config = self.config.config
-        if field == "name":
-            self.config.config = config.model_copy(update={"name": value})
-        elif field == "exclude_schemas":
+        if field == "exclude_schemas":
             self.config.config = config.model_copy(update={"exclude_schemas": _split(value)})
         elif field in _OPTION_INTS:
             self._option_changed(field, _parse_int(field, value))
@@ -715,12 +701,19 @@ class Application:
         errors = self.config.validate()
         if errors:
             raise GuiError(_summarise(errors), errors[0].field)
-        had_comments = self.config.had_comments()
-        self.config.save()
-        message = f"Saved {self.config.path}."
-        if had_comments:
-            message += " Its comments were not preserved; YAML comments cannot survive a re-write."
-        self._ok(message)
+        if self.config.path is None:
+            # A config made here has nowhere of its own yet. It goes to the application's own
+            # folder rather than refusing to save; one opened from a repository still saves back
+            # to the repository, because `path` is set and this does not run.
+            if home.ensure() is None:
+                raise GuiError(
+                    f"cannot create {home.directory()}; save it somewhere else by opening "
+                    "an existing configuration first"
+                )
+            self.config.save(home.default_path())
+        else:
+            self.config.save()
+        self._ok(f"Saved {self.config.path}.")
 
     # -- the Ignores tab ---------------------------------------------------------------------
 
@@ -1356,12 +1349,21 @@ def run(argv: Sequence[str] | None = None) -> int:
     try:
         # Must be off before any worker thread exists; see _show for why.
         gc.disable()
+        # Before the window, so a first run has somewhere to save to and something to reopen.
+        # Here rather than in the launcher: this is where the application starts, whatever started
+        # it — the console script, `python -m`, or the compiled binary.
+        home.ensure()
         application = Application()
         # The real pickers belong to the host, not to the Application: see _no_dialog.
         application.choose_path = dialogs.choose
         application.path_dialogs_available = dialogs.available
         if arguments:
-            application.open_config(Path(arguments[0]))
+            print(
+                "cumo-schema-diff-gui does not open a configuration file. "
+                "It starts empty and saves what you build into "
+                f"{home.directory()}.",
+                file=sys.stderr,
+            )
         slint.run_event_loop(_show(application.window))
     except KeyboardInterrupt:
         return 0
