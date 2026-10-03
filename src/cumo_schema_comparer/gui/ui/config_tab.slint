@@ -23,11 +23,40 @@ export struct SourceRow {
     ssh_user: string,
     ssh_key: string,
     ssh_passphrase_env: string,
+    // Which tab this card is showing. It lives in the row rather than in the card because every
+    // refresh replaces the model, and a card's own property would be rebuilt back to zero —
+    // cancelling a file dialog would send you back to the Database tab.
+    tab: int,
     is_master: bool,
     credential_source: string,   // keychain | environment | unset
     connection_status: string,
     connection_ok: bool,
     checked: bool,
+}
+
+// One segment of a source card's tab strip. A pill rather than a std-widget tab, because the card
+// already has a frame and a second frame inside it reads as the group box this layout replaced.
+component CardTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: Tokens.row-height;
+    width: text.preferred-width + 2 * Tokens.space-4;
+    border-radius: Tokens.radius-pill;
+    background: root.selected ? Tokens.heading
+        : touch.has-hover ? Tokens.stripe : transparent;
+
+    touch := TouchArea { clicked => { root.clicked(); } }
+
+    text := Text {
+        text: root.label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: Tokens.text-body;
+        font-weight: root.selected ? Tokens.weight-bold : Tokens.weight-regular;
+        color: root.selected ? Tokens.inverse : Tokens.muted;
+    }
 }
 
 export component ConfigTab inherits ScrollView {
@@ -50,6 +79,9 @@ export component ConfigTab inherits ScrollView {
     callback add-target();
     callback remove-target(string);
     callback check-connection(string);
+    callback test-tunnel(string);
+    callback choose-ssh-key(string);
+    callback select-source-tab(string, int);
     callback check-all();
     callback validate-config();
     callback save-config();
@@ -89,7 +121,8 @@ export component ConfigTab inherits ScrollView {
             spacing: Tokens.space-2;
             Eyebrow { text: "SOURCES"; }
 
-            for row[i] in root.sources: Rectangle {
+            for row[i] in root.sources: card := Rectangle {
+
                 background: Tokens.card;
                 border-radius: Tokens.radius-card;
                 border-width: Tokens.hairline-width;
@@ -132,152 +165,189 @@ export component ConfigTab inherits ScrollView {
                         }
                     }
 
-                    FormRow {
-                        label: "label";
-                        LineEdit {
-                            text: row.label;
-                            max-width: Tokens.field-max;
-                            edited(v) => { root.source-changed(row.label, "label", v); }
+                    HorizontalLayout {
+                        spacing: Tokens.space-1;
+                        alignment: start;
+                        CardTab {
+                            label: "Database";
+                            selected: row.tab == 0;
+                            clicked => { root.select-source-tab(row.label, 0); }
                         }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "dsn variable";
-                        LineEdit {
-                            text: row.dsn_env;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "PROD_DSN";
-                            edited(v) => { root.source-changed(row.label, "dsn_env", v); }
+                        CardTab {
+                            // Says at a glance whether this source goes through a gateway, so the
+                            // setting is not hidden behind a tab nobody thinks to open.
+                            label: row.ssh_host == "" ? "SSH tunnel" : "SSH tunnel ·";
+                            selected: row.tab == 1;
+                            clicked => { root.select-source-tab(row.label, 1); }
                         }
-                        Rectangle { }
                     }
-                    FormRow {
-                        label: "credential";
-                        Text {
-                            text: row.credential_source;
-                            vertical-alignment: center;
-                            font-family: Tokens.family-mono;
-                            color: Tokens.muted;
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "host";
-                        LineEdit {
-                            text: row.host;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "documentation only";
-                            edited(v) => { root.source-changed(row.label, "host", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "database";
-                        LineEdit {
-                            text: row.database;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "documentation only";
-                            edited(v) => { root.source-changed(row.label, "database", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "schemas";
-                        LineEdit {
-                            text: row.schemas;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "comma separated";
-                            edited(v) => { root.source-changed(row.label, "schemas", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "schema map";
-                        LineEdit {
-                            text: row.schema_map;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "master=target, master=target";
-                            edited(v) => { root.source-changed(row.label, "schema_map", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "liquibase schema";
-                        LineEdit {
-                            text: row.liquibase_schema;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "optional";
-                            edited(v) => {
-                                root.source-changed(row.label, "liquibase_schema", v);
+
+                    if row.tab == 0: VerticalLayout {
+                        spacing: Tokens.space-2;
+                        FormRow {
+                            label: "label";
+                            LineEdit {
+                                text: row.label;
+                                max-width: Tokens.field-max;
+                                edited(v) => { root.source-changed(row.label, "label", v); }
                             }
+                            Rectangle { }
                         }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "liquibase table";
-                        LineEdit {
-                            text: row.liquibase_table;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "DATABASECHANGELOG";
-                            edited(v) => {
-                                root.source-changed(row.label, "liquibase_table", v);
+                        FormRow {
+                            label: "dsn variable";
+                            LineEdit {
+                                text: row.dsn_env;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "PROD_DSN";
+                                edited(v) => { root.source-changed(row.label, "dsn_env", v); }
                             }
+                            Rectangle { }
                         }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "ssh gateway";
-                        LineEdit {
-                            text: row.ssh_host;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "bastion.internal (optional)";
-                            edited(v) => { root.source-changed(row.label, "ssh_host", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "ssh user";
-                        LineEdit {
-                            text: row.ssh_user;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "defaults to your local user";
-                            edited(v) => { root.source-changed(row.label, "ssh_user", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "ssh key";
-                        LineEdit {
-                            text: row.ssh_key;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "~/.ssh/id_ed25519 (agent if empty)";
-                            edited(v) => { root.source-changed(row.label, "ssh_key", v); }
-                        }
-                        Rectangle { }
-                    }
-                    FormRow {
-                        label: "ssh passphrase variable";
-                        LineEdit {
-                            text: row.ssh_passphrase_env;
-                            max-width: Tokens.field-max;
-                            placeholder-text: "QA_SSH_PASSPHRASE";
-                            edited(v) => {
-                                root.source-changed(row.label, "ssh_passphrase_env", v);
+                        FormRow {
+                            label: "credential";
+                            Text {
+                                text: row.credential_source;
+                                vertical-alignment: center;
+                                font-family: Tokens.family-mono;
+                                color: Tokens.muted;
                             }
+                            Rectangle { }
                         }
-                        Rectangle { }
+                        FormRow {
+                            label: "host";
+                            LineEdit {
+                                text: row.host;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "documentation only";
+                                edited(v) => { root.source-changed(row.label, "host", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "database";
+                            LineEdit {
+                                text: row.database;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "documentation only";
+                                edited(v) => { root.source-changed(row.label, "database", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "schemas";
+                            LineEdit {
+                                text: row.schemas;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "comma separated";
+                                edited(v) => { root.source-changed(row.label, "schemas", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "schema map";
+                            LineEdit {
+                                text: row.schema_map;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "master=target, master=target";
+                                edited(v) => { root.source-changed(row.label, "schema_map", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "liquibase schema";
+                            LineEdit {
+                                text: row.liquibase_schema;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "optional";
+                                edited(v) => {
+                                    root.source-changed(row.label, "liquibase_schema", v);
+                                }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "liquibase table";
+                            LineEdit {
+                                text: row.liquibase_table;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "DATABASECHANGELOG";
+                                edited(v) => {
+                                    root.source-changed(row.label, "liquibase_table", v);
+                                }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "";
+                            Text {
+                                text: row.connection_status;
+                                vertical-alignment: center;
+                                font-weight: Tokens.weight-bold;
+                                color: row.connection_ok ? Tokens.success : Tokens.danger;
+                                visible: row.connection_status != "";
+                                height: row.connection_status == "" ? 0px : Tokens.space-5;
+                            }
+                            Rectangle { }
+                        }
                     }
-                    FormRow {
-                        label: "";
-                        Text {
-                            text: row.connection_status;
-                            vertical-alignment: center;
-                            font-weight: Tokens.weight-bold;
-                            color: row.connection_ok ? Tokens.success : Tokens.danger;
-                            visible: row.connection_status != "";
-                            height: row.connection_status == "" ? 0px : Tokens.space-5;
+
+                    if row.tab == 1: VerticalLayout {
+                        spacing: Tokens.space-2;
+                        FormRow {
+                            label: "ssh gateway";
+                            LineEdit {
+                                text: row.ssh_host;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "bastion.internal (optional)";
+                                edited(v) => { root.source-changed(row.label, "ssh_host", v); }
+                            }
+                            Rectangle { }
                         }
-                        Rectangle { }
+                        FormRow {
+                            label: "ssh user";
+                            LineEdit {
+                                text: row.ssh_user;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "defaults to your local user";
+                                edited(v) => { root.source-changed(row.label, "ssh_user", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "ssh key";
+                            LineEdit {
+                                text: row.ssh_key;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "~/.ssh/id_ed25519 (agent if empty)";
+                                edited(v) => { root.source-changed(row.label, "ssh_key", v); }
+                            }
+                            Button {
+                                text: "Choose…";
+                                clicked => { root.choose-ssh-key(row.label); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "ssh passphrase variable";
+                            LineEdit {
+                                text: row.ssh_passphrase_env;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "QA_SSH_PASSPHRASE";
+                                edited(v) => {
+                                    root.source-changed(row.label, "ssh_passphrase_env", v);
+                                }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "";
+                            Button {
+                                text: "Test tunnel";
+                                enabled: row.ssh_host != "";
+                                clicked => { root.test-tunnel(row.label); }
+                            }
+                            Rectangle { }
+                        }
                     }
                 }
             }

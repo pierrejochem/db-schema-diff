@@ -90,6 +90,54 @@ def capture(
     return CaptureResult(label=source.label, inventory=inventory)
 
 
+@dataclass(frozen=True, slots=True)
+class TunnelStatus:
+    """One gateway's answer. ``detail`` is already redacted and never holds key material."""
+
+    label: str
+    ok: bool
+    detail: str
+
+
+def check_tunnel(
+    source: SourceRef, dsn: Dsn | None, *, ssh_passphrase: Secret | None = None
+) -> TunnelStatus:
+    """Test only the gateway for ``source``, without touching the database.
+
+    Separated from the connection check because the two fail for unrelated reasons and the fix for
+    each is in a different place: a refused key is nothing to do with a database that is down, and
+    being told "cannot connect" when the gateway is the problem sends people to the wrong field.
+
+    ``dsn`` may be ``None``. It is used only to learn the database's address, and somebody filling
+    in gateway fields has usually not set the database credential yet — requiring it here would make
+    checking an ssh key depend on a secret that has nothing to do with the key.
+    """
+    if source.ssh is None:
+        return TunnelStatus(label=source.label, ok=False, detail="this source has no ssh gateway")
+    from .db.connect import _tunnel_target
+    from .db.tunnel import probe
+
+    target: tuple[str, int] | None = None
+    note = ""
+    if dsn is None:
+        note = f" (${source.dsn_env} is not set, so forwarding to the database was not tested)"
+    else:
+        try:
+            target = _tunnel_target(dsn)
+        except ComparerError as exc:
+            return TunnelStatus(label=source.label, ok=False, detail=str(exc))
+    try:
+        detail = probe(
+            source.ssh,
+            to_host=None if target is None else target[0],
+            to_port=None if target is None else target[1],
+            passphrase=ssh_passphrase,
+        )
+    except ComparerError as exc:
+        return TunnelStatus(label=source.label, ok=False, detail=str(exc))
+    return TunnelStatus(label=source.label, ok=True, detail=detail + note)
+
+
 def require_tunnel_support(config: ComparerConfig) -> None:
     """Fail now, once, if this config needs tunnelling and cannot do it.
 

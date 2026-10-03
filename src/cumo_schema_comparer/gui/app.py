@@ -234,6 +234,10 @@ class Application:
         self._task: asyncio.Task[None] | None = None
         self._run_task: asyncio.Task[None] | None = None
         self._checks: dict[str, ConnectionStatus] = {}
+        #: Which tab each source card is showing, by label. Here rather than in the markup
+        #: because every refresh replaces the row model and a card's own property would be
+        #: rebuilt back to zero — cancelling a file dialog would jump you to another tab.
+        self._source_tabs: dict[str, int] = {}
         self._described: dict[str, CredentialStatus] = {}
         #: The gate this module last wrote into the Run tab. The ComboBox there reports no
         #: change, so comparing against this is the only way to tell an untouched widget from a
@@ -298,6 +302,25 @@ class Application:
 
     # -- the window's view of everything -----------------------------------------------------
 
+    @staticmethod
+    def _fill(current: Any, rows: list[dict[str, Any]]) -> Any | None:
+        """Write ``rows`` into ``current``. Returns a new model only if one had to be built.
+
+        Replacing a model rebuilds every repeated element under it, which destroys the one the
+        person is using: because every edit ends in a refresh, a text field lost focus after a
+        single character. Rows are therefore written into the existing model, and only a change in
+        how many there are forces a rebuild — at which point nothing is being typed into anyway.
+        """
+        try:
+            unchanged = len(current) == len(rows)
+        except TypeError:  # pragma: no cover - a model that cannot be measured is rebuilt
+            unchanged = False
+        if not unchanged:
+            return slint.ListModel(rows)
+        for index, row in enumerate(rows):
+            current[index] = row
+        return None
+
     def _refresh(self) -> None:
         """Write the documents into the window.
 
@@ -311,9 +334,11 @@ class Application:
         window.dirty = self.config.dirty
 
         described = {s.dsn_env: self._describe(s.dsn_env) for s in config.sources}
-        window.sources = slint.ListModel(
-            [self._source_row(s, described[s.dsn_env]) for s in config.sources]
+        rebuilt = self._fill(
+            window.sources, [self._source_row(s, described[s.dsn_env]) for s in config.sources]
         )
+        if rebuilt is not None:
+            window.sources = rebuilt
         window.exclude_schemas = slint.ListModel(list(config.exclude_schemas))
         # Both forms of the same value, but the text is left alone while it is being typed: the
         # document's tuple cannot represent a trailing comma or a half-typed name.
@@ -346,17 +371,25 @@ class Application:
         window.include_grants = options.include_grants
 
         ignores = self.ignores
-        window.rules = slint.ListModel(
-            [] if ignores is None else [_rule_row(row) for row in ignores.rule_rows()]
+        rebuilt = self._fill(
+            window.rules,
+            [] if ignores is None else [_rule_row(row) for row in ignores.rule_rows()],
         )
-        window.default_rules = slint.ListModel(
-            [] if ignores is None else [_rule_row(row) for row in ignores.default_rows()]
+        if rebuilt is not None:
+            window.rules = rebuilt
+        rebuilt = self._fill(
+            window.default_rules,
+            [] if ignores is None else [_rule_row(row) for row in ignores.default_rows()],
         )
+        if rebuilt is not None:
+            window.default_rules = rebuilt
         window.case_insensitive_globs = (
             True if ignores is None else ignores.config.options.case_insensitive_globs
         )
 
-        window.credentials = slint.ListModel(self._credential_rows(described))
+        rebuilt = self._fill(window.credentials, self._credential_rows(described))
+        if rebuilt is not None:
+            window.credentials = rebuilt
         window.keychain_available = self.credentials.storage_available
         window.keychain_problem = _sanitise(self.credentials.storage_problem or "")
 
@@ -424,6 +457,7 @@ class Application:
             "ssh_passphrase_env": (
                 "" if ssh is None or ssh.passphrase_env is None else ssh.passphrase_env
             ),
+            "tab": self._source_tabs.get(source.label, 0),
             "is_master": source.label == self.config.config.master.label,
             "credential_source": str(credential.source),
             "connection_status": "" if status is None else _describe_check(status),
@@ -498,6 +532,9 @@ class Application:
         window.add_target = self._guard(self._add_target)
         window.remove_target = self._guard(self._remove_target)
         window.check_connection = self._guard(self._check_connection)
+        window.test_tunnel = self._guard(self._test_tunnel)
+        window.choose_ssh_key = self._guard(self._choose_ssh_key)
+        window.select_source_tab = self._guard(self._select_source_tab)
         window.check_all = self._guard(self._check_all)
         window.validate_config = self._guard(self._validate_config)
         window.save_config = self._guard(self._save_config)
@@ -540,6 +577,9 @@ class Application:
             self.config.update_source(label, field, parsed)
             if field == "label" and label != value:
                 self._checks.pop(label, None)
+                moved = self._source_tabs.pop(label, None)
+                if moved is not None:
+                    self._source_tabs[value] = moved
         self._clear_status()
 
     def _check_rename(self, label: str, new_label: str) -> None:
@@ -964,6 +1004,56 @@ class Application:
             "Cancelling. Sources not yet started will not start; those already connected are "
             "abandoned and can keep querying until their statement timeout expires."
         )
+
+    def _select_source_tab(self, label: str, index: int) -> None:
+        """Remember which tab a card is showing, so a refresh does not move it."""
+        self._source_tabs[str(label)] = int(index)
+
+    def _choose_ssh_key(self, label: str) -> None:
+        """The private key's Choose… button. Nothing is read: only the path is taken."""
+        label = str(label)
+        source = self._source(label)
+        current = (
+            "" if source.ssh is None or source.ssh.private_key is None else source.ssh.private_key
+        )
+        chosen = self.choose_path("ssh-key", current)
+        if chosen is None:
+            if not self.path_dialogs_available():
+                raise GuiError("no file dialog on this system; type the key's path into the field")
+            self._ok("No key chosen.")
+            return
+        self._ssh_changed(label, "ssh_key", chosen)
+        self._ok(f"Key: {chosen}")
+
+    def _test_tunnel(self, label: str) -> None:
+        """The gateway's own test, separate from Check connection.
+
+        A refused key and a database that is down are different problems with different fixes, and
+        one message covering both sends people to the wrong field.
+        """
+        label = str(label)
+        source = self._source(label)
+        if source.ssh is None:
+            raise GuiError("this source has no ssh gateway to test", field="ssh")
+        loop = self._loop()
+        session = self._session_now()
+        self._task = loop.create_task(self._finish_tunnel(session.check_tunnel(label)))
+        self._ok(f"Testing the gateway for {label}…")
+
+    async def _finish_tunnel(self, work: Coroutine[Any, Any, Any]) -> None:
+        try:
+            status = await work
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._fail(f"tunnel check failed ({type(exc).__name__})")
+            return
+        finally:
+            self._refresh()
+        if status.ok:
+            self._ok(_sanitise(status.detail))
+        else:
+            self._fail(_sanitise(status.detail))
 
     def _check_connection(self, label: str) -> None:
         # Named before anything else can fail, so a mistyped label says so.
