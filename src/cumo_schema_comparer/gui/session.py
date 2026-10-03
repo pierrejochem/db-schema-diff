@@ -206,17 +206,21 @@ class Session:
         """
         source = self._source(label)
         claim = self._claim()
-        loop = asyncio.get_event_loop()
-
-        def on_step(step: str, state: str, detail: str) -> None:
-            if observer is None:
-                return
-            loop.call_soon_threadsafe(observer, step, state, detail)
 
         async def work() -> TunnelStatus:
-            return await asyncio.get_running_loop().run_in_executor(
-                None, self._check_tunnel_now, source, on_step
-            )
+            # The *running* loop, taken inside the coroutine. `get_event_loop()` out here returns
+            # whatever loop is ambient at call time, which is not reliably the one that will run
+            # this — and posting a step to a loop that is not running means the dialog never fills
+            # in, silently. Found by the suite in a randomised order, where the ambient loop was a
+            # different one.
+            loop = asyncio.get_running_loop()
+
+            def on_step(step: str, state: str, detail: str) -> None:
+                if observer is None:
+                    return
+                loop.call_soon_threadsafe(observer, step, state, detail)
+
+            return await loop.run_in_executor(None, self._check_tunnel_now, source, on_step)
 
         coro = work()
         return self._watched(claim, coro, self._run(claim, coro))

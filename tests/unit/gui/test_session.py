@@ -1252,6 +1252,9 @@ class TestTunnelStepsCrossThreadsSafely:
 
         built, _ = session()
         await built.check_tunnel("qa", lambda *_: seen.append(threading.get_ident()))
+        # A step is *queued* on the loop, not run on the spot, so it can land after the probe has
+        # returned. Awaiting the probe is not awaiting its reports; the loop has to turn.
+        await asyncio.sleep(0.05)
 
         assert seen, "the observer was never called"
         assert set(seen) == {loop_thread}, "a step reached the window from a worker thread"
