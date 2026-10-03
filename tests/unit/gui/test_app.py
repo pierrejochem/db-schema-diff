@@ -18,6 +18,7 @@ import sys
 import textwrap
 import threading
 import time
+from pathlib import Path
 from typing import Any
 from unittest import mock
 
@@ -203,6 +204,15 @@ def application(tmp_path, *, environ=None, keychain=None, text: str = CONFIG) ->
 @pytest.fixture
 def app(tmp_path) -> Application:
     return application(tmp_path)
+
+
+def set_output_directory(app: Application, value) -> None:
+    """Point the reports at a directory, the way the window does.
+
+    The field belongs to the configuration now, so writing the window property alone is reverted
+    by the next refresh — exactly as a value typed into any other config field would be.
+    """
+    app.window.config_changed("output_dir", str(value))
 
 
 def rows(model) -> list[dict[str, Any]]:
@@ -946,7 +956,7 @@ class TestRunning:
     async def test_a_baseline_sets_aside_the_findings_it_already_contains(self, app, tmp_path):
         with mock.patch(CAPTURE, drifted_capture):
             await run_to_completion(app)
-        app.window.output_directory = str(tmp_path)
+        set_output_directory(app, tmp_path)
         app.window.write_reports()
         assert app.window.status_is_error is False, app.window.status_message
 
@@ -1022,7 +1032,7 @@ class TestRunning:
         with mock.patch(CAPTURE, drifted_capture):
             await run_to_completion(app)
         assert "--fail-on never" in app.window.verdict
-        app.window.output_directory = str(tmp_path)
+        set_output_directory(app, tmp_path)
         app.window.drive_write_reports()
         assert '"fail_on": "never"' in (tmp_path / "report.json").read_text()
 
@@ -1222,7 +1232,7 @@ class TestStatusPolarity:
 
         asyncio.run(go())
         app.open_url = lambda url: True
-        app.window.output_directory = str(tmp_path)
+        set_output_directory(app, tmp_path)
         app.window.drive_write_reports()
         assert app.window.status_is_error is False
         app.window.drive_open_html()
@@ -1257,21 +1267,21 @@ class TestResults:
         assert finished.window.results_filter_hides_rows() is True
 
     def test_writing_reports_writes_all_three(self, finished, tmp_path):
-        finished.window.output_directory = str(tmp_path)
+        set_output_directory(finished, tmp_path)
         finished.window.drive_write_reports()
         assert finished.window.status_is_error is False, finished.window.status_message
         for name in ("report.json", "junit.xml", "report.html"):
             assert (tmp_path / name).exists()
 
     def test_writing_without_a_directory_asks_for_one(self, finished):
-        finished.window.output_directory = ""
+        set_output_directory(finished, "")
         finished.window.drive_write_reports()
         assert finished.window.status_is_error is True
 
     def test_opening_the_html_report_needs_it_to_exist(self, finished, tmp_path):
         opened: list[str] = []
         finished.open_url = lambda url: bool(opened.append(url))
-        finished.window.output_directory = str(tmp_path)
+        set_output_directory(finished, tmp_path)
         finished.window.drive_open_html()
         assert finished.window.status_is_error is True
         assert opened == []
@@ -1281,7 +1291,7 @@ class TestResults:
         assert opened and opened[0].endswith("report.html")
 
     def test_nothing_can_be_written_before_a_run(self, app, tmp_path):
-        app.window.output_directory = str(tmp_path)
+        set_output_directory(app, tmp_path)
         app.window.write_reports()
         assert app.window.status_is_error is True
         assert not list(tmp_path.glob("report.*"))
@@ -2383,6 +2393,113 @@ class TestTheRunDialog:
         assert app.window.run_dialog_open() is False
         assert app.window.current_view == 2
         assert app.window.view_visible(2) is True
+
+
+class TestTheOutputDirectoryIsRemembered:
+    """Where reports go is a property of the comparison, not of one run of it.
+
+    It used to be asked for every time and forgotten on exit, which for a window that compares the
+    same two databases every day is a question with the same answer every day.
+    """
+
+    def test_choosing_one_puts_it_in_the_configuration(self, app, tmp_path):
+        app.choose_path = lambda purpose, current: str(tmp_path)
+        app.window.choose_output_directory()
+        assert app.config.config.output_dir == str(tmp_path)
+        assert app.window.output_directory == str(tmp_path)
+
+    def test_choosing_one_marks_the_configuration_unsaved(self, app, tmp_path):
+        """Otherwise it is lost on exit and the window never said so."""
+        app.choose_path = lambda purpose, current: str(tmp_path)
+        app.window.choose_output_directory()
+        assert app.config.dirty is True
+        assert app.window.dirty is True
+
+    def test_typing_one_puts_it_in_the_configuration(self, app, tmp_path):
+        app.window.config_changed("output_dir", str(tmp_path))
+        assert app.config.config.output_dir == str(tmp_path)
+
+    def test_clearing_the_field_unsets_it_rather_than_meaning_here(self, app, tmp_path):
+        """An empty path would resolve to the config's own directory, which nobody typed."""
+        app.window.config_changed("output_dir", str(tmp_path))
+        app.window.config_changed("output_dir", "")
+        assert app.config.config.output_dir is None
+        assert app.window.status_is_error is False
+
+    def test_it_is_written_to_the_file(self, app, tmp_path):
+        app.window.config_changed("output_dir", str(tmp_path))
+        app.window.save_config()
+        assert app.window.status_is_error is False
+        assert f"output_dir: {tmp_path}" in app.config.path.read_text()
+
+    def test_a_configuration_that_never_set_one_does_not_write_the_key(self, app):
+        """A file that says nothing about reports must stay exactly as it was."""
+        app.window.save_config()
+        assert "output_dir" not in app.config.path.read_text()
+
+    def test_it_comes_back_when_the_application_restarts(self, tmp_path):
+        from cumo_schema_comparer.gui import home
+
+        home.default_path().parent.mkdir(parents=True, exist_ok=True)
+        home.default_path().write_text(CONFIG + f"output_dir: {tmp_path}\n")
+        app = Application(environ=dict(BOTH), keychain=FakeKeychain())
+        assert app.window.output_directory == str(tmp_path)
+        assert app.config.config.output_dir == str(tmp_path)
+
+    def test_typing_a_path_one_character_at_a_time_is_not_fought(self, app, tmp_path):
+        """Every keystroke updates the configuration, and the refresh that follows writes the
+        field back from it — so the two must never disagree about what was typed."""
+        wanted = str(tmp_path / "reports")
+        for length in range(1, len(wanted) + 1):
+            typed = wanted[:length]
+            app.window.config_changed("output_dir", typed)
+            assert app.window.output_directory == typed
+        assert app.config.config.output_dir == wanted
+
+    def test_a_trailing_space_is_not_taken_as_part_of_the_path(self, app, tmp_path):
+        """And the space stays in the widget, so typing it is not undone mid-path."""
+        app.window.config_changed("output_dir", f"{tmp_path} ")
+        assert app.config.config.output_dir == str(tmp_path)
+
+    def test_a_relative_path_resolves_against_the_configuration(self, app, tmp_path):
+        """The same meaning as on the command line: relative to the config that named it."""
+        (app.config.path.parent / "reports").mkdir()
+        app.window.config_changed("output_dir", "reports")
+        assert app._output_directory() == app.config.path.parent / "reports"
+
+    def test_saving_somewhere_else_keeps_a_relative_path_pointing_where_it_pointed(
+        self, app, tmp_path
+    ):
+        """It names a directory beside the old config, and has to go on naming that one.
+
+        Asserted by resolving it rather than by comparing the written string: what matters is the
+        directory it reaches, not the spelling of the hops to get there.
+        """
+        from cumo_schema_comparer.config.loader import resolve_output_dir
+
+        reports = app.config.path.parent / "reports"
+        reports.mkdir()
+        app.window.config_changed("output_dir", "reports")
+        before = resolve_output_dir(app.config.config, app.config.path)
+
+        elsewhere = tmp_path / "moved"
+        elsewhere.mkdir()
+        app.config.save(elsewhere / "invoicing.yaml")
+
+        after = resolve_output_dir(app.config.config, app.config.path)
+        assert after is not None and before is not None
+        assert after.resolve() == before.resolve() == reports.resolve()
+        assert not Path(app.config.config.output_dir).is_absolute(), "it should stay relative"
+
+    def test_saving_somewhere_else_leaves_an_absolute_path_alone(self, app, tmp_path):
+        """It was never pointing anywhere near the configuration."""
+        target = tmp_path / "fixed"
+        target.mkdir()
+        app.window.config_changed("output_dir", str(target))
+        elsewhere = tmp_path / "moved"
+        elsewhere.mkdir()
+        app.config.save(elsewhere / "invoicing.yaml")
+        assert app.config.config.output_dir == str(target)
 
 
 class TestReopeningTheSavedConfiguration:

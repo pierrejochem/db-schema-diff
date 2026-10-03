@@ -234,6 +234,41 @@ class TestCompareOutputs:
         assert len(failures) == 1
         assert "column.data_type" in failures[0].get("message")
 
+    def test_the_config_can_name_the_output_directory(self, run):
+        """So a service's reports go to the same place on every machine, with no flag to remember.
+
+        The path is relative to the config file, which is what keeps a committed config from
+        naming one person's home directory.
+        """
+        run.databases.setup("base")
+        run.config.write_text(CONFIG + "output_dir: reports\n")
+        run("compare", "-c", str(run.config))
+        assert (run.tmp / "reports" / "report.json").exists()
+        assert (run.tmp / "reports" / "junit.xml").exists()
+        assert (run.tmp / "reports" / "report.html").exists()
+
+    def test_the_flag_wins_over_the_config(self, run):
+        """A flag is what the person asked for now; the file is what the project asked for."""
+        run.databases.setup("base")
+        run.config.write_text(CONFIG + "output_dir: from_config\n")
+        chosen = run.tmp / "from_flag"
+        run("compare", "-c", str(run.config), "--out-dir", str(chosen))
+        assert (chosen / "report.json").exists()
+        assert not (run.tmp / "from_config").exists()
+
+    def test_an_absolute_path_in_the_config_is_used_as_written(self, run):
+        run.databases.setup("base")
+        target = run.tmp / "absolute"
+        run.config.write_text(CONFIG + f"output_dir: {target}\n")
+        run("compare", "-c", str(run.config))
+        assert (target / "report.json").exists()
+
+    def test_a_config_without_one_writes_nothing(self, run):
+        """The behaviour every existing config must keep: no flag, no files."""
+        run.databases.setup("base")
+        run("compare", "-c", str(run.config))
+        assert list(run.tmp.glob("**/report.json")) == []
+
     def test_reports_are_written_even_when_in_sync(self, run):
         run.databases.setup("base")
         out = run.tmp / "reports"

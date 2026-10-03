@@ -35,7 +35,22 @@ from .errors import GuiError
 from .shape import looks_like_connection_string
 
 #: Keys of a source, in the order a person writes them: identity, then connection, then scope.
-_SOURCE_KEY_ORDER = ("label", "host", "database", "dsn_env", "schemas", "schema_map", "liquibase")
+_SOURCE_KEY_ORDER = (
+    "label",
+    # The connection, in the order the window asks for it. Without the four added here, `port`
+    # landed after `dsn_env` while `host` sat before it, which reads as carelessness in a file
+    # that is meant to be hand-edited.
+    "host",
+    "port",
+    "database",
+    "user",
+    "sslmode",
+    "dsn_env",
+    "schemas",
+    "schema_map",
+    "liquibase",
+    "ssh",
+)
 #: What a configuration is called when nobody is asked. It is the report title and the JUnit suite
 #: name, so it has to be something; it is not a field in the window because naming the comparison
 #: adds nothing to it — there is one configuration and one place it goes.
@@ -125,25 +140,34 @@ class ConfigDocument:
         self.path = target
         self.dirty = False
 
+    #: Fields holding a path relative to the config file, which therefore has to be rewritten
+    #: when the file is saved to a different directory.
+    _RELATIVE_PATHS = ("ignores_file", "output_dir")
+
     def _for_location(self, target: Path) -> ComparerConfig:
         """The config as it must read when stored at ``target``.
 
-        ``ignores_file`` is relative to the config file, so it is rewritten when the directory
-        changes; absolute if no relative spelling exists.
+        ``ignores_file`` and ``output_dir`` are relative to the config file, so each is rewritten
+        when the directory changes; absolute if no relative spelling exists. A path that was
+        written absolute stays absolute — it was not pointing anywhere near the config.
         """
-        ref = self.config.ignores_file
-        if ref is None or self.path is None or os.path.isabs(ref):
+        if self.path is None:
             return self.config
         old_dir = self.path.parent.resolve()
         new_dir = target.parent.resolve()
         if old_dir == new_dir:
             return self.config
-        resolved = old_dir / ref
-        try:
-            moved = os.path.relpath(resolved, new_dir)
-        except ValueError:
-            moved = str(resolved)
-        return self.config.model_copy(update={"ignores_file": moved})
+        updates: dict[str, Any] = {}
+        for field in self._RELATIVE_PATHS:
+            ref = getattr(self.config, field)
+            if ref is None or os.path.isabs(ref):
+                continue
+            resolved = old_dir / ref
+            try:
+                updates[field] = os.path.relpath(resolved, new_dir)
+            except ValueError:
+                updates[field] = str(resolved)
+        return self.config.model_copy(update=updates) if updates else self.config
 
     def validate(self) -> list[GuiError]:
         return _problems(self.config)

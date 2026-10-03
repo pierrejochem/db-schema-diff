@@ -50,7 +50,7 @@ from typing import Any
 import slint
 
 from .. import __version__
-from ..config.loader import load_config_files
+from ..config.loader import load_config_files, resolve_output_dir
 from ..config.model import (
     ComparerConfig,
     FailOn,
@@ -428,6 +428,11 @@ class Application:
         # document's tuple cannot represent a trailing comma or a half-typed name.
         if _split(str(window.exclude_schemas_text)) != tuple(config.exclude_schemas):
             window.exclude_schemas_text = ", ".join(config.exclude_schemas)
+        # Same care as the line above: the field is written from the configuration, but only when
+        # the two actually disagree, so a path being typed is not rewritten under the cursor.
+        configured = config.output_dir or ""
+        if str(window.output_directory).strip() != configured:
+            window.output_directory = configured
 
         options = config.options
         window.connect_timeout_seconds = options.connect_timeout_seconds
@@ -746,6 +751,11 @@ class Application:
         config = self.config.config
         if field == "exclude_schemas":
             self.config.config = config.model_copy(update={"exclude_schemas": _split(value)})
+        elif field == "output_dir":
+            # Empty means "not set", not "the config's own directory": the model refuses a blank
+            # path, and clearing the field has to be a way of unsetting it.
+            cleaned = value.strip()
+            self.config.config = config.model_copy(update={"output_dir": cleaned or None})
         elif field in _OPTION_INTS:
             self._option_changed(field, _parse_int(field, value))
         elif field in _OPTION_BOOLS:
@@ -1496,10 +1506,21 @@ class Application:
         return results
 
     def _output_directory(self) -> Path:
+        """Where to write, from the field — which is the configuration's own value.
+
+        Resolved through the library's own resolver, so a relative path means the same thing here
+        as it does on the command line: relative to the configuration that named it.
+        """
         chosen = str(self.window.output_directory).strip()
-        if not chosen:
+        path = (
+            resolve_output_dir(
+                self.config.config.model_copy(update={"output_dir": chosen}), self.config.path
+            )
+            if chosen
+            else None
+        )
+        if path is None:
             raise GuiError("choose an output directory first")
-        path = Path(chosen).expanduser()
         if not path.is_dir():
             raise GuiError(f"{path}: not a directory")
         return path
@@ -1542,7 +1563,10 @@ class Application:
             self._ok("No output directory chosen.")
             return
         self.window.output_directory = chosen
-        self._ok(f"Reports will be written to {chosen}.")
+        # Kept in the configuration, so it survives a restart and the command line uses the same
+        # directory for the same comparison.
+        self._config_changed("output_dir", chosen)
+        self._ok(f"Reports will be written to {chosen}. Save the configuration to keep it.")
 
 
 def _describe_check(status: ConnectionStatus) -> str:

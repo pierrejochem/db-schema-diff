@@ -399,6 +399,7 @@ export component MainWindow inherits Window {
                     filter-changed => { root.filter-changed(); }
                     select-finding(t, k, p) => { root.select-finding(t, k, p); }
                     choose-output-directory => { root.choose-output-directory(); }
+                    output-directory-changed(v) => { root.config-changed("output_dir", v); }
                     write-reports => { root.write-reports(); }
                     open-html => { root.open-html(); }
                     }

@@ -116,6 +116,7 @@ export component ResultsTab inherits ScrollView {
     callback filter-changed();
     callback select-finding(string, string, string);
     callback choose-output-directory();
+    callback output-directory-changed(string);
     callback write-reports();
     callback open-html();
 
@@ -446,6 +447,9 @@ export component ResultsTab inherits ScrollView {
                     text <=> root.output-directory;
                     placeholder-text: "output directory";
                     max-width: Tokens.field-max;
+                    // The two-way binding keeps the window property in step; this says so out
+                    // loud, so the value reaches the configuration and is saved with it.
+                    edited(v) => { root.output-directory-changed(v); }
                 }
                 Button { text: "Choose…"; clicked => { root.request-choose-output-directory(); } }
                 Button {

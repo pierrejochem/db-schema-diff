@@ -18,7 +18,13 @@ import click
 
 from . import __version__, runner
 from .baseline import apply_baseline
-from .config.loader import load_config, load_config_files, load_ignores, resolve_ignores
+from .config.loader import (
+    load_config,
+    load_config_files,
+    load_ignores,
+    resolve_ignores,
+    resolve_output_dir,
+)
 from .config.model import ComparerConfig
 from .diff.changelog import ChangelogOptions
 from .diff.engine import diff_inventories
@@ -148,7 +154,7 @@ def cli(ctx: click.Context, verbose: int, quiet: bool, debug: bool) -> None:
     "--out-dir",
     type=click.Path(path_type=Path),
     help="Write report.json, junit.xml and report.html here. With several configs, one "
-    "subdirectory each.",
+    "subdirectory each. Overrides the config's output_dir.",
 )
 @click.option(
     "--junit-max-cases",
@@ -252,7 +258,9 @@ def compare_command(
             json_path=json_path,
             junit_path=junit_path,
             html_path=html_path,
-            out_dir=out_dir,
+            # The flag wins over the file, as everywhere else here: it is what the person asked
+            # for now, and the config is what the project asked for in general.
+            out_dir=out_dir if out_dir is not None else resolve_output_dir(config, config_path),
             junit_max_cases=junit_max_cases,
             many=len(configs) > 1,
         )
