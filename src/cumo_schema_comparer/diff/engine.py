@@ -175,6 +175,28 @@ def _adjust_for_sources(
         )
         adjusted = replace(adjusted, downgrade_bodies=True)
 
+    knows = (master.source.knows_generated_columns, target.source.knows_generated_columns)
+    if knows[0] != knows[1]:
+        # One side predates pg_attribute.attgenerated and is sent a literal instead, so it reports
+        # every column as not generated. Comparing that would be one wrong finding per generated
+        # column — and the obvious way to make them go away would be to drop the generated column
+        # from the side that has it. Both sides old is not this case: neither knows, so neither
+        # disagrees.
+        behind = target.source if knows[0] else master.source
+        notes.append(
+            Note(
+                kind=NoteKind.GENERATION_UNKNOWN,
+                message=(
+                    f"{behind.label} runs PostgreSQL {behind.major_version}, which cannot report "
+                    "whether a column is generated; that attribute is not compared"
+                ),
+                severity=Severity.WARNING,
+            )
+        )
+        adjusted = replace(
+            adjusted, ignored_attributes=adjusted.ignored_attributes | {"column.generated"}
+        )
+
     if master.source.datcollate != target.source.datcollate:
         # Different database collations mean every text column's collation differs by
         # definition. That is one fact about the databases, not thousands about their columns.

@@ -13,7 +13,8 @@ same as prod's?"* until something fails at runtime.
 
 ## Status
 
-Complete against the original plan: all nine phases, verified against PostgreSQL 13, 15 and 17.
+Complete against the original plan: all nine phases, verified against PostgreSQL 13, 15 and 17,
+and against 11 — the oldest release it will inspect — in its own integration module.
 
 Working:
 
@@ -47,6 +48,12 @@ production database with sixty monthly partitions does not bury a report.
 ## Install
 
 Requires Python 3.11 or newer. The interpreter that ships with macOS (3.9) will not work.
+
+On the server side it inspects **PostgreSQL 11 or newer**. An older server is refused by
+name with exit 2 rather than failing on a catalog column it does not have. An 11 cannot say
+whether a column is generated — `pg_attribute.attgenerated` arrived in 12 — so comparing an
+11 against a newer major stops comparing that one attribute and says so in a note, instead
+of reporting every generated column as drift.
 
 ```sh
 python3.11 -m venv .venv
@@ -575,3 +582,5 @@ Two tests are worth knowing about:
   trusted on real environments; if it is red nothing else matters.
 - **`tests/integration/test_cross_version.py`** builds the same schema on PostgreSQL 13 and 17 and
   asserts nothing structural differs. That is what catches the version-dependent catalog spellings.
+- **`tests/integration/test_pg11.py`** does the same on two PostgreSQL 11s, and asserts every
+  object kind is still captured there. A supported floor that nothing runs against is a guess.

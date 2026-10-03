@@ -51,6 +51,9 @@ class NoteKind(StrEnum):
     COLLATION_SKEW = "collation_skew"
     """The two databases have different collations, so every text column's collation differs
     by definition and that attribute was suppressed."""
+    GENERATION_UNKNOWN = "generation_unknown"
+    """One server predates ``pg_attribute.attgenerated`` (PostgreSQL 12), so it reports every
+    column as not generated and whether a column is generated was not compared."""
     PRIVILEGE_LIMITED = "privilege_limited"
     """A definition came back NULL, which means the connecting role cannot see the object —
     not that the object differs."""

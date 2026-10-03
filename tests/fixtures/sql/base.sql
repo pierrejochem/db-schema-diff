@@ -13,6 +13,12 @@
 --     the server canonicalises for us);
 --   * a mixed-case quoted identifier, which must never be case-folded.
 
+-- Before anything that uses it: `d_func` below defaults to gen_random_uuid(), which pgcrypto
+-- supplies. That function only became core in PostgreSQL 13, so creating the extension after its
+-- first use happened to work on the versions CI runs and failed on 12. (This file still needs 12
+-- for its generated columns; 11 has its own fixture in pg11.sql.)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE SCHEMA IF NOT EXISTS "cumo-invoicing" AUTHORIZATION CURRENT_USER;
 
 CREATE TABLE public.mandant (
@@ -265,9 +271,9 @@ CREATE INDEX idx_flavours_payload ON "cumo-invoicing".column_flavours USING gin 
 --
 --   * the foreign keys above create internal triggers; only the two user triggers below may appear;
 --   * every table above creates a composite type of its own name; only `money_split` may appear;
---   * pgcrypto installs a pile of functions; only the extension row may appear.
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+--   * pgcrypto installs a pile of functions; only the extension row may appear. The extension
+--     itself is created at the top of this file, because a default below calls one of its
+--     functions.
 
 -- A standalone composite type. The tables' row types must not be reported alongside it.
 CREATE TYPE "cumo-invoicing".money_split AS (net numeric(12,2), tax numeric(12,2));

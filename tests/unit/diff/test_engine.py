@@ -228,6 +228,62 @@ class TestVersionSkew:
         assert finding.severity is Severity.ERROR
 
 
+class TestGeneratedColumnsAcrossTheTwelveBoundary:
+    """An 11 cannot say whether a column is generated, so a comparison with one must not guess.
+
+    ``pg_attribute.attgenerated`` arrived in 12, and the query sends an 11 a literal instead. The
+    value that comes back is a fact about the catalog, not about the schema: reported as a
+    difference it would be one wrong finding per generated column, and the obvious "fix" would be
+    to drop the generated column from the newer side.
+    """
+
+    def generated_pair(self, master_version: int, target_version: int):
+        master = inventory(
+            table("public", "t", cols=[col("c", "numeric", generated="(a * 2)")]),
+            label="prod",
+            version=master_version,
+        )
+        target = inventory(
+            table("public", "t", cols=[col("c", "numeric", generated=None)]),
+            label="qa",
+            version=target_version,
+        )
+        return diff_inventories(master, target)
+
+    def test_an_eleven_against_a_twelve_does_not_compare_generation(self):
+        result = self.generated_pair(120000, 110016)
+        assert findings_by_path(result).get("public.t.c") is None
+        assert NoteKind.GENERATION_UNKNOWN in {n.kind for n in result.notes}
+
+    def test_it_applies_whichever_side_is_the_old_one(self):
+        result = self.generated_pair(110016, 150004)
+        assert findings_by_path(result).get("public.t.c") is None
+        assert NoteKind.GENERATION_UNKNOWN in {n.kind for n in result.notes}
+
+    def test_two_elevens_are_not_warned_about(self):
+        """Neither side knows, so neither side disagrees: there is nothing to say."""
+        master = inventory(table("public", "t", cols=[col("c", "numeric")]), version=110016)
+        target = inventory(
+            table("public", "t", cols=[col("c", "numeric")]), label="qa", version=110016
+        )
+        result = diff_inventories(master, target)
+        assert NoteKind.GENERATION_UNKNOWN not in {n.kind for n in result.notes}
+
+    def test_two_servers_that_both_know_still_compare_generation(self):
+        """The suppression must not leak into the pairing it was never about."""
+        result = self.generated_pair(150004, 150004)
+        finding = findings_by_path(result)["public.t.c"]
+        assert finding.severity is Severity.ERROR
+        assert NoteKind.GENERATION_UNKNOWN not in {n.kind for n in result.notes}
+
+    def test_across_majors_that_both_know_it_is_only_downgraded_not_dropped(self):
+        """A 15 against a 17 both know the answer, so the difference is still reported — at INFO,
+        because ``generated`` is a printed expression and version skew downgrades those."""
+        result = self.generated_pair(150004, 170002)
+        assert findings_by_path(result)["public.t.c"].severity is Severity.INFO
+        assert NoteKind.GENERATION_UNKNOWN not in {n.kind for n in result.notes}
+
+
 class TestCollationSkew:
     def test_differing_database_collations_suppress_per_column_collation(self):
         master = inventory(
