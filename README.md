@@ -1,3 +1,5 @@
+<img src="media/logo.svg" alt="CUMO Schema Diff" width="390">
+
 # cumo-db-schema-comparer
 
 Inventory one **master** PostgreSQL database and compare it against **1..n other
@@ -465,6 +467,13 @@ capture or `--baseline` file keeps working.
 | 1 | Real drift at or above the gate. Read `report.html`. |
 | 2 | Bad config or a missing environment variable. Fix and re-run. |
 | 3 | A database could not be inspected. **Retry** — this is usually transient, and it is deliberately not the same as drift. |
+
+## Brand
+
+The logo lives in [`media/`](media/) — an SVG lockup, a light and a dark form, the mark on its own,
+and PNGs for anywhere an SVG is not accepted. All of it is generated from `packaging/logo.py`,
+which takes its palette from `src/cumo_schema_comparer/gui/ui/tokens.slint`, so the dock icon, the
+README header and a slide are the same drawing. `media/README.md` says how to change it.
 
 ## Development
 

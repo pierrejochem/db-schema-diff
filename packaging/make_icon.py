@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Draw the application icon from the design tokens, and build the .icns macOS wants.
+"""Build the .icns macOS wants, from the brand mark in `logo.py`.
 
-A committed binary with no provenance is a thing nobody can correct, so the icon is generated from
-the same palette the application uses: navy ground, the lime accent edge that marks the master
-source and the selected view, and three rows standing for a schema with one of them different.
+A committed binary with no provenance is a thing nobody can correct, so the icon is generated
+rather than drawn: the geometry and the palette come from `packaging/logo.py`, which takes its
+colours from `gui/ui/tokens.slint`. The icon and `media/logo-mark.svg` are therefore the same mark,
+and a brand change is one edit in one file.
 
-Stdlib only. Pillow is not a dependency of this project and should not become one for an icon, so
-the PNG is written by hand (zlib plus a few struct packs) and anti-aliased from a signed distance
-rather than supersampled, which keeps a 1024px render to about a second. `sips` resizes and
-`iconutil` assembles, both of which ship with macOS.
+`sips` resizes and `iconutil` assembles, both of which ship with macOS; this script does nothing
+anywhere else, which is correct, because nothing but macOS consumes an `.icns`. The portable
+outputs are `media/`, written by `make_logo.py`.
 
 Run it when the brand changes:
 
@@ -19,119 +19,19 @@ It rewrites packaging/cumo-schema-diff-gui.icns, which `make exe` passes to --ma
 
 from __future__ import annotations
 
-import struct
 import subprocess
 import sys
-import zlib
 from pathlib import Path
 
+from logo import GRID, render, write_png
+
 HERE = Path(__file__).resolve().parent
-SIZE = 1024
 ICNS = HERE / "cumo-schema-diff-gui.icns"
 
 #: Absolute, because these ship with macOS at fixed locations and a bare name would be
 #: resolved through PATH.
 SIPS = "/usr/bin/sips"
 ICONUTIL = "/usr/bin/iconutil"
-
-# Straight from gui/ui/tokens.slint.
-NAVY = (0x13, 0x2C, 0x5C)
-LIME = (0xAA, 0xDC, 0x23)
-WHITE = (0xFF, 0xFF, 0xFF)
-
-
-def rounded_rect_coverage(
-    x: float, y: float, box: tuple[float, float, float, float], r: float
-) -> float:
-    """How much of the pixel at (x, y) lies inside the rounded rectangle, from 0 to 1.
-
-    Anti-aliasing from the signed distance to the shape: one evaluation per pixel instead of the
-    nine or sixteen a supersampled render would need.
-
-    The distance has to be properly signed — negative inside, positive outside. Clamping the point
-    to the shape and measuring to it gives zero everywhere inside, which reads as half coverage, so
-    a square-cornered bar came out a 50/50 blend with whatever was under it instead of its own
-    colour. That is wrong only for r = 0, which is exactly the accent edge.
-    """
-    left, top, right, bottom = box
-    half_w = (right - left) / 2 - r
-    half_h = (bottom - top) / 2 - r
-    qx = abs(x - (left + right) / 2) - half_w
-    qy = abs(y - (top + bottom) / 2) - half_h
-    outside = (max(qx, 0.0) ** 2 + max(qy, 0.0) ** 2) ** 0.5
-    distance = outside + min(max(qx, qy), 0.0) - r
-    return min(max(0.5 - distance, 0.0), 1.0)
-
-
-def mix(
-    under: tuple[int, int, int], over: tuple[int, int, int], alpha: float
-) -> tuple[int, int, int]:
-    return (
-        round(under[0] + (over[0] - under[0]) * alpha),
-        round(under[1] + (over[1] - under[1]) * alpha),
-        round(under[2] + (over[2] - under[2]) * alpha),
-    )
-
-
-def render(size: int) -> bytes:
-    """RGBA rows for the icon, as raw scanlines."""
-    scale = size / 1024
-    # macOS leaves a margin around the art; 1024px icons are drawn at about 824px.
-    margin = 100 * scale
-    ground = (margin, margin, size - margin, size - margin)
-    corner = 180 * scale
-
-    # The accent edge, in the same proportion the application draws it.
-    edge = (margin, margin, margin + 86 * scale, size - margin)
-
-    # Three rows: the middle one is the drift, so it is lime and a different width.
-    row_left = margin + 190 * scale
-    rows = [
-        ((row_left, 330 * scale, row_left + 480 * scale, 330 * scale + 74 * scale), WHITE),
-        ((row_left, 475 * scale, row_left + 300 * scale, 475 * scale + 74 * scale), LIME),
-        ((row_left, 620 * scale, row_left + 430 * scale, 620 * scale + 74 * scale), WHITE),
-    ]
-    row_corner = 37 * scale
-
-    raw = bytearray()
-    for py in range(size):
-        raw.append(0)  # PNG filter type 0 for this scanline
-        y = py + 0.5
-        for px in range(size):
-            x = px + 0.5
-            alpha = rounded_rect_coverage(x, y, ground, corner)
-            if alpha <= 0.0:
-                raw += b"\x00\x00\x00\x00"
-                continue
-            colour = NAVY
-            edge_cover = rounded_rect_coverage(x, y, edge, 0.0)
-            if edge_cover > 0.0:
-                colour = mix(colour, LIME, edge_cover)
-            for box, row_colour in rows:
-                cover = rounded_rect_coverage(x, y, box, row_corner)
-                if cover > 0.0:
-                    colour = mix(colour, row_colour, cover)
-            raw += bytes((colour[0], colour[1], colour[2], round(alpha * 255)))
-    return bytes(raw)
-
-
-def chunk(kind: bytes, payload: bytes) -> bytes:
-    return (
-        struct.pack(">I", len(payload))
-        + kind
-        + payload
-        + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
-    )
-
-
-def write_png(path: Path, size: int, raw: bytes) -> None:
-    header = struct.pack(">2I5B", size, size, 8, 6, 0, 0, 0)  # 8-bit RGBA, no interlace
-    path.write_bytes(
-        b"\x89PNG\r\n\x1a\n"
-        + chunk(b"IHDR", header)
-        + chunk(b"IDAT", zlib.compress(raw, 9))
-        + chunk(b"IEND", b"")
-    )
 
 
 def main() -> int:
@@ -142,9 +42,12 @@ def main() -> int:
     iconset = HERE / "cumo-schema-diff-gui.iconset"
     iconset.mkdir(exist_ok=True)
     master = iconset / "icon_512x512@2x.png"
-    write_png(master, SIZE, render(SIZE))
+    write_png(master, GRID, render(GRID))
 
-    # Every size the iconset format asks for, resampled by sips from the one render.
+    # Every size the iconset format asks for, resampled by sips from the one render. Resampling is
+    # acceptable here and not in media/: the Finder and the dock never show these at 16px without
+    # also having the 32 and 64 to pick from, whereas a favicon or a README image is shown at
+    # exactly the size it was written at.
     for name, pixels in (
         ("icon_16x16", 16),
         ("icon_16x16@2x", 32),

@@ -249,12 +249,13 @@ class TestMacosAppBundle:
         assert icon.is_file(), "the icon the build points at does not exist"
         assert icon.stat().st_size > 10_000, "an icns this small is not a full icon set"
         assert (ROOT / "packaging" / "make_icon.py").is_file(), "the icon has no generator"
+        assert (ROOT / "packaging" / "logo.py").is_file(), "the generator has no mark to draw"
 
     def test_the_icon_is_drawn_from_the_design_tokens(self):
         """One palette. An icon in its own colours would be the first thing to drift."""
         import re
 
-        generator = (ROOT / "packaging" / "make_icon.py").read_text(encoding="utf-8")
+        generator = (ROOT / "packaging" / "logo.py").read_text(encoding="utf-8")
         tokens = (ROOT / "src" / "cumo_schema_comparer" / "gui" / "ui" / "tokens.slint").read_text(
             encoding="utf-8"
         )
