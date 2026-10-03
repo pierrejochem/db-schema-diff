@@ -2502,6 +2502,121 @@ class TestTheOutputDirectoryIsRemembered:
         assert app.config.config.output_dir == str(target)
 
 
+class TestTheStoredCredentialFollowsTheFields:
+    """Reported: a comparison that reads zero objects from a database full of them.
+
+    Storing a password froze the whole connection string — host, port, database, user — into the
+    keychain, and every run connected with that. Editing a field afterwards changed the config
+    file and the run dialog and nothing else, so the window showed one database and compared
+    another. Reachable and empty reads as a clean capture of nothing.
+    """
+
+    def stored(self, app, label: str = "prod") -> str:
+        return app.credentials.resolve(app._source(label).dsn_env).value
+
+    def connected(self, app, **parts) -> Application:
+        for field, value in parts.items():
+            app.window.source_changed("prod", field, value)
+        app.window.store_password("prod", "hunter2")
+        return app
+
+    def test_changing_the_host_changes_what_a_run_connects_to(self, tmp_path):
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        assert "db-prod.internal" in self.stored(app)
+
+        app.window.source_changed("prod", "host", "localhost")
+        assert "localhost" in self.stored(app)
+        assert "db-prod.internal" not in self.stored(app)
+
+    @pytest.mark.parametrize(
+        ("field", "value", "expected"),
+        [
+            ("host", "localhost", "localhost"),
+            ("port", "55432", ":55432/"),
+            ("database", "core", "/core"),
+            ("user", "postgres", "postgres:"),
+            ("sslmode", "disable", "sslmode=disable"),
+        ],
+    )
+    def test_every_part_of_the_connection_is_followed(self, tmp_path, field, value, expected):
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        app.window.source_changed("prod", field, value)
+        assert expected in self.stored(app)
+
+    def test_the_password_survives_the_rebuild(self, tmp_path):
+        """It cannot be retyped — nobody can read it back — so losing it here would be fatal."""
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        app.window.source_changed("prod", "host", "localhost")
+        assert "hunter2" in self.stored(app)
+        assert app.window.sources[0]["has_password"] is True
+
+    def test_a_password_with_punctuation_survives_it_too(self, tmp_path):
+        """The rebuild parses the old string and writes a new one, so the escaping round-trips."""
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        app.window.source_changed("prod", "host", "db-prod")
+        app.window.source_changed("prod", "database", "invoicing")
+        app.window.source_changed("prod", "user", "cumo")
+        app.window.store_password("prod", "p@ss:w/rd #1")
+        app.window.source_changed("prod", "host", "localhost")
+
+        from psycopg.conninfo import conninfo_to_dict
+
+        assert conninfo_to_dict(self.stored(app))["password"] == "p@ss:w/rd #1"
+
+    def test_a_source_with_no_stored_password_gets_none_invented(self, tmp_path):
+        keychain = FakeKeychain()
+        app = application(tmp_path, environ={}, keychain=keychain)
+        app.window.source_changed("prod", "host", "localhost")
+        assert keychain.entries == {}
+
+    def test_a_credential_from_the_environment_is_not_copied_into_the_keychain(self, tmp_path):
+        """The variable is the user's own. Shadowing it would make the window the authority on a
+        credential the command line is still reading from the environment."""
+        keychain = FakeKeychain()
+        app = application(tmp_path, environ={"PROD_DSN": PROD_DSN}, keychain=keychain)
+        app.window.source_changed("prod", "host", "localhost")
+        assert keychain.entries == {}
+        assert app.credentials.resolve("PROD_DSN").value == PROD_DSN
+
+    def test_editing_an_unrelated_field_does_not_touch_the_credential(self, tmp_path):
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        before = self.stored(app)
+        app.window.source_changed("prod", "schemas", "public")
+        assert self.stored(app) == before
+
+    def test_a_rename_keeps_the_connection_it_had(self, tmp_path):
+        """The variable moves with the label; the connection it describes does not change."""
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        before = self.stored(app)
+        app.window.source_changed("prod", "label", "production")
+        assert self.stored(app, "production") == before
+
+    def test_a_port_is_kept_as_a_number(self, tmp_path):
+        """``model_copy`` does not validate, so a typed port arrived as a string and was written
+        to the YAML quoted."""
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        app.window.source_changed("prod", "port", "55432")
+        assert app.config.config.master.port == 55432
+        assert isinstance(app.config.config.master.port, int)
+
+    def test_clearing_the_port_unsets_it(self, tmp_path):
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        app.window.source_changed("prod", "port", "55432")
+        app.window.source_changed("prod", "port", "")
+        assert app.config.config.master.port is None
+
+    def test_a_port_that_is_not_a_number_is_refused_rather_than_stored(self, tmp_path):
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        app.window.source_changed("prod", "port", "fifty")
+        assert app.window.status_is_error is True
+        assert app.config.config.master.port is None
+
+
 class TestReopeningTheSavedConfiguration:
     """The one file the application owns is read back when it starts.
 

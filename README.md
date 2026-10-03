@@ -350,6 +350,15 @@ config file. The password is handed to the OS keychain and is never shown, never
 written to a file; a connection string is assembled from the parts at the moment it is needed, and
 it redacts itself everywhere but the connect call.
 
+Changing any of those parts rewrites the stored credential, so the connection a run makes is always
+the one the window is showing. Only an entry the application itself stored is rewritten: a DSN you
+exported in your environment belongs to you, and the command line is reading that same variable.
+
+**If you already reach a database through your own `ssh -L` forwarding, do not also give the source
+an `ssh:` block.** Point `host` and `port` at your local end of the forwarding and leave the gateway
+fields empty. The two mechanisms do the same job, and configured together the tool would tunnel to
+the gateway and then look for your forwarded port *on the gateway*, which is not where it is.
+
 The variable the credential is filed under is generated from the source's label — `qa` becomes
 `CUMO_QA_DSN` — and written to the config file, so the command-line tool, which resolves `dsn_env`
 and nothing else, can run the same configuration once that variable is exported. Renaming a source

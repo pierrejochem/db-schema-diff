@@ -197,6 +197,16 @@ class ConfigDocument:
             value = None
         if field == "dsn_env" and isinstance(value, str):
             value = value.strip()
+        if field == "port" and isinstance(value, str):
+            # `model_copy` does not validate, so without this a typed port stayed a string: it
+            # reached the connection by luck and was written to the YAML quoted.
+            text = value.strip()
+            if not text:
+                value = None
+            elif text.isdigit():
+                value = int(text)
+            else:
+                raise GuiError("port must be a number", field="port")
         if field == "schemas":
             items = value.split(",") if isinstance(value, str) else (value or ())
             names = tuple(n.strip() for n in items if n.strip())
