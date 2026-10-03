@@ -37,6 +37,7 @@ property.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gc
 import logging
 import re
@@ -62,9 +63,9 @@ from ..diff.ignores import IgnoreRuleSet, load_default_ignores
 from ..diff.model import ComparisonReport
 from ..errors import ComparerError
 from ..runner import ConnectionStatus, describe_gateway
-from . import dialogs, home
+from . import connection, dialogs, home
 from .config_vm import ConfigDocument
-from .credentials import CredentialStatus, CredentialStore
+from .credentials import CredentialSource, CredentialStatus, CredentialStore
 from .errors import GuiError
 from .ignores_vm import IgnoresDocument
 from .results_vm import ResultsModel, checked_delta_rows, checked_diff_rows
@@ -378,9 +379,6 @@ class Application:
             True if ignores is None else ignores.config.options.case_insensitive_globs
         )
 
-        rebuilt = self._fill(window.credentials, self._credential_rows(described))
-        if rebuilt is not None:
-            window.credentials = rebuilt
         window.keychain_available = self.credentials.storage_available
         window.keychain_problem = _sanitise(self.credentials.storage_problem or "")
 
@@ -435,9 +433,17 @@ class Application:
         ssh = source.ssh
         return {
             "label": source.label,
-            "dsn_env": source.dsn_env,
             "host": source.host or "",
+            "port": "" if source.port is None else str(source.port),
             "database": source.database or "",
+            "user": source.user or "",
+            "sslmode": source.sslmode or "",
+            "has_password": credential.source is not CredentialSource.UNSET,
+            "missing": str(
+                connection.missing_parts(
+                    source, has_password=credential.source is not CredentialSource.UNSET
+                )
+            ),
             "schemas": ", ".join(source.schemas or ()),
             "schema_map": ", ".join(f"{k}={v}" for k, v in source.schema_map.items()),
             "liquibase_schema": "" if source.liquibase is None else source.liquibase.schema_name,
@@ -450,32 +456,10 @@ class Application:
             ),
             "tab": self._source_tabs.get(source.label, 0),
             "is_master": source.label == self.config.config.master.label,
-            "credential_source": str(credential.source),
             "connection_status": "" if status is None else _describe_check(status),
             "connection_ok": False if status is None else status.ok,
             "checked": status is not None,
         }
-
-    def _credential_rows(self, described: Mapping[str, CredentialStatus]) -> list[dict[str, Any]]:
-        """All five ``CredentialRow`` fields, one row per distinct ``dsn_env``."""
-        used_by: dict[str, list[str]] = {}
-        for source in self.config.config.sources:
-            used_by.setdefault(source.dsn_env, []).append(source.label)
-        rows = []
-        for env_name, labels in used_by.items():
-            status = described[env_name]
-            rows.append(
-                {
-                    "env_name": env_name,
-                    "used_by": ", ".join(labels),
-                    "source": str(status.source),
-                    "summary": status.summary or "",
-                    "can_store": status.storage_available,
-                }
-            )
-        return rows
-
-    # -- error handling ----------------------------------------------------------------------
 
     def _guard(self, fn: Callable[..., None]) -> Callable[..., None]:
         """Wrap a handler so an expected failure becomes a message and the window stays true.
@@ -523,6 +507,8 @@ class Application:
         window.add_target = self._guard(self._add_target)
         window.remove_target = self._guard(self._remove_target)
         window.check_connection = self._guard(self._check_connection)
+        window.store_password = self._guard(self._store_password)
+        window.forget_password = self._guard(self._forget_password)
         window.test_tunnel = self._guard(self._test_tunnel)
         window.close_tunnel_dialog = self._guard(self._close_tunnel_dialog)
         window.choose_ssh_key = self._guard(self._choose_ssh_key)
@@ -535,9 +521,6 @@ class Application:
         window.add_rule = self._guard(self._add_rule)
         window.remove_rule = self._guard(self._remove_rule)
         window.save_ignores = self._guard(self._save_ignores)
-
-        window.store_credential = self._guard(self._store_credential)
-        window.forget_credential = self._guard(self._forget_credential)
 
         # Not _guard: the markup sets `running` itself when Start is pressed, so this one has to
         # clear it on every exit path of its own.
@@ -564,9 +547,11 @@ class Application:
         else:
             if field == "label":
                 self._check_rename(label, value)
+                was = self._source(label).dsn_env
             parsed: Any = _parse_schema_map(value) if field == "schema_map" else value
             self.config.update_source(label, field, parsed)
             if field == "label" and label != value:
+                self._restore_password(was, self._source(value).dsn_env)
                 self._checks.pop(label, None)
                 moved = self._source_tabs.pop(label, None)
                 if moved is not None:
@@ -783,34 +768,55 @@ class Application:
             raise GuiError("save the configuration first; the ruleset is stored beside it")
         return path.with_name(f"{path.stem}.ignores.yaml")
 
-    # -- the Credentials tab -----------------------------------------------------------------
+    # -- passwords -----------------------------------------------------------------
 
-    def _store_credential(self, env_name: str, secret: str) -> None:
-        """Store one credential. The secret is used once and never kept, shown or logged."""
-        env_name = str(env_name)
+    def _store_password(self, label: str, secret: str) -> None:
+        """Keep one source's password, as part of the connection string it belongs to.
+
+        The password is not stored on its own: the parts in the configuration file plus the typed
+        password make one connection string, and that is what goes into the keychain — so the rest
+        of the application keeps resolving a credential exactly as it always has.
+        """
+        label, secret = str(label), str(secret)
+        if not secret.strip():
+            raise GuiError("nothing typed to store", field="password")
+        source = self._source(label)
+        env_name = source.dsn_env
+        dsn = connection.build(source, secret, env_name=env_name)
         try:
-            self.credentials.store(env_name, str(secret))
-        except ValueError:
-            raise GuiError(f"{env_name}: a credential must not be empty") from None
-        except RuntimeError as exc:
-            raise GuiError(f"{env_name}: could not be stored ({_sanitise(str(exc))})") from None
+            self.credentials.store(env_name, dsn.value)
+        except Exception as exc:
+            raise GuiError(_sanitise(str(exc))) from None
         self._described.pop(env_name, None)
-        self._ok(
-            f"Stored {env_name} in the keychain. "
-            "The command line still reads the environment and nothing else."
-        )
+        self._ok(f"Password stored for {label}.")
 
-    def _forget_credential(self, env_name: str) -> None:
-        env_name = str(env_name)
+    def _forget_password(self, label: str) -> None:
+        label = str(label)
+        source = self._source(label)
         try:
-            self.credentials.forget(env_name)
-        except RuntimeError as exc:
-            raise GuiError(f"{env_name}: could not be removed ({_sanitise(str(exc))})") from None
-        self._described.pop(env_name, None)
-        source = self._describe(env_name).source
-        self._ok(f"Removed {env_name} from the keychain; it now resolves from the {source}.")
+            self.credentials.forget(source.dsn_env)
+        except Exception as exc:
+            raise GuiError(_sanitise(str(exc))) from None
+        self._described.pop(source.dsn_env, None)
+        self._ok(f"Password forgotten for {label}.")
 
-    # -- the session -------------------------------------------------------------------------
+    def _restore_password(self, old_env: str, new_env: str) -> None:
+        """Move a stored credential when a rename moves the variable it is filed under.
+
+        Without this a rename orphans the password: the source looks for a name nothing was ever
+        stored against, and the old entry sits in the keychain belonging to nobody.
+        """
+        if old_env == new_env:
+            return
+        try:
+            existing = self.credentials.resolve(old_env)
+        except Exception:
+            return
+        with contextlib.suppress(Exception):
+            self.credentials.store(new_env, existing.value)
+            self.credentials.forget(old_env)
+        self._described.pop(old_env, None)
+        self._described.pop(new_env, None)
 
     def _loop(self) -> asyncio.AbstractEventLoop:
         try:

@@ -10,9 +10,16 @@ import { Tokens } from "tokens.slint";
 
 export struct SourceRow {
     label: string,
-    dsn_env: string,
     host: string,
+    port: string,
     database: string,
+    user: string,
+    sslmode: string,
+    // Whether a password is in the keychain for this source. Never the password: nothing about a
+    // stored secret crosses into the window but the fact that one exists.
+    has_password: bool,
+    // What the connection still lacks, already worded, or "" when it lacks nothing.
+    missing: string,
     schemas: string,          // comma-separated; the view model splits and joins
     schema_map: string,       // "from=to, from=to"
     liquibase_schema: string,
@@ -28,7 +35,6 @@ export struct SourceRow {
     // cancelling a file dialog would send you back to the Database tab.
     tab: int,
     is_master: bool,
-    credential_source: string,   // keychain | environment | unset
     connection_status: string,
     connection_ok: bool,
     checked: bool,
@@ -78,6 +84,19 @@ export component ConfigTab inherits ScrollView {
     callback add-target();
     callback remove-target(string);
     callback check-connection(string);
+    in property <bool> keychain-available;
+    in property <string> keychain-problem;
+
+    callback store-password(string, string);
+    callback forget-password(string);
+
+    // The one path a typed password takes out of this tab, and the one that drops a stored one.
+    // Every Store and Forget goes through here, so a test can drive the real chain — a handler
+    // assigned onto the outward callback from Python would replace the code under test.
+    public function submit(label: string, secret: string) {
+        root.store-password(label, secret);
+    }
+    public function drop(label: string) { root.forget-password(label); }
     callback test-tunnel(string);
     callback choose-ssh-key(string);
     callback select-source-tab(string, int);
@@ -89,6 +108,24 @@ export component ConfigTab inherits ScrollView {
         padding: Tokens.space-5;
         spacing: Tokens.space-4;
         alignment: start;
+
+        // Without a keychain there is nowhere to put a password, which is worth saying once at the
+        // top rather than leaving someone to find a Store button that does nothing.
+        Rectangle {
+            height: root.keychain-available ? 0px : Tokens.row-height;
+            visible: !root.keychain-available;
+            border-radius: Tokens.radius-subtle;
+            background: Tokens.caution-surface;
+            Text {
+                x: Tokens.space-3;
+                text: "No keychain: " + root.keychain-problem
+                    + ". Passwords cannot be stored on this machine.";
+                vertical-alignment: center;
+                font-size: Tokens.text-body;
+                color: Tokens.caution;
+                overflow: elide;
+            }
+        }
 
         Card {
             title: "CONFIGURATION";
@@ -183,32 +220,19 @@ export component ConfigTab inherits ScrollView {
                             Rectangle { }
                         }
                         FormRow {
-                            label: "dsn variable";
-                            LineEdit {
-                                text: row.dsn_env;
-                                max-width: Tokens.field-max;
-                                placeholder-text: "PROD_DSN";
-                                edited(v) => { root.source-changed(row.label, "dsn_env", v); }
-                            }
-                            Rectangle { }
-                        }
-                        FormRow {
-                            label: "credential";
-                            Text {
-                                text: row.credential_source;
-                                vertical-alignment: center;
-                                font-family: Tokens.family-mono;
-                                color: Tokens.muted;
-                            }
-                            Rectangle { }
-                        }
-                        FormRow {
                             label: "host";
                             LineEdit {
                                 text: row.host;
                                 max-width: Tokens.field-max;
-                                placeholder-text: "documentation only";
+                                placeholder-text: "db-qa.internal";
                                 edited(v) => { root.source-changed(row.label, "host", v); }
+                            }
+                            LineEdit {
+                                text: row.port;
+                                width: 90px;
+                                input-type: number;
+                                placeholder-text: "5432";
+                                edited(v) => { root.source-changed(row.label, "port", v); }
                             }
                             Rectangle { }
                         }
@@ -217,8 +241,68 @@ export component ConfigTab inherits ScrollView {
                             LineEdit {
                                 text: row.database;
                                 max-width: Tokens.field-max;
-                                placeholder-text: "documentation only";
+                                placeholder-text: "invoicing";
                                 edited(v) => { root.source-changed(row.label, "database", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "user";
+                            LineEdit {
+                                text: row.user;
+                                max-width: Tokens.field-max;
+                                placeholder-text: "cumo";
+                                edited(v) => { root.source-changed(row.label, "user", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "password";
+                            secret := LineEdit {
+                                input-type: password;
+                                max-width: Tokens.field-max;
+                                placeholder-text: row.has_password
+                                    ? "stored in the keychain" : "not stored yet";
+                                // Cleared the moment it is handed over, so a typed password is never left
+                                // sitting in a widget for anything to read back.
+                                accepted => {
+                                    root.submit(row.label, self.text);
+                                    self.text = "";
+                                }
+                            }
+                            Button {
+                                text: "Store";
+                                enabled: root.keychain-available && secret.text != "";
+                                clicked => {
+                                    root.submit(row.label, secret.text);
+                                    secret.text = "";
+                                }
+                            }
+                            Button {
+                                text: "Forget";
+                                enabled: row.has_password;
+                                clicked => { root.drop(row.label); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "ssl mode";
+                            ComboBox {
+                                model: ["", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"];
+                                current-value: row.sslmode;
+                                max-width: 200px;
+                                selected(v) => { root.source-changed(row.label, "sslmode", v); }
+                            }
+                            Rectangle { }
+                        }
+                        FormRow {
+                            label: "";
+                            Text {
+                                text: row.missing == "" ? "" : "still needed: " + row.missing;
+                                vertical-alignment: center;
+                                font-size: Tokens.text-body;
+                                color: Tokens.caution;
+                                height: row.missing == "" ? 0px : Tokens.space-5;
                             }
                             Rectangle { }
                         }

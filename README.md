@@ -33,8 +33,8 @@ Working:
 - Generated catalog objects filtered out — internal foreign-key triggers, a table's own row type, a
   range type's constructor functions, an extension's contents — so the report contains only what
   somebody wrote.
-- Credentials from the environment only, with a credential type that redacts itself in every
-  string context.
+- Credentials from the environment only — or, for the desktop application, the OS keychain — with
+  a credential type that redacts itself in every string context.
 
 Object kinds compared: tables, columns, constraints, indexes, views, materialized views,
 sequences, functions, procedures, triggers, enums, domains, composite and range types, and
@@ -84,14 +84,21 @@ for Slint, while the command-line tool keeps its 3.11 floor.
 
 ## Credentials
 
-Credentials **only** come from the environment. The YAML config names targets and points at
-environment variable *names*; it never contains a DSN. There is no `--dsn` and no
+For the command line, credentials **only** come from the environment. The YAML config names targets
+and points at environment variable *names*; it never contains a DSN. There is no `--dsn` and no
 `--password` flag, by design, so argv and shell history cannot carry a credential.
 
 ```sh
 export PROD_INVOICING_DSN='postgresql://user:pass@db-prod:5432/invoicing'
 export QA_INVOICING_DSN='postgresql://user:pass@db-qa:5432/invoicing'
 ```
+
+The desktop application asks for the parts instead — host, port, database, user, password — builds
+the connection string itself and puts it in the OS keychain under a variable name it generates from
+the source's label. The parts go in the config file, which stays non-secret and committable; the
+password goes to the keychain and nowhere else. The generated name is in the file too, so a config
+written there still runs unchanged on the command line once that variable is exported in CI. See
+[Desktop application](#desktop-application).
 
 Every source is inspected in a read-only `REPEATABLE READ` transaction with
 `statement_timeout` and `lock_timeout` set, so pointing this at production is safe.
@@ -127,9 +134,7 @@ As everywhere else here, the config holds a key *path* and a variable *name*. Th
 your disk and the passphrase comes from the environment, or from the keychain in the desktop
 application.
 
-The optional desktop application can also store a credential in the OS keychain, for itself only
-— see [Desktop application](#desktop-application). The command line reads the environment and
-nothing else, whatever is in the keychain.
+The command line reads the environment and nothing else, whatever is in the keychain.
 
 ## Usage
 
@@ -309,15 +314,30 @@ cumo-schema-diff-gui
 
 Five views, chosen from the rail on the left: **Config** (every parameter of the config file, with
 a Check connection button per source), **Run**, **Results**, **Ignores** (the project's rules, with
-the bundled defaults shown read-only) and **Credentials**. The rail also carries the open config
-file and the button to replace it, so no strip across the top takes height from the views.
+the bundled defaults shown read-only) and **About**, which says where the configuration is saved.
 
-Credentials are stored in the OS keychain and resolved **keychain first, environment as fallback**.
-A connection string is never shown, never logged and never written to the config file — the UI shows
-only where each credential came from and a redacted host/database summary.
+### Connecting
+
+Each source's card asks for a **host**, **port**, **database**, **user** and **password**, and an
+optional **ssl mode** — no environment variable to name, and no connection string to paste. A line
+under the fields says what the connection still lacks. Everything but the password is written to the
+config file. The password is handed to the OS keychain and is never shown, never logged and never
+written to a file; a connection string is assembled from the parts at the moment it is needed, and
+it redacts itself everywhere but the connect call.
+
+The variable the credential is filed under is generated from the source's label — `qa` becomes
+`CUMO_QA_DSN` — and written to the config file, so the command-line tool, which resolves `dsn_env`
+and nothing else, can run the same configuration once that variable is exported. Renaming a source
+renames the variable and moves the stored password with it.
+
+Credentials resolve **keychain first, environment as fallback**, so a DSN already exported still
+works and a source backed by one is shown as having a password.
 
 **The CLI does not read the keychain.** It reads the environment and nothing else, so a credential
 stored here cannot change what a CI run does.
+
+Without a usable keychain the Config view says so at the top and the Store buttons are disabled,
+rather than leaving a button that quietly does nothing.
 
 Selecting a row on the Results tab opens a detail pane under the list: the finding's name and how
 it compares, then every attribute that differs, with the master and target values side by side, and,

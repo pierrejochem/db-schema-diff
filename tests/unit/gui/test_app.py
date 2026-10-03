@@ -32,7 +32,7 @@ from cumo_schema_comparer.gui.app import Application
 from cumo_schema_comparer.gui.config_vm import ConfigDocument
 from cumo_schema_comparer.gui.errors import GuiError
 from cumo_schema_comparer.gui.session import Session
-from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus
+from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus, TunnelStatus
 from tests.support.builders import col, inventory, table
 
 CONFIG = textwrap.dedent(
@@ -58,12 +58,20 @@ BOTH = {"PROD_DSN": PROD_DSN, "QA_DSN": QA_DSN}
 CAPTURE = "cumo_schema_comparer.gui.session.runner.capture"
 CHECK = "cumo_schema_comparer.gui.session.runner.check_connection"
 BUILD_REPORT = "cumo_schema_comparer.gui.session.runner.build_report"
+#: For the tests that look at the dialog before the probe has answered. A bare ``Mock`` return
+#: value would reach ``window.tunnel_ok`` once the loop drained and die there — a real status
+#: keeps the failure in the test that asked for one.
+UNFINISHED = TunnelStatus(label="qa", ok=False, detail="not asked")
 
 SOURCE_ROW_FIELDS = {
     "label",
-    "dsn_env",
     "host",
+    "port",
     "database",
+    "user",
+    "sslmode",
+    "has_password",
+    "missing",
     "schemas",
     "schema_map",
     "liquibase_schema",
@@ -74,7 +82,6 @@ SOURCE_ROW_FIELDS = {
     "ssh_passphrase_env",
     "tab",
     "is_master",
-    "credential_source",
     "connection_status",
     "connection_ok",
     "checked",
@@ -90,7 +97,6 @@ RULE_ROW_FIELDS = {
     "action",
     "read_only",
 }
-CREDENTIAL_ROW_FIELDS = {"env_name", "used_by", "source", "summary", "can_store"}
 PROGRESS_ROW_FIELDS = {"label", "state", "detail"}
 FINDING_ROW_FIELDS = {"target", "kind", "path", "status", "severity", "detail", "suppressed_by"}
 
@@ -203,8 +209,8 @@ def rows(model) -> list[dict[str, Any]]:
     return [dict(row) for row in model]
 
 
-def by_env(app: Application) -> dict[str, dict[str, Any]]:
-    return {row["env_name"]: row for row in rows(app.window.credentials)}
+def by_label(app: Application) -> dict[str, dict[str, Any]]:
+    return {row["label"]: row for row in rows(app.window.sources)}
 
 
 def everything_rendered(app: Application) -> str:
@@ -213,7 +219,6 @@ def everything_rendered(app: Application) -> str:
     return str(
         [
             rows(window.sources),
-            rows(window.credentials),
             rows(window.rules),
             rows(window.default_rules),
             rows(window.progress),
@@ -263,23 +268,35 @@ class TestLoading:
         assert app.window.fail_on == "error"
         assert app.window.parallel is True
 
-    def test_credentials_show_their_source(self, tmp_path):
+    def test_a_source_says_whether_it_has_a_password_without_saying_what(self, tmp_path):
+        """The one thing the window needs to know about a credential, and the only thing it gets.
+
+        A DSN already in the environment counts: the command-line tool reads one and so does a
+        run, so a source that can connect must not be shown as one that cannot.
+        """
         app = application(tmp_path, environ={"PROD_DSN": PROD_DSN})
-        assert by_env(app)["PROD_DSN"]["source"] == "environment"
-        assert by_env(app)["QA_DSN"]["source"] == "unset"
+        assert by_label(app)["prod"]["has_password"] is True
+        assert by_label(app)["qa"]["has_password"] is False
+        assert SECRET not in everything_rendered(app)
+
+    def test_a_source_with_nothing_filled_in_says_what_it_still_needs(self, tmp_path):
+        app = application(tmp_path, environ={})
+        missing = by_label(app)["qa"]["missing"]
+        assert missing == "host, database, user, password"
+
+    def test_what_is_still_needed_shrinks_as_the_parts_are_typed(self, app):
+        for field, value in (("host", "db-qa"), ("database", "invoicing"), ("user", "cumo")):
+            app.window.source_changed("qa", field, value)
+        # The environment holds QA_DSN, so the password is already accounted for.
+        assert by_label(app)["qa"]["missing"] == ""
 
     def test_no_credential_value_reaches_the_window(self, app):
         # The one assertion worth repeating at every layer.
-        assert "postgresql://" not in str(rows(app.window.credentials))
         assert "postgresql://" not in str(rows(app.window.sources))
 
     def test_every_source_row_carries_every_field(self, app):
         for row in rows(app.window.sources):
             assert set(row) == SOURCE_ROW_FIELDS
-
-    def test_every_credential_row_carries_all_five_fields(self, app):
-        for row in rows(app.window.credentials):
-            assert set(row) == CREDENTIAL_ROW_FIELDS
 
     def test_the_bundled_defaults_are_shown_read_only_with_every_field(self, app):
         defaults = rows(app.window.default_rules)
@@ -439,28 +456,92 @@ class TestSaving:
         assert "comment" in app.window.status_message
 
 
-class TestCredentials:
-    def test_storing_a_credential_updates_the_row_without_showing_it(self, app):
-        app.window.store_credential("QA_DSN", QA_DSN)
-        assert by_env(app)["QA_DSN"]["source"] == "keychain"
+def fill(app: Application, label: str, **parts: str) -> None:
+    """Type the connection parts for one source, as a person would."""
+    for field, value in parts.items():
+        app.window.source_changed(label, field, value)
+
+
+class TestPasswords:
+    """The window asks for a password and nothing else about where a credential lives.
+
+    There is no Credentials tab any more and no environment variable to name: the parts are typed
+    into the source's own card, the connection string is assembled here, and the password goes to
+    the OS keychain and nowhere else.
+    """
+
+    def test_storing_a_password_marks_the_source_without_showing_it(self, app):
+        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        app.window.store_password("qa", SECRET)
+        assert app.window.status_is_error is False
+        assert by_label(app)["qa"]["has_password"] is True
         assert SECRET not in everything_rendered(app)
 
-    def test_forgetting_a_credential_falls_back(self, app):
-        app.window.store_credential("PROD_DSN", "postgresql://u:x@kc/db")
-        app.window.forget_credential("PROD_DSN")
-        assert by_env(app)["PROD_DSN"]["source"] == "environment"
+    def test_the_keychain_entry_is_a_connection_string_the_command_line_can_read(self, tmp_path):
+        """What is stored is a DSN under the generated variable name, not a bare password.
 
-    def test_the_keychain_wins_over_the_environment(self, app):
-        app.window.store_credential("PROD_DSN", "postgresql://u:x@kc/other")
-        row = by_env(app)["PROD_DSN"]
-        assert row["source"] == "keychain"
-        assert "host=kc" in row["summary"]
+        The command-line tool resolves a ``dsn_env`` and nothing else, so a password stored here
+        has to arrive as the whole connection string or the configuration this window writes would
+        only work inside this window.
+        """
+        keychain = FakeKeychain()
+        app = application(tmp_path, environ={}, keychain=keychain)
+        fill(app, "qa", host="db-qa", port="6432", database="invoicing", user="cumo")
+        app.window.source_changed("qa", "sslmode", "verify-full")
+        app.window.store_password("qa", "P@ss word/1")
 
-    def test_an_empty_secret_is_refused_with_a_message(self, tmp_path):
+        ((name, stored),) = keychain.entries.items()
+        assert name == "QA_DSN", "the variable already named in the configuration is the one used"
+        assert stored == (
+            "postgresql://cumo:P%40ss%20word%2F1@db-qa:6432/invoicing?sslmode=verify-full"
+        )
+
+    def test_forgetting_a_password_leaves_the_source_needing_one(self, tmp_path):
+        app = application(tmp_path, environ={}, keychain=FakeKeychain())
+        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        app.window.store_password("qa", SECRET)
+        assert by_label(app)["qa"]["has_password"] is True
+        app.window.forget_password("qa")
+        assert by_label(app)["qa"]["has_password"] is False
+        assert by_label(app)["qa"]["missing"] == "password"
+
+    def test_forgetting_a_password_falls_back_to_the_environment(self, app):
+        """A DSN in the environment still works, so forgetting the stored one is not fatal."""
+        fill(app, "prod", host="db-prod", database="invoicing", user="cumo")
+        app.window.store_password("prod", SECRET)
+        app.window.forget_password("prod")
+        assert by_label(app)["prod"]["has_password"] is True
+
+    def test_the_keychain_wins_over_the_environment(self, tmp_path):
+        keychain = FakeKeychain()
+        app = application(tmp_path, keychain=keychain)
+        fill(app, "prod", host="kc", database="db", user="u")
+        app.window.store_password("prod", "stored")
+        assert keychain.entries["PROD_DSN"] == "postgresql://u:stored@kc:5432/db"
+        assert app.credentials.resolve("PROD_DSN").value == keychain.entries["PROD_DSN"]
+
+    def test_an_empty_password_is_refused_with_a_message(self, tmp_path):
         app = application(tmp_path, environ={"PROD_DSN": PROD_DSN})
-        app.window.store_credential("QA_DSN", "   ")
+        app.window.store_password("qa", "   ")
         assert app.window.status_is_error is True
-        assert by_env(app)["QA_DSN"]["source"] == "unset"
+        assert by_label(app)["qa"]["has_password"] is False
+
+    def test_renaming_a_source_takes_its_password_with_it(self, tmp_path):
+        """The variable is generated from the label, so a rename moves the entry it is filed under.
+
+        Without this the password is orphaned: the renamed source looks under a name nothing was
+        ever stored against, and nobody can retype what they cannot read back.
+        """
+        keychain = FakeKeychain()
+        app = application(tmp_path, environ={}, keychain=keychain)
+        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        app.window.store_password("qa", SECRET)
+        stored = keychain.entries["QA_DSN"]
+
+        app.window.source_changed("qa", "label", "staging")
+
+        assert keychain.entries == {"CUMO_STAGING_DSN": stored}
+        assert by_label(app)["staging"]["has_password"] is True
 
     def test_an_unavailable_keychain_is_explained_rather_than_hidden(self, tmp_path):
         application_ = adopt(Application(environ={}, keychain=None), write_config(tmp_path))
@@ -492,13 +573,15 @@ class TestCredentials:
             app.window.source_changed("qa", "host", text)
         assert Counting.reads == before
 
-    def test_storing_a_credential_is_seen_by_the_next_refresh(self, tmp_path):
+    def test_storing_a_password_is_seen_by_the_next_refresh(self, tmp_path):
+        """The keychain is cached per variable, so both handlers have to invalidate it."""
         app = application(tmp_path, environ={"PROD_DSN": PROD_DSN})
-        assert by_env(app)["QA_DSN"]["source"] == "unset"
-        app.window.store_credential("QA_DSN", QA_DSN)
-        assert by_env(app)["QA_DSN"]["source"] == "keychain"
-        app.window.forget_credential("QA_DSN")
-        assert by_env(app)["QA_DSN"]["source"] == "unset"
+        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        assert by_label(app)["qa"]["has_password"] is False
+        app.window.store_password("qa", SECRET)
+        assert by_label(app)["qa"]["has_password"] is True
+        app.window.forget_password("qa")
+        assert by_label(app)["qa"]["has_password"] is False
 
     @pytest.mark.parametrize("shape", SECRET_SHAPES, ids=lambda s: s.split("=", 1)[1][:14])
     def test_a_quoted_or_escaped_password_is_redacted_whole(self, tmp_path, shape):
@@ -506,8 +589,8 @@ class TestCredentials:
         app = application(tmp_path, keychain=EchoingKeychain(shape))
 
         assert app.window.keychain_available is False
-        app.window.store_credential("QA_DSN", "postgresql://u:p@h/db")
-        app.window.forget_credential("QA_DSN")
+        app.window.store_password("qa", "Zq7x PLUMBUS9")
+        app.window.forget_password("qa")
 
         for where, text in (
             ("keychain_problem", app.window.keychain_problem),
@@ -544,7 +627,7 @@ class TestCredentials:
 
     def test_a_credential_only_in_the_keychain_is_usable_without_the_environment(self, tmp_path):
         app = application(tmp_path, environ={}, keychain=FakeKeychain(QA_DSN=QA_DSN))
-        assert by_env(app)["QA_DSN"]["source"] == "keychain"
+        assert by_label(app)["qa"]["has_password"] is True
         assert SECRET not in everything_rendered(app)
 
 
@@ -1081,10 +1164,10 @@ class TestStatusPolarity:
         green("adding a rule")
         app.window.remove_rule(rows(app.window.rules)[0]["id"])
         green("removing a rule")
-        app.window.store_credential("QA_DSN", QA_DSN)
-        green("storing a credential")
-        app.window.forget_credential("QA_DSN")
-        green("forgetting a credential")
+        app.window.store_password("qa", SECRET)
+        green("storing a password")
+        app.window.forget_password("qa")
+        green("forgetting a password")
         app.window.drive_choose_baseline()
         green("choosing a baseline")
         app.window.drive_choose_output_directory()
@@ -1705,7 +1788,6 @@ class TestTheTunnelTestButton:
 
     @pytest.mark.asyncio
     async def test_a_reachable_gateway_is_reported_as_reached(self, app):
-        from cumo_schema_comparer.runner import TunnelStatus
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(label="qa", ok=True, detail="gateway bastion.internal:22: reached h")
@@ -1720,7 +1802,6 @@ class TestTheTunnelTestButton:
 
     @pytest.mark.asyncio
     async def test_a_refused_gateway_is_an_error_naming_the_gateway(self, app):
-        from cumo_schema_comparer.runner import TunnelStatus
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(
@@ -1739,7 +1820,6 @@ class TestTheTunnelTestButton:
 
     @pytest.mark.asyncio
     async def test_a_passphrase_cannot_reach_the_window_through_the_result(self, app):
-        from cumo_schema_comparer.runner import TunnelStatus
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(label="qa", ok=False, detail="refused sslpassword=hunter2")
@@ -1861,14 +1941,15 @@ class TestTypingDoesNotDestroyTheFieldBeingTypedInto:
         assert self.model_id(app, "rules") == before
         assert rows(app.window.rules)[0]["reason"] == "quartz is runtime state"
 
-    def test_the_credentials_model_survives_a_refresh(self, app):
-        """The Store field holds a typed secret and is not bound to the model at all.
+    def test_the_password_field_survives_a_refresh_of_its_own_row(self, app):
+        """The password field holds a typed secret and is not bound to the model at all.
 
-        Rebuilding the row would clear it mid-entry, with no indication why.
+        Rebuilding the row would clear it mid-entry, with no indication why — and the password is
+        the one field in the window that cannot be read back from anywhere to retype it.
         """
-        before = self.model_id(app, "credentials")
+        before = self.model_id(app, "sources")
         app.window.source_changed("qa", "host", "x")
-        assert self.model_id(app, "credentials") == before
+        assert self.model_id(app, "sources") == before
 
 
 class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
@@ -1895,7 +1976,6 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
 
         def record(source, dsn, *, ssh_passphrase=None, observer=None):
             seen["dsn"] = dsn
-            from cumo_schema_comparer.runner import TunnelStatus
 
             return TunnelStatus(label="qa", ok=True, detail="gateway bastion.internal:22: reached")
 
@@ -2067,7 +2147,7 @@ class TestTheTunnelDialog:
         like a window that has stopped."""
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
 
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
 
         assert app.window.tunnel_dialog_open() is True
@@ -2077,7 +2157,7 @@ class TestTheTunnelDialog:
 
     def test_it_lays_out_every_step_up_front(self, app):
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
 
         labels = [s["label"] for s in self.steps(app)]
@@ -2087,7 +2167,7 @@ class TestTheTunnelDialog:
     def test_it_names_the_gateway_it_is_testing(self, app):
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         app.window.source_changed("qa", "ssh_user", "deploy")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
 
         assert "bastion.internal" in app.window.tunnel_gateway
@@ -2095,7 +2175,6 @@ class TestTheTunnelDialog:
 
     @pytest.mark.asyncio
     async def test_the_steps_fill_in_as_the_probe_reports(self, app):
-        from cumo_schema_comparer.runner import TunnelStatus
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
 
@@ -2116,7 +2195,6 @@ class TestTheTunnelDialog:
 
     @pytest.mark.asyncio
     async def test_a_failed_step_is_marked_and_keeps_its_reason(self, app):
-        from cumo_schema_comparer.runner import TunnelStatus
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
 
@@ -2136,7 +2214,6 @@ class TestTheTunnelDialog:
 
     @pytest.mark.asyncio
     async def test_it_stays_open_until_it_is_closed(self, app):
-        from cumo_schema_comparer.runner import TunnelStatus
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(label="qa", ok=True, detail="reached")
@@ -2152,7 +2229,7 @@ class TestTheTunnelDialog:
     async def test_it_cannot_be_closed_while_it_is_still_testing(self, app):
         """The Close button is disabled until the answer is in; the state behind it says so."""
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
             assert app.window.tunnel_busy is True
             await app.wait_for_idle()

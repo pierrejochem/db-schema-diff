@@ -17,6 +17,7 @@ field by position and never quote the value.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import os
 import re
 import tempfile
@@ -28,6 +29,7 @@ import yaml
 from pydantic import ValidationError
 
 from ..config.model import ComparerConfig, SourceRef
+from .connection import variable_name
 from .errors import GuiError
 from .shape import looks_like_connection_string
 
@@ -64,8 +66,8 @@ class ConfigDocument:
         config = ComparerConfig(
             version=1,
             name=name,
-            master=SourceRef(label="prod", dsn_env="PROD_DSN"),
-            targets=(SourceRef(label="qa", dsn_env="QA_DSN"),),
+            master=SourceRef(label="prod", dsn_env=variable_name("prod")),
+            targets=(SourceRef(label="qa", dsn_env=variable_name("qa")),),
         )
         return cls(path=None, config=config, dirty=False)
 
@@ -174,14 +176,18 @@ class ConfigDocument:
             items = value.split(",") if isinstance(value, str) else (value or ())
             names = tuple(n.strip() for n in items if n.strip())
             value = names or None
+        updates: dict[str, Any] = {field: value}
+        if field == "label" and value != label:
+            # The variable is derived from the label, so it has to follow one. The caller moves the
+            # keychain entry to match; leaving the old name behind would orphan the password.
+            updates["dsn_env"] = self._free_env_name(str(value), besides=label)
         config = self.config
         if config.master.label == label:
-            master = config.master.model_copy(update={field: value})
+            master = config.master.model_copy(update=updates)
             self.config = config.model_copy(update={"master": master})
         else:
             targets = tuple(
-                t.model_copy(update={field: value}) if t.label == label else t
-                for t in config.targets
+                t.model_copy(update=updates) if t.label == label else t for t in config.targets
             )
             if targets == config.targets and label not in {t.label for t in config.targets}:
                 raise GuiError(f"no source labelled {label!r}")
@@ -193,10 +199,36 @@ class ConfigDocument:
             raise GuiError("a label must be non-empty and contain no whitespace", field="label")
         if label in {s.label for s in self.config.sources}:
             raise GuiError(f"a source labelled {label!r} already exists", field="label")
-        env = re.sub(r"[^A-Za-z0-9]+", "_", label).strip("_").upper() or "TARGET"
-        target = SourceRef(label=label, dsn_env=f"{env}_DSN")
+        # Generated, never asked for: the name still has to exist, because it is how the
+        # command-line tool and the keychain both find the credential, but nobody should have to
+        # invent one.
+        target = SourceRef(label=label, dsn_env=self._free_env_name(label))
         self.config = self.config.model_copy(update={"targets": (*self.config.targets, target)})
         self.dirty = True
+
+    def _free_env_name(self, label: str, *, besides: str | None = None) -> str:
+        """The generated variable name for ``label``, made distinct from every other source's.
+
+        Punctuation collapses to underscores, so ``db qa`` and ``db-qa`` generate the same name.
+        Two sources filed under one variable would share one keychain entry — one password for two
+        databases, with nothing on screen to say so — and the configuration would merely *warn*
+        that a target reads the master's credential. A suffix is cheaper than that: nobody types
+        this name or reads it back.
+        """
+        taken = {
+            source.dsn_env
+            for source in self.config.sources
+            if besides is None or source.label != besides
+        }
+        base = variable_name(label)
+        if base not in taken:
+            return base
+        stem, _, suffix = base.rpartition("_")
+        for n in itertools.count(2):
+            candidate = f"{stem}_{n}_{suffix}"
+            if candidate not in taken:
+                return candidate
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def remove_target(self, label: str) -> None:
         if label == self.config.master.label:

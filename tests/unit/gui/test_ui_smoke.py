@@ -61,15 +61,19 @@ CALLBACKS = {
     "add_rule": (),
     "remove_rule": ("quartz-runtime",),
     "save_ignores": (),
-    "store_credential": ("PROD_DSN", "a-secret"),
-    "forget_credential": ("PROD_DSN",),
+    "store_password": ("qa", "a-secret"),
+    "forget_password": ("qa",),
 }
 
 SOURCE_ROW_FIELDS = [
     "label",
-    "dsn_env",
     "host",
+    "port",
     "database",
+    "user",
+    "sslmode",
+    "has_password",
+    "missing",
     "schemas",
     "schema_map",
     "liquibase_schema",
@@ -80,7 +84,6 @@ SOURCE_ROW_FIELDS = [
     "ssh_passphrase_env",
     "tab",
     "is_master",
-    "credential_source",
     "connection_status",
     "connection_ok",
     "checked",
@@ -90,9 +93,13 @@ SOURCE_ROW_FIELDS = [
 def make_row(**overrides):
     row = {
         "label": "qa",
-        "dsn_env": "QA_DSN",
         "host": "",
+        "port": "",
         "database": "",
+        "user": "",
+        "sslmode": "",
+        "has_password": False,
+        "missing": "",
         "schemas": "",
         "schema_map": "",
         "liquibase_schema": "",
@@ -103,7 +110,6 @@ def make_row(**overrides):
         "ssh_passphrase_env": "",
         "tab": 0,
         "is_master": False,
-        "credential_source": "unset",
         "connection_status": "",
         "connection_ok": False,
         "checked": False,
@@ -119,7 +125,6 @@ def test_there_are_slint_files_to_check():
         "config_tab.slint",
         "widgets.slint",
         "ignores_tab.slint",
-        "credentials_tab.slint",
         "run_tab.slint",
         "results_tab.slint",
     }
@@ -260,9 +265,13 @@ def test_a_source_row_round_trips_every_field(window):
     """The struct field names must match what the view model produces."""
     sent = make_row(
         label="prod",
-        dsn_env="PROD_DSN",
         host="db-prod",
+        port="5432",
         database="invoicing",
+        user="cumo",
+        sslmode="require",
+        has_password=True,
+        missing="",
         schemas="cumo-invoicing, public",
         schema_map="a=b",
         liquibase_schema="lb",
@@ -273,7 +282,6 @@ def test_a_source_row_round_trips_every_field(window):
         ssh_passphrase_env="PROD_SSH_PASSPHRASE",
         tab=1,
         is_master=True,
-        credential_source="environment",
         connection_status="ok",
         connection_ok=True,
         checked=True,
@@ -312,7 +320,6 @@ RULE_ROW_FIELDS = [
     "action",
     "read_only",
 ]
-CREDENTIAL_ROW_FIELDS = ["env_name", "used_by", "source", "summary", "can_store"]
 
 
 def make_rule(**overrides):
@@ -331,25 +338,13 @@ def make_rule(**overrides):
     return row
 
 
-def make_credential(**overrides):
-    row = {
-        "env_name": "PROD_DSN",
-        "used_by": "prod",
-        "source": "keychain",
-        "summary": "dbname=invoicing, host=db-prod, port=5432, user=cumo",
-        "can_store": True,
-    }
-    row.update(overrides)
-    return row
-
-
 # (python name, a value of the declared type different from the default)
 TAB_PROPERTIES = [
     ("case_insensitive_globs", True),
     ("keychain_available", True),
     ("keychain_problem", "no keyring backend"),
 ]
-TAB_LISTS = ["rules", "default_rules", "credentials"]
+TAB_LISTS = ["rules", "default_rules"]
 
 
 @pytest.mark.parametrize(("name", "value"), TAB_PROPERTIES, ids=[p[0] for p in TAB_PROPERTIES])
@@ -374,11 +369,6 @@ def test_rule_row_declares_exactly_the_expected_fields():
     assert declared_fields("RuleRow") == set(RULE_ROW_FIELDS)
 
 
-def test_credential_row_declares_exactly_the_expected_fields():
-    # By construction there is no field that could hold a connection string or a secret.
-    assert declared_fields("CredentialRow") == set(CREDENTIAL_ROW_FIELDS)
-
-
 def test_a_rule_row_round_trips_every_field(window):
     sent = make_rule(read_only=True)
     assert set(sent) == set(RULE_ROW_FIELDS)
@@ -389,35 +379,19 @@ def test_a_rule_row_round_trips_every_field(window):
         assert {k: row[k] for k in RULE_ROW_FIELDS} == sent
 
 
-def test_a_credential_row_round_trips_every_field(window):
-    sent = make_credential()
-    assert set(sent) == set(CREDENTIAL_ROW_FIELDS)
-    window.credentials = slint.ListModel([sent])
-    row = window.credentials[0]
-    assert {k: row[k] for k in CREDENTIAL_ROW_FIELDS} == sent
-    assert "password" not in str(row)
-
-
-def test_a_credential_row_updates_by_assignment(window):
-    model = slint.ListModel([make_credential(source="unset", summary="")])
-    window.credentials = model
-    model[0] = make_credential(source="environment")
-    assert window.credentials[0]["source"] == "environment"
-
-
 def test_a_stored_secret_reaches_no_property_on_the_window(window):
     """Drive the real chain: row handler -> tab -> main.slint forwarding -> window callback.
 
     The probe goes on the window's outward callback, which has no .slint handler to replace. A
     Python-assigned handler on a forwarding callback would replace the code under test.
     """
-    secret = "postgresql://cumo:S3cr3t-Distinct-Pw@db-prod:5432/invoicing"
-    window.credentials = slint.ListModel([make_credential()])
+    secret = "S3cr3t-Distinct-Pw"
+    window.sources = slint.ListModel([make_row(has_password=True)])
     window.rules = slint.ListModel([make_rule()])
     seen = []
-    window.store_credential = lambda env, value: seen.append((env, value))
-    window.drive_store_credential("PROD_DSN", secret)
-    assert seen == [("PROD_DSN", secret)], "the secret must reach the outward callback intact"
+    window.store_password = lambda label, value: seen.append((label, value))
+    window.drive_store_password("qa", secret)
+    assert seen == [("qa", secret)], "the secret must reach the outward callback intact"
 
     names = [
         n
@@ -425,7 +399,7 @@ def test_a_stored_secret_reaches_no_property_on_the_window(window):
         if not n.startswith("_") and n not in {"run", "show", "hide"} and n not in CALLBACKS
     ]
     # A few names that must really be there, so the scan below cannot pass vacuously.
-    assert {"credentials", "status_message", "keychain_problem", "config_path"} <= set(names)
+    assert {"sources", "status_message", "keychain_problem", "config_path"} <= set(names)
     for name in names:
         value = getattr(window, name)
         if callable(value):
@@ -440,13 +414,10 @@ def test_the_window_wires_the_models_into_the_tabs(window):
     # leaves window.rules full and the tab empty.
     assert window.ignores_rule_count() == 0
     assert window.ignores_default_rule_count() == 0
-    assert window.credential_row_count() == 0
     window.rules = slint.ListModel([make_rule(), make_rule(id="b")])
     window.default_rules = slint.ListModel([make_rule(id="d", read_only=True)])
-    window.credentials = slint.ListModel([make_credential()])
     assert window.ignores_rule_count() == 2
     assert window.ignores_default_rule_count() == 1
-    assert window.credential_row_count() == 1
 
 
 @pytest.fixture
@@ -473,8 +444,8 @@ def test_the_action_box_offers_exactly_what_the_view_model_accepts(rule_line):
     assert set(rule_line.action_choices) == set(RULE_ACTIONS)
 
 
-def test_credentials_tab_masks_the_password_field_and_never_logs():
-    text = (UI / "credentials_tab.slint").read_text()
+def test_the_password_field_is_masked_and_nothing_logs():
+    text = (UI / "config_tab.slint").read_text()
     assert "input-type: password" in text
     for path in slint_files():
         assert "debug(" not in path.read_text(), path.name
@@ -1069,7 +1040,7 @@ def test_the_rail_reaches_every_view_and_only_one_is_drawn(window):
     between a rail entry and the view it selects fails here.
     """
     count = window.view_count
-    assert count == 6
+    assert count == 5
     for index in range(count):
         window.drive_select_view(index)
         drawn = [i for i in range(count) if window.view_visible(i)]
@@ -1084,8 +1055,8 @@ def test_an_out_of_range_view_draws_nothing_rather_than_guessing(window):
 
 def test_the_rail_has_an_entry_per_view():
     shell = (UI / "main.slint").read_text()
-    assert shell.count("NavItem {") == 6
-    for label in ("Config", "Run", "Results", "Ignores", "Credentials", "About"):
+    assert shell.count("NavItem {") == 5
+    for label in ("Config", "Run", "Results", "Ignores", "About"):
         assert f'label: "{label}";' in shell
 
 
@@ -1176,7 +1147,7 @@ def test_the_shares_add_up_to_the_whole_column():
 
 
 def test_every_list_names_its_columns(window):
-    """The findings, sources, progress, rules and credentials lists are tables without headings.
+    """The findings, progress and rules lists are tables without headings.
 
     Before this, six fixed-width columns of catalog text ran down the window with nothing saying
     which was which. ColumnHead is the heading; a list without one is the defect.
@@ -1184,7 +1155,6 @@ def test_every_list_names_its_columns(window):
     expected = {
         "results_tab.slint": ("TARGET", "KIND", "OBJECT", "SEVERITY"),
         "run_tab.slint": ("SOURCE", "STATE", "DETAIL"),
-        "credentials_tab.slint": ("VARIABLE", "USED BY", "SOURCE", "RESOLVES TO"),
         "ignores_tab.slint": ("ID", "REASON", "ACTION"),
     }
     for markup, headings in expected.items():
@@ -1202,9 +1172,11 @@ def test_every_source_field_is_labelled_rather_than_placeheld():
     text = (UI / "config_tab.slint").read_text()
     for field in (
         "label",
-        "dsn variable",
-        "credential",
         "host",
+        "database",
+        "user",
+        "password",
+        "ssl mode",
         "database",
         "schemas",
         "schema map",

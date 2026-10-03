@@ -92,6 +92,11 @@ class SshRef(BaseModel):
         return value or None
 
 
+#: What libpq accepts for ``sslmode``, weakest first. Offered as a list rather than free text so a
+#: typo cannot quietly become "whatever libpq defaults to".
+SSL_MODES = ("disable", "allow", "prefer", "require", "verify-ca", "verify-full")
+
+
 class SourceRef(BaseModel):
     """One database to inspect: the master, or one target environment."""
 
@@ -106,10 +111,25 @@ class SourceRef(BaseModel):
     """Name of the environment variable holding this source's libpq connection string."""
 
     host: str | None = None
-    """Documentation only. Connections always use the DSN, never this."""
+    """Where this database is.
+
+    The command-line tool never connects with it — it uses ``dsn_env`` and nothing else — but the
+    desktop application builds its connection string from these parts, so for a configuration made
+    there this is the real host. Keep the two in step: if they disagree, the report says one thing
+    and the comparison did another.
+    """
+
+    port: int | None = Field(default=None, ge=1, le=65535)
+    """The port, when it is not 5432."""
 
     database: str | None = None
-    """Documentation only."""
+    """The database name. See :attr:`host` for which tool uses it."""
+
+    user: str | None = None
+    """The role to connect as. Never a password: that is in the keychain, or in ``dsn_env``."""
+
+    sslmode: str | None = None
+    """libpq's ``sslmode``, when it should not be left to libpq's own default."""
 
     schemas: tuple[str, ...] | None = None
     """Explicit schema allowlist. ``None`` means every non-system schema."""
@@ -126,6 +146,15 @@ class SourceRef(BaseModel):
 
     ssh: SshRef | None = None
     """Reach this source through an SSH gateway. ``None`` means connect directly."""
+
+    @field_validator("sslmode")
+    @classmethod
+    def _sslmode_is_one_libpq_knows(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        if value not in SSL_MODES:
+            raise ValueError(f"sslmode must be one of {', '.join(SSL_MODES)}")
+        return value
 
     @field_validator("label")
     @classmethod
