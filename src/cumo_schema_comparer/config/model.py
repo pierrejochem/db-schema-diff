@@ -15,7 +15,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..errors import ConfigError
-from .secrets import Dsn, resolve_all
+from .secrets import Dsn, Secret, resolve_all, resolve_secret
 
 FailOn = Literal["error", "warning", "any", "never"]
 
@@ -39,6 +39,57 @@ class LiquibaseRef(BaseModel):
     # is a pydantic method and shadowing it is a trap for every later reader.
     schema_name: str = Field(alias="schema", min_length=1)
     table: str = Field(default="DATABASECHANGELOG", min_length=1)
+
+
+class SshRef(BaseModel):
+    """An SSH gateway to reach this source through.
+
+    The database itself is *not* named here: it is already in the DSN, written as the gateway sees
+    it. That way one DSN is correct whether or not a tunnel is in play, and nobody has to keep a
+    local forwarding port in step with a connection string.
+
+    ``private_key`` is a path, and ``passphrase_env`` is the *name* of an environment variable,
+    for the same reason ``dsn_env`` is: this file is committed. Neither a key nor a passphrase ever
+    appears here.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, str_strip_whitespace=True, populate_by_name=True
+    )
+
+    host: str = Field(min_length=1)
+    """The gateway to connect through.
+
+    Required: an ssh block with no host is a typo rather than a request for a default.
+    """
+
+    port: int = Field(default=22, ge=1, le=65535)
+
+    user: str | None = None
+    """Defaults to the local user, as ssh itself does."""
+
+    private_key: str | None = None
+    """Path to the private key. ``None`` means the agent, or ssh's own default key names."""
+
+    passphrase_env: str | None = None
+    """Name of the variable holding the key's passphrase, when the agent does not have the key."""
+
+    known_hosts: str | None = None
+    """Path to the host key store. ``None`` means ``~/.ssh/known_hosts``."""
+
+    @field_validator("host")
+    @classmethod
+    def _host_has_no_whitespace(cls, value: str) -> str:
+        if any(c.isspace() for c in value):
+            raise ValueError("host must not contain whitespace")
+        return value
+
+    @field_validator("private_key", "known_hosts")
+    @classmethod
+    def _no_empty_path(cls, value: str | None) -> str | None:
+        # "" would otherwise mean "a path that is the empty string" rather than "not set", and the
+        # GUI sends "" for every field a person has cleared.
+        return value or None
 
 
 class SourceRef(BaseModel):
@@ -72,6 +123,9 @@ class SourceRef(BaseModel):
     """
 
     liquibase: LiquibaseRef | None = None
+
+    ssh: SshRef | None = None
+    """Reach this source through an SSH gateway. ``None`` means connect directly."""
 
     @field_validator("label")
     @classmethod
@@ -296,5 +350,24 @@ class ComparerConfig(BaseModel):
         costs one run rather than three.
         """
         requests = [(source.dsn_env, self.role_of(source)) for source in self.sources]
+        # The ssh key passphrases join the same request, so a missing one is reported beside a
+        # missing DSN rather than on the next run.
+        requests += [
+            (ref.passphrase_env, f"{self.role_of(source)} ssh key")
+            for source in self.sources
+            if (ref := source.ssh) is not None and ref.passphrase_env
+        ]
         by_env = resolve_all(requests)
         return {source.label: by_env[source.dsn_env] for source in self.sources}
+
+    def resolve_ssh_passphrases(self) -> dict[str, Secret]:
+        """Key passphrases by source label, for the sources whose ssh block names one.
+
+        Reads the same variables :meth:`resolve_credentials` already checked, so by the time this
+        runs anything missing has been reported.
+        """
+        return {
+            source.label: resolve_secret(ref.passphrase_env, role=f"{self.role_of(source)} ssh key")
+            for source in self.sources
+            if (ref := source.ssh) is not None and ref.passphrase_env
+        }

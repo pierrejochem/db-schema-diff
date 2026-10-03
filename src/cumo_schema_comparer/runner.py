@@ -26,7 +26,7 @@ from typing import Any
 from . import __version__
 from .build import build_inventory
 from .config.model import ComparerConfig, SourceRef
-from .config.secrets import Dsn
+from .config.secrets import Dsn, Secret
 from .db.connect import ConnectionOptions, open_connection, server_features
 from .db.introspect import Introspector
 from .diff.changelog import ChangelogOptions
@@ -58,6 +58,7 @@ def capture(
     source: SourceRef,
     dsn: Dsn,
     *,
+    ssh_passphrase: Secret | None = None,
     exclude_schemas: tuple[str, ...] = (),
     options: ConnectionOptions | None = None,
     skip_liquibase: bool = False,
@@ -69,7 +70,12 @@ def capture(
     """
     try:
         with open_connection(
-            dsn, label=source.label, options=options, version=__version__
+            dsn,
+            label=source.label,
+            options=options,
+            version=__version__,
+            ssh=source.ssh,
+            ssh_passphrase=ssh_passphrase,
         ) as connection:
             inventory = build_inventory(
                 connection,
@@ -122,6 +128,7 @@ def check_connection(
     source: SourceRef,
     dsn: Dsn,
     *,
+    ssh_passphrase: Secret | None = None,
     options: ConnectionOptions | None = None,
     exclude_schemas: tuple[str, ...] = (),
 ) -> ConnectionStatus:
@@ -134,7 +141,14 @@ def check_connection(
     host must not stop the others.
     """
     try:
-        with open_connection(dsn, label=source.label, options=options, version=__version__) as conn:
+        with open_connection(
+            dsn,
+            label=source.label,
+            options=options,
+            version=__version__,
+            ssh=source.ssh,
+            ssh_passphrase=ssh_passphrase,
+        ) as conn:
             introspector = Introspector(conn, server_features(conn))
             info = introspector.server_info()
             schemas = introspector.schemas(exclude=exclude_schemas, only=source.schemas)
@@ -190,6 +204,7 @@ def capture_all(
     config: ComparerConfig,
     credentials: dict[str, Dsn],
     *,
+    ssh_passphrases: dict[str, Secret] | None = None,
     targets: tuple[str, ...] | None = None,
     sequential: bool = False,
     skip_liquibase: bool = False,
@@ -202,10 +217,13 @@ def capture_all(
     selected = _selected_sources(config, targets)
     options = connection_options(config)
 
+    passphrases = ssh_passphrases or {}
+
     def run(source: SourceRef) -> CaptureResult:
         return capture(
             source,
             credentials[source.label],
+            ssh_passphrase=passphrases.get(source.label),
             exclude_schemas=config.exclude_schemas,
             options=options,
             skip_liquibase=skip_liquibase,
@@ -225,6 +243,7 @@ def compare(
     config: ComparerConfig,
     credentials: dict[str, Dsn],
     *,
+    ssh_passphrases: dict[str, Secret] | None = None,
     targets: tuple[str, ...] | None = None,
     sequential: bool = False,
     diff_options: DiffOptions | None = None,
@@ -237,6 +256,7 @@ def compare(
     captures = capture_all(
         config,
         credentials,
+        ssh_passphrases=ssh_passphrases,
         targets=targets,
         sequential=sequential,
         skip_liquibase=skip_liquibase,

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from ..config.secrets import Dsn, format_missing
+from ..config.secrets import Dsn, Secret, format_missing
 from ..errors import MissingCredentialsError
 
 log = logging.getLogger(__name__)
@@ -135,6 +135,17 @@ class CredentialStore:
         if value is None or source is CredentialSource.UNSET:
             raise MissingCredentialsError(format_missing([(env_name, "this source")]))
         return Dsn(value, env_name=env_name)
+
+    def resolve_secret(self, env_name: str) -> Secret:
+        """A non-DSN credential, keychain first, by the same rules.
+
+        An SSH key passphrase is the only one of these so far. It is stored and looked up exactly
+        like a connection string, so the Credentials tab needs no new machinery to manage it.
+        """
+        value, source = self._lookup(env_name)
+        if value is None or source is CredentialSource.UNSET:
+            raise MissingCredentialsError(format_missing([(env_name, "this source")]))
+        return Secret(value, env_name=env_name)
 
     def store(self, env_name: str, dsn: str) -> None:
         """Put a credential in the keychain. Never writes to a config file."""

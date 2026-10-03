@@ -34,8 +34,9 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
-from ..config.secrets import Dsn
-from ..errors import ConnectionFailed, UnsupportedServerError
+from ..config.model import SshRef
+from ..config.secrets import Dsn, Secret
+from ..errors import ConfigError, ConnectionFailed, UnsupportedServerError
 from .features import MINIMUM_VERSION_LABEL, MINIMUM_VERSION_NUM, ServerFeatures
 
 log = logging.getLogger(__name__)
@@ -58,16 +59,67 @@ class ConnectionOptions:
 
 @contextmanager
 def open_connection(
-    dsn: Dsn, *, label: str, options: ConnectionOptions | None = None, version: str = ""
+    dsn: Dsn,
+    *,
+    label: str,
+    options: ConnectionOptions | None = None,
+    version: str = "",
+    ssh: SshRef | None = None,
+    ssh_passphrase: Secret | None = None,
 ) -> Iterator[psycopg.Connection[dict[str, object]]]:
     """Open a hardened read-only connection, yield it, and always close it.
 
     Any failure is re-raised as :class:`ConnectionFailed` carrying only a redacted summary:
     psycopg embeds the full conninfo, password included, in some of its own messages, so the
     original exception is never allowed to propagate.
+
+    With ``ssh``, a tunnel to the database named in the DSN is opened first and closed with the
+    connection. This is the one place anything in this project connects, so wiring it here covers
+    the CLI and the desktop application together.
     """
     options = options or ConnectionOptions()
-    conninfo = _build_conninfo(dsn, options, version)
+    if ssh is None:
+        with _direct(dsn, options, version, label) as connection:
+            yield connection
+        return
+
+    from .tunnel import open_tunnel  # imported lazily: paramiko is an optional extra
+
+    to_host, to_port = _tunnel_target(dsn)
+    with (
+        open_tunnel(ssh, to_host=to_host, to_port=to_port, passphrase=ssh_passphrase) as local,
+        _direct(dsn, options, version, label, through=local) as connection,
+    ):
+        yield connection
+
+
+def _tunnel_target(dsn: Dsn) -> tuple[str, int]:
+    """The database address the tunnel must reach, read from the DSN.
+
+    A DSN with no TCP host cannot be tunnelled: a Unix socket is a path on the machine libpq runs
+    on, and forwarding a local port to it means nothing.
+    """
+    parsed = conninfo_to_dict(dsn.value)
+    host = str(parsed.get("host") or "")
+    if not host or host.startswith("/"):
+        raise ConfigError(
+            f"{dsn} names no TCP host, so it cannot be reached through an SSH tunnel. "
+            "Give the DSN the host and port as the gateway sees them."
+        )
+    return host, int(str(parsed.get("port") or 5432))
+
+
+@contextmanager
+def _direct(
+    dsn: Dsn,
+    options: ConnectionOptions,
+    version: str,
+    label: str,
+    *,
+    through: tuple[str, int] | None = None,
+) -> Iterator[psycopg.Connection[dict[str, object]]]:
+    """The connection itself, optionally pointed at a local tunnel endpoint."""
+    conninfo = _build_conninfo(dsn, options, version, through)
 
     try:
         connection = psycopg.connect(conninfo, autocommit=True, row_factory=dict_row)
@@ -98,15 +150,29 @@ def open_connection(
         connection.close()
 
 
-def _build_conninfo(dsn: Dsn, options: ConnectionOptions, version: str) -> str:
+def _build_conninfo(
+    dsn: Dsn,
+    options: ConnectionOptions,
+    version: str,
+    through: tuple[str, int] | None = None,
+) -> str:
     """Merge our own settings into the user's connection string.
 
     A ``connect_timeout`` or ``application_name`` the user set explicitly wins: their DSN is
     more specific than our default.
+
+    ``through`` points the connection at a tunnel endpoint by setting ``hostaddr`` and ``port`` and
+    **leaving ``host`` alone**. libpq connects to ``hostaddr`` but verifies the server certificate
+    against ``host``, so rewriting ``host`` to 127.0.0.1 — the obvious way to do this — would turn
+    ``sslmode=verify-full`` into a connection no certificate can satisfy, and the natural fix for
+    that is to weaken sslmode. Keeping ``host`` means TLS verification still checks the name the
+    database actually answers to.
     """
     parsed = {
         key: str(value) for key, value in conninfo_to_dict(dsn.value).items() if value is not None
     }
+    if through is not None:
+        parsed["hostaddr"], parsed["port"] = through[0], str(through[1])
     parsed.setdefault("connect_timeout", str(options.connect_timeout))
     suffix = f"/{version}" if version else ""
     parsed.setdefault("application_name", f"{APPLICATION_NAME}{suffix}")

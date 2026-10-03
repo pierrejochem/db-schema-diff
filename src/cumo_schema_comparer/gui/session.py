@@ -105,7 +105,7 @@ from typing import Any, TypeVar
 from .. import runner
 from ..baseline import apply_baseline
 from ..config.model import ComparerConfig, SourceRef
-from ..config.secrets import Dsn
+from ..config.secrets import Dsn, Secret
 from ..diff.changelog import ChangelogOptions
 from ..diff.ignores import IgnoreRuleSet
 from ..diff.model import ComparisonReport, DiffOptions
@@ -178,6 +178,17 @@ class Session:
         self._claim_held: _Claim | None = None
 
     # -- connection checks -------------------------------------------------------------------
+
+    def _ssh_passphrase(self, source: SourceRef) -> Secret | None:
+        """The key passphrase for this source's gateway, if its config names one.
+
+        Keychain first then environment, exactly as the DSN is resolved: a passphrase stored in the
+        desktop application is a passphrase the CLI still will not see.
+        """
+        ref = source.ssh
+        if ref is None or not ref.passphrase_env:
+            return None
+        return self._credentials.resolve_secret(ref.passphrase_env)
 
     def check_connection(self, label: str) -> Coroutine[Any, Any, ConnectionStatus]:
         """Check one source. A failure is returned; an unknown label raises ``GuiError``.
@@ -261,6 +272,7 @@ class Session:
             status = runner.check_connection(
                 source,
                 dsn,
+                ssh_passphrase=self._ssh_passphrase(source),
                 options=runner.connection_options(self._config),
                 exclude_schemas=self._config.exclude_schemas,
             )
@@ -519,6 +531,7 @@ class Session:
             result = runner.capture(
                 source,
                 dsn,
+                ssh_passphrase=self._ssh_passphrase(source),
                 exclude_schemas=self._config.exclude_schemas,
                 options=runner.connection_options(self._config),
                 skip_liquibase=skip_liquibase,
