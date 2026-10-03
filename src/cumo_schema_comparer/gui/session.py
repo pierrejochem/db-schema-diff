@@ -190,24 +190,40 @@ class Session:
             return None
         return self._credentials.resolve_secret(ref.passphrase_env)
 
-    def check_tunnel(self, label: str) -> Coroutine[Any, Any, TunnelStatus]:
+    def check_tunnel(
+        self, label: str, observer: Callable[[str, str, str], None] | None = None
+    ) -> Coroutine[Any, Any, TunnelStatus]:
         """Test one source's gateway, without touching the database.
 
         Takes the same claim as a connection check, so it cannot run beside a comparison and the
         two cannot report over each other.
+
+        ``observer`` is called as each step is attempted and again when it settles. It is invoked
+        **on the loop thread**, never on the worker: paramiko is synchronous so the probe runs in an
+        executor, and a Slint value touched from another thread does not raise — it aborts the
+        process. Everything the observer does is therefore marshalled back with
+        ``call_soon_threadsafe``.
         """
         source = self._source(label)
         claim = self._claim()
+        loop = asyncio.get_event_loop()
+
+        def on_step(step: str, state: str, detail: str) -> None:
+            if observer is None:
+                return
+            loop.call_soon_threadsafe(observer, step, state, detail)
 
         async def work() -> TunnelStatus:
             return await asyncio.get_running_loop().run_in_executor(
-                None, self._check_tunnel_now, source
+                None, self._check_tunnel_now, source, on_step
             )
 
         coro = work()
         return self._watched(claim, coro, self._run(claim, coro))
 
-    def _check_tunnel_now(self, source: SourceRef) -> TunnelStatus:
+    def _check_tunnel_now(
+        self, source: SourceRef, observer: Callable[[str, str, str], None] | None = None
+    ) -> TunnelStatus:
         """Blocking half, run off the loop: paramiko is synchronous."""
         dsn: Dsn | None
         try:
@@ -239,7 +255,7 @@ class Session:
                 ),
             )
         try:
-            return runner.check_tunnel(source, dsn, ssh_passphrase=passphrase)
+            return runner.check_tunnel(source, dsn, ssh_passphrase=passphrase, observer=observer)
         except Exception as exc:
             log.warning("%s: tunnel check failed (%s)", source.label, type(exc).__name__)
             return TunnelStatus(

@@ -25,7 +25,7 @@ from cumo_schema_comparer.errors import ProbeError
 from cumo_schema_comparer.gui.credentials import CredentialStore
 from cumo_schema_comparer.gui.errors import GuiError
 from cumo_schema_comparer.gui.session import ProgressEvent, Session, SourceState
-from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus
+from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus, TunnelStatus
 from tests.support.builders import col, inventory, table
 
 CONFIG = ComparerConfig.model_validate(
@@ -1225,3 +1225,33 @@ class TestCaptureIsAlwaysRedacted:
             await subject.compare()
 
         assert seen == [True] * len(LABELS), seen
+
+
+class TestTunnelStepsCrossThreadsSafely:
+    """Slint values are pyo3 `unsendable`: touching one from another thread does not raise, it
+    aborts the process. paramiko is synchronous, so the probe runs in an executor — which makes
+    every step report a cross-thread call that has to be marshalled back to the loop.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_observer_is_called_on_the_loop_thread(self, monkeypatch):
+        import threading
+
+        from cumo_schema_comparer.gui import session as session_module
+
+        loop_thread = threading.get_ident()
+        seen: list[int] = []
+
+        def fake_check(source, dsn, *, ssh_passphrase=None, observer=None):
+            # Runs in the executor, as the real one does.
+            assert threading.get_ident() != loop_thread, "the probe should be off the loop"
+            observer("gateway", "ok", "")
+            return TunnelStatus(label=source.label, ok=True, detail="fine")
+
+        monkeypatch.setattr(session_module.runner, "check_tunnel", fake_check)
+
+        built, _ = session()
+        await built.check_tunnel("qa", lambda *_: seen.append(threading.get_ident()))
+
+        assert seen, "the observer was never called"
+        assert set(seen) == {loop_thread}, "a step reached the window from a worker thread"

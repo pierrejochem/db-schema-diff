@@ -1709,8 +1709,10 @@ class TestTheTunnelTestButton:
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
-        assert app.window.status_is_error is False
-        assert "bastion.internal" in app.window.status_message
+        assert app.window.tunnel_dialog_open() is True
+        assert app.window.tunnel_ok is True
+        assert app.window.tunnel_busy is False
+        assert "bastion.internal" in app.window.tunnel_summary
 
     @pytest.mark.asyncio
     async def test_a_refused_gateway_is_an_error_naming_the_gateway(self, app):
@@ -1726,10 +1728,10 @@ class TestTheTunnelTestButton:
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
-        assert app.window.status_is_error is True
+        assert app.window.tunnel_ok is False
         # The gateway stays legible: this is what the odd "gateway host:port" spelling buys.
-        assert "bastion.internal" in app.window.status_message
-        assert "***" not in app.window.status_message
+        assert "bastion.internal" in app.window.tunnel_summary
+        assert "***" not in app.window.tunnel_summary
 
     @pytest.mark.asyncio
     async def test_a_passphrase_cannot_reach_the_window_through_the_result(self, app):
@@ -1742,6 +1744,7 @@ class TestTheTunnelTestButton:
             await app.wait_for_idle()
 
         assert "hunter2" not in everything_rendered(app)
+        assert "hunter2" not in app.window.tunnel_summary
 
 
 class TestTheCardTabSurvivesARefresh:
@@ -1886,7 +1889,7 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
         )
         seen: dict[str, object] = {}
 
-        def record(source, dsn, *, ssh_passphrase=None):
+        def record(source, dsn, *, ssh_passphrase=None, observer=None):
             seen["dsn"] = dsn
             from cumo_schema_comparer.runner import TunnelStatus
 
@@ -1897,7 +1900,7 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
             await app.wait_for_idle()
 
         assert seen["dsn"] is None, "the check should run without a database credential"
-        assert app.window.status_is_error is False
+        assert app.window.tunnel_ok is True
 
     @pytest.mark.asyncio
     async def test_a_named_but_unset_passphrase_says_so_in_its_own_words(self, app, monkeypatch):
@@ -1916,8 +1919,8 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
         app.window.drive_test_tunnel("qa")
         await app.wait_for_idle()
 
-        message = app.window.status_message
-        assert app.window.status_is_error is True
+        message = app.window.tunnel_summary
+        assert app.window.tunnel_ok is False
         assert "QA_SSH_PASSPHRASE" in message
         assert "libpq" not in message
         assert "clear the field" in message
@@ -2047,3 +2050,121 @@ class TestTheAboutView:
         """It is static text, but it is still a surface, and every surface gets checked."""
         for name in ("about_version", "about_python", "about_slint", "about_config_path"):
             assert SECRET not in str(getattr(app.window, name))
+
+
+class TestTheTunnelDialog:
+    """Modal, and filled in as the test runs rather than all at once when it finishes."""
+
+    def steps(self, app):
+        return [dict(row) for row in app.window.tunnel_steps]
+
+    def test_it_opens_before_anything_has_happened(self, app):
+        """A gateway can take seconds to answer. A window that shows nothing until then looks
+        like a window that has stopped."""
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+            app.window.drive_test_tunnel("qa")
+
+        assert app.window.tunnel_dialog_open() is True
+        assert app.window.tunnel_busy is True
+        assert app.window.tunnel_summary == ""
+        assert [s["state"] for s in self.steps(app)] == ["pending"] * 3
+
+    def test_it_lays_out_every_step_up_front(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+            app.window.drive_test_tunnel("qa")
+
+        labels = [s["label"] for s in self.steps(app)]
+        assert labels == ["Key", "Gateway", "Channel to the database"]
+        assert app.window.tunnel_step_count() == 3
+
+    def test_it_names_the_gateway_it_is_testing(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_user", "deploy")
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+            app.window.drive_test_tunnel("qa")
+
+        assert "bastion.internal" in app.window.tunnel_gateway
+        assert "deploy" in app.window.tunnel_gateway
+
+    @pytest.mark.asyncio
+    async def test_the_steps_fill_in_as_the_probe_reports(self, app):
+        from cumo_schema_comparer.runner import TunnelStatus
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+
+        def report(source, dsn, *, ssh_passphrase=None, observer=None):
+            observer("key", "ok", "~/.ssh/id_ed25519")
+            observer("gateway", "running", "connecting")
+            observer("gateway", "ok", "host key accepted")
+            observer("database", "skipped", "no database address known")
+            return TunnelStatus(label="qa", ok=True, detail="reached and authenticated")
+
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", side_effect=report):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        states = {s["label"]: s["state"] for s in self.steps(app)}
+        assert states == {"Key": "ok", "Gateway": "ok", "Channel to the database": "skipped"}
+        assert "id_ed25519" in self.steps(app)[0]["detail"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_step_is_marked_and_keeps_its_reason(self, app):
+        from cumo_schema_comparer.runner import TunnelStatus
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+
+        def report(source, dsn, *, ssh_passphrase=None, observer=None):
+            observer("key", "ok", "")
+            observer("gateway", "failed", "authentication was refused")
+            return TunnelStatus(label="qa", ok=False, detail="authentication was refused")
+
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", side_effect=report):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        gateway = next(s for s in self.steps(app) if s["label"] == "Gateway")
+        assert gateway["state"] == "failed"
+        assert "refused" in gateway["detail"]
+        assert app.window.tunnel_ok is False
+
+    @pytest.mark.asyncio
+    async def test_it_stays_open_until_it_is_closed(self, app):
+        from cumo_schema_comparer.runner import TunnelStatus
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        answer = TunnelStatus(label="qa", ok=True, detail="reached")
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        assert app.window.tunnel_dialog_open() is True
+        app.window.drive_close_tunnel_dialog()
+        assert app.window.tunnel_dialog_open() is False
+
+    @pytest.mark.asyncio
+    async def test_it_cannot_be_closed_while_it_is_still_testing(self, app):
+        """The Close button is disabled until the answer is in; the state behind it says so."""
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel"):
+            app.window.drive_test_tunnel("qa")
+            assert app.window.tunnel_busy is True
+            await app.wait_for_idle()
+        assert app.window.tunnel_busy is False
+
+    @pytest.mark.asyncio
+    async def test_an_unexpected_failure_still_releases_the_dialog(self, app):
+        """Otherwise the Close button stays disabled and the window is stuck behind a scrim."""
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        with mock.patch(
+            "cumo_schema_comparer.runner.check_tunnel", side_effect=RuntimeError("boom")
+        ):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        assert app.window.tunnel_busy is False
+        assert app.window.tunnel_ok is False
+        assert "RuntimeError" in app.window.tunnel_summary
+        assert "boom" not in app.window.tunnel_summary

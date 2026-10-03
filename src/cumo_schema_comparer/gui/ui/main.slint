@@ -8,10 +8,12 @@ import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
 import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
 import { AboutTab } from "about_tab.slint";
+import { TunnelDialog, TunnelStep } from "tunnel_dialog.slint";
 import { RunTab, ProgressRow } from "run_tab.slint";
 import { ResultsTab, FindingRow, DeltaRow, DiffLine } from "results_tab.slint";
 
 export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow, DeltaRow, DiffLine }
+export { TunnelStep }
 
 export component MainWindow inherits Window {
     title: "cumo-schema-diff";
@@ -71,6 +73,16 @@ export component MainWindow inherits Window {
     in property <string> about-slint;
     in property <string> about-config-path;
     in property <bool> about-tunnelling;
+
+    // The gateway test's own dialog. Modal, because the answer is the only thing worth
+    // attending to while it is up and a second test underneath would report over the first.
+    in-out property <bool> tunnel-open;
+    in-out property <bool> tunnel-busy;
+    in-out property <bool> tunnel-ok;
+    in-out property <string> tunnel-gateway;
+    in-out property <string> tunnel-summary;
+    in property <[TunnelStep]> tunnel-steps;
+    callback close-tunnel-dialog();
 
     // Run. Defaults are the CLI's defaults.
     in-out property <bool> running: false;
@@ -161,6 +173,9 @@ export component MainWindow inherits Window {
     public function drive-select-row(index: int) { results-tab.choose-row(index); }
     public function drive-select-view(index: int) { root.current-view = index; }
     public function drive-test-tunnel(label: string) { root.test-tunnel(label); }
+    public function drive-close-tunnel-dialog() { root.close-tunnel-dialog(); }
+    public function tunnel-dialog-open() -> bool { return dialog.visible; }
+    public function tunnel-step-count() -> int { return root.tunnel-steps.length; }
     public function drive-choose-ssh-key(label: string) { root.choose-ssh-key(label); }
     public function drive-select-source-tab(label: string, index: int) {
         root.select-source-tab(label, index);
@@ -427,5 +442,19 @@ export component MainWindow inherits Window {
                 }
             }
         }
+    }
+
+    // Last, so it draws over the rail as well as the content: a modal that leaves part of the
+    // window reachable is not one.
+    dialog := TunnelDialog {
+        width: parent.width;
+        height: parent.height;
+        open: root.tunnel-open;
+        busy: root.tunnel-busy;
+        ok: root.tunnel-ok;
+        gateway: root.tunnel-gateway;
+        summary: root.tunnel-summary;
+        steps: root.tunnel-steps;
+        close => { root.close-tunnel-dialog(); }
     }
 }
