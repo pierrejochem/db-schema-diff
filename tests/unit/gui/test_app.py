@@ -2084,6 +2084,182 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
         assert "clear the field" in message
 
 
+class TestTheRunDialog:
+    """What is being compared, and how far it has got.
+
+    The report says what differed; without this nothing said what was *looked at*, so a clean
+    report could not be told from a report of the wrong thing — wrong schemas, wrong gate, a rule
+    suppressing the finding you were hunting.
+    """
+
+    def steps(self, app) -> list[dict[str, Any]]:
+        return rows(app.window.run_steps)
+
+    def labelled(self, app) -> dict[str, dict[str, Any]]:
+        return {str(row["label"]): row for row in self.steps(app)}
+
+    def inputs(self, app) -> list[str]:
+        return [f"{row['label']}|{row['value']}" for row in rows(app.window.run_inputs)]
+
+    @pytest.mark.asyncio
+    async def test_it_opens_before_anything_has_been_compared(self, app):
+        """A capture can take minutes. A dialog that appears only at the end explains nothing."""
+        with mock.patch(CAPTURE, ok_capture):
+            app.window.drive_start_run()
+            # Asserted before the loop turns: the dialog is laid out by the click, not by a result.
+            assert app.window.run_dialog_open() is True
+            assert app.window.run_busy is True
+            assert app.window.run_summary == ""
+            assert {str(row["state"]) for row in self.steps(app)} == {"pending"}
+            await app.wait_for_idle()
+
+    @pytest.mark.asyncio
+    async def test_the_whole_checklist_is_laid_out_up_front(self, app):
+        """Not grown as results arrive: a list that grows cannot be told from one that stalled."""
+        with mock.patch(CAPTURE, ok_capture):
+            app.window.drive_start_run()
+            labels = [str(row["label"]) for row in self.steps(app)]
+            await app.wait_for_idle()
+        assert "prod (master)" in labels
+        assert "qa (target)" in labels
+        assert labels.count("tables") == 2, "one per source"
+        assert labels[-2:] == ["compare", "build report"]
+
+    @pytest.mark.asyncio
+    async def test_it_says_what_is_being_compared(self, app):
+        app.window.source_changed("prod", "host", "db-prod.internal")
+        app.window.source_changed("prod", "database", "invoicing")
+        app.window.source_changed("qa", "schemas", "cumo-invoicing, public")
+        with mock.patch(CAPTURE, ok_capture):
+            app.window.drive_start_run()
+            await app.wait_for_idle()
+
+        shown = " ".join(self.inputs(app))
+        assert "db-prod.internal/invoicing" in shown
+        assert "cumo-invoicing, public" in shown
+        assert "fail on error" in shown
+
+    @pytest.mark.asyncio
+    async def test_a_source_with_no_host_is_described_by_its_variable(self, app):
+        """A hand-written configuration names only a variable, and the dialog must not be blank."""
+        with mock.patch(CAPTURE, ok_capture):
+            app.window.drive_start_run()
+            await app.wait_for_idle()
+        assert any("$QA_DSN" in line for line in self.inputs(app))
+
+    def test_no_credential_reaches_the_dialog(self, app):
+        """Every line comes from the configuration, which is non-secret by construction. Nothing
+        here assembles a connection string to describe a source."""
+        app.window.source_changed("prod", "host", "db-prod.internal")
+        app.window.source_changed("prod", "user", "cumo")
+        app.window.drive_start_run()
+        shown = " ".join(self.inputs(app)) + " ".join(str(r) for r in self.steps(app))
+        assert SECRET not in shown
+        assert "postgresql://" not in shown
+
+    @pytest.mark.asyncio
+    async def test_the_steps_fill_in_as_the_capture_reports(self, app):
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("tables", 12)
+            observer("columns", 97)
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await run_to_completion(app)
+
+        shown = self.labelled(app)
+        assert (shown["tables"]["state"], shown["tables"]["detail"]) == ("ok", "12")
+        assert (shown["columns"]["state"], shown["columns"]["detail"]) == ("ok", "97")
+
+    @pytest.mark.asyncio
+    async def test_a_step_that_never_reported_is_skipped_not_left_pending(self, app):
+        """A source that cannot connect reports nothing. Ten rows still saying "pending" would
+        read as a run that stalled there rather than one that never got in."""
+        with mock.patch(CAPTURE, unreachable_target):
+            await run_to_completion(app)
+
+        states = {str(row["state"]) for row in self.steps(app)}
+        assert "pending" not in states
+
+    @pytest.mark.asyncio
+    async def test_the_phases_after_the_captures_are_shown(self, app):
+        """Both are invisible otherwise: the run looks finished at the last capture, then sits."""
+        with mock.patch(CAPTURE, ok_capture):
+            await run_to_completion(app)
+
+        shown = self.labelled(app)
+        assert str(shown["compare"]["state"]) == "ok"
+        assert str(shown["build report"]["state"]) == "ok"
+
+    @pytest.mark.asyncio
+    async def test_it_stays_open_with_the_verdict_when_the_run_finishes(self, app):
+        with mock.patch(CAPTURE, ok_capture):
+            await run_to_completion(app)
+
+        assert app.window.run_dialog_open() is True, "the log is the transparency; it stays"
+        assert app.window.run_busy is False
+        assert app.window.run_summary == app.window.verdict
+        assert app.window.run_summary_level == "ok"
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_run_releases_the_dialog(self, app):
+        """A dialog left busy shows Cancel and no way out — a scrim with nothing to click."""
+        with mock.patch(CAPTURE, ok_capture):
+            app.window.drive_start_run()
+            app.window.cancel_run()
+            await app.wait_for_idle()
+
+        assert app.window.run_busy is False
+        assert app.window.run_summary != ""
+
+    @pytest.mark.asyncio
+    async def test_a_failed_run_says_why_in_the_dialog(self, app):
+        """There is no verdict without a report, so the dialog must not imply one."""
+        with mock.patch(CAPTURE, mock.Mock(side_effect=RuntimeError("boom"))):
+            await run_to_completion(app)
+
+        assert app.window.run_busy is False
+        assert app.window.run_summary_level == "error"
+        assert app.window.run_summary != ""
+
+    @pytest.mark.asyncio
+    async def test_the_model_is_updated_in_place_rather_than_replaced(self, app):
+        """Replacing it rebuilds every repeated element under it, which throws away the scroll
+        position halfway through a run — the same mechanism that cost a text field its focus."""
+        app.window.drive_start_run()
+        before = id(app.window.run_steps)
+
+        def reporting(source, dsn, *, observer=None, **kwargs):
+            observer("tables", 1)
+            return ok_capture(source)
+
+        with mock.patch(CAPTURE, reporting):
+            await app.wait_for_idle()
+
+        assert id(app.window.run_steps) == before
+
+    def test_cancel_from_the_dialog_reaches_the_session(self, app):
+        """The only way out of a long run, and it is behind the scrim."""
+        with mock.patch.object(app, "_cancel_run", wraps=app._cancel_run) as spy:
+            app.window.cancel_run = app._guard(spy)
+            app.window.drive_cancel_from_run_dialog()
+        assert spy.called
+
+    def test_close_dismisses_it_without_moving_you(self, app):
+        app.window.drive_start_run()
+        app.window.current_view = 1
+        app.window.drive_close_run_dialog()
+        assert app.window.run_dialog_open() is False
+        assert app.window.current_view == 1
+
+    def test_show_results_closes_it_and_goes_to_the_results(self, app):
+        app.window.drive_start_run()
+        app.window.drive_show_run_results()
+        assert app.window.run_dialog_open() is False
+        assert app.window.current_view == 2
+        assert app.window.view_visible(2) is True
+
+
 class TestReopeningTheSavedConfiguration:
     """The one file the application owns is read back when it starts.
 

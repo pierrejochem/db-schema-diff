@@ -8,6 +8,7 @@ import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
 import { AboutTab } from "about_tab.slint";
 import { TunnelDialog, TunnelStep } from "tunnel_dialog.slint";
+import { RunDialog, RunInput, RunStep } from "run_dialog.slint";
 import { RunTab, ProgressRow } from "run_tab.slint";
 import { ResultsTab, FindingRow, DeltaRow, DiffLine } from "results_tab.slint";
 
@@ -81,6 +82,18 @@ export component MainWindow inherits Window {
     in-out property <string> tunnel-summary;
     in property <[TunnelStep]> tunnel-steps;
     callback close-tunnel-dialog();
+
+    // The comparison's own dialog. Says what is being compared before it starts and fills in a
+    // checklist as it runs, so a clean report can be told from a report of the wrong thing.
+    in-out property <bool> run-open;
+    in-out property <bool> run-busy;
+    in-out property <string> run-title;
+    in-out property <string> run-summary;
+    in-out property <string> run-summary-level: "ok";
+    in property <[RunInput]> run-inputs;
+    in property <[RunStep]> run-steps;
+    callback close-run-dialog();
+    callback show-run-results();
 
     // Run. Defaults are the CLI's defaults.
     in-out property <bool> running: false;
@@ -174,6 +187,12 @@ export component MainWindow inherits Window {
     public function drive-forget-password(label: string) { config-tab.drop(label); }
     public function drive-close-tunnel-dialog() { root.close-tunnel-dialog(); }
     public function tunnel-dialog-open() -> bool { return dialog.visible; }
+    public function run-dialog-open() -> bool { return run-dialog.visible; }
+    public function run-input-count() -> int { return run-dialog.input-count; }
+    public function run-step-count() -> int { return run-dialog.step-count; }
+    public function drive-close-run-dialog() { root.close-run-dialog(); }
+    public function drive-show-run-results() { root.show-run-results(); }
+    public function drive-cancel-from-run-dialog() { root.cancel-run(); }
     public function tunnel-step-count() -> int { return root.tunnel-steps.length; }
     public function drive-choose-ssh-key(label: string) { root.choose-ssh-key(label); }
     public function drive-select-source-tab(label: string, index: int) {
@@ -440,5 +459,22 @@ export component MainWindow inherits Window {
         summary: root.tunnel-summary;
         steps: root.tunnel-steps;
         close => { root.close-tunnel-dialog(); }
+    }
+
+    // After the tunnel dialog: a comparison cannot be started while that one is up, so the two
+    // never overlap, and whichever is last would cover the other anyway.
+    run-dialog := RunDialog {
+        width: parent.width;
+        height: parent.height;
+        open: root.run-open;
+        busy: root.run-busy;
+        title: root.run-title;
+        inputs: root.run-inputs;
+        steps: root.run-steps;
+        summary: root.run-summary;
+        summary-level: root.run-summary-level;
+        cancel => { root.cancel-run(); }
+        close => { root.close-run-dialog(); }
+        show-results => { root.show-run-results(); }
     }
 }

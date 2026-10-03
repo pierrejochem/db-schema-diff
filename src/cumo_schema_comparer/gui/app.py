@@ -70,11 +70,34 @@ from .credentials import CredentialSource, CredentialStatus, CredentialStore
 from .errors import GuiError
 from .ignores_vm import IgnoresDocument
 from .results_vm import ResultsModel, checked_delta_rows, checked_diff_rows
-from .session import ProgressEvent, Session, SourceState
+from .session import (
+    CAPTURE_PHASE,
+    CAPTURE_STEP_NAMES,
+    CHANGELOG_STEP,
+    COMPARE_PHASE,
+    REPORT_PHASE,
+    ProgressEvent,
+    RunDetail,
+    Session,
+    SourceState,
+)
 
 log = logging.getLogger(__name__)
 
 UI = Path(__file__).parent / "ui" / "main.slint"
+
+#: The rail's index for Results. The dialog's one forward button goes here, and the rail asserts
+#: this mapping in `test_ui_smoke`.
+RESULTS_VIEW = 2
+
+#: A source's state, as the run dialog's heading row for it. ``CAPTURING`` has no entry: it is
+#: the running state, which is this mapping's default.
+_STEP_STATE = {
+    SourceState.CAPTURED: "ok",
+    SourceState.FAILED: "failed",
+    SourceState.CANCELLED: "skipped",
+    SourceState.IDLE: "pending",
+}
 
 #: The four values the config schema and the Run tab's combo box both accept.
 FAIL_ON_CHOICES: tuple[str, ...] = ("error", "warning", "any", "never")
@@ -263,6 +286,14 @@ class Application:
         self._verdict: tuple[str, str] = ("", "")
         self._progress: Any = slint.ListModel([])
         self._progress_index: dict[str, int] = {}
+        #: The run dialog's two models, and where each checklist row lives in the second. Rows are
+        #: updated in place through this index: reassigning the model rebuilds every repeated
+        #: element under it and would discard the scroll position halfway through a run.
+        self._run_inputs: Any = slint.ListModel([])
+        self._run_steps: Any = slint.ListModel([])
+        #: ``(source label, step name)`` to row index. An empty label is a run-wide phase, and an
+        #: empty step is the source's own heading row.
+        self._run_step_index: dict[tuple[str, str], int] = {}
         #: What to say about the saved configuration, and whether it is a failure. Held rather
         #: than announced on the spot: `_refresh` runs last and would leave the toast empty.
         notice = self._reopen()
@@ -564,6 +595,8 @@ class Application:
         window.forget_password = self._guard(self._forget_password)
         window.test_tunnel = self._guard(self._test_tunnel)
         window.close_tunnel_dialog = self._guard(self._close_tunnel_dialog)
+        window.close_run_dialog = self._guard(self._close_run_dialog)
+        window.show_run_results = self._guard(self._show_run_results)
         window.choose_ssh_key = self._guard(self._choose_ssh_key)
         window.select_source_tab = self._guard(self._select_source_tab)
         window.check_all = self._guard(self._check_all)
@@ -931,7 +964,12 @@ class Application:
             return self._session
         if self._busy():
             raise GuiError("a check or comparison is already running")
-        self._session = Session(config, self.credentials, on_progress=self._on_progress)
+        self._session = Session(
+            config,
+            self.credentials,
+            on_progress=self._on_progress,
+            on_detail=self._on_detail,
+        )
         self._session_config = config
         return self._session
 
@@ -998,17 +1036,118 @@ class Application:
         self._task = self._run_task = loop.create_task(self._finish_run(work))
 
     def _begin_run(self) -> None:
-        """Clear the last run's verdict and seed one progress row per source."""
+        """Clear the last run's verdict, seed one progress row per source, open the dialog."""
         self.results = None
         self._verdict = ("", "")
         self._clear_status()
-        labels = [source.label for source in self._effective_config().sources]
+        config = self._effective_config()
+        labels = [source.label for source in config.sources]
         self._progress = slint.ListModel(
             [_progress_row(label, SourceState.IDLE, "") for label in labels]
         )
         self._progress_index = {label: index for index, label in enumerate(labels)}
         self.window.progress = self._progress
+        self._open_run_dialog(config)
         self._refresh_results()
+
+    # -- the run dialog ----------------------------------------------------------------------
+
+    def _open_run_dialog(self, config: ComparerConfig) -> None:
+        """Say what is about to be compared, and lay out the checklist it will fill in.
+
+        The whole checklist is written before anything runs, so the rows a run will touch are
+        visible from the start — a list that grows as results arrive cannot be told from a list
+        that has stopped. Rows are then updated in place; the model is never reassigned, because
+        replacing it rebuilds every repeated element and would throw away the scroll position
+        halfway through a run.
+        """
+        window = self.window
+        window.run_title = f"Comparing {config.name}"
+        window.run_summary = ""
+        window.run_summary_level = "ok"
+        window.run_busy = True
+        window.run_open = True
+
+        self._run_inputs = slint.ListModel(_run_inputs(config, self._run_flags()))
+        window.run_inputs = self._run_inputs
+
+        rows: list[dict[str, Any]] = []
+        self._run_step_index = {}
+        skip_liquibase = bool(window.skip_liquibase)
+        steps = list(CAPTURE_STEP_NAMES) + ([] if skip_liquibase else [CHANGELOG_STEP])
+        for source in config.sources:
+            role = "master" if source.label == config.master.label else "target"
+            self._run_step_index[(source.label, "")] = len(rows)
+            rows.append(_run_step(f"{source.label} ({role})", "pending", "", nested=False))
+            for step in steps:
+                self._run_step_index[(source.label, step)] = len(rows)
+                rows.append(_run_step(step, "pending", "", nested=True))
+        for phase, label in ((COMPARE_PHASE, "compare"), (REPORT_PHASE, "build report")):
+            self._run_step_index[("", phase)] = len(rows)
+            rows.append(_run_step(label, "pending", "", nested=False))
+        self._run_steps = slint.ListModel(rows)
+        window.run_steps = self._run_steps
+
+    def _run_flags(self) -> list[tuple[str, str]]:
+        """The per-run choices, which are in the window rather than in the configuration."""
+        window = self.window
+        flags = [("gate", f"fail on {window.run_fail_on}")]
+        for label, on in (
+            ("cosmetic differences shown", bool(window.show_cosmetic)),
+            ("Liquibase skipped", bool(window.skip_liquibase)),
+            ("changelog compared strictly", bool(window.strict_changelog)),
+            ("bundled rules off", bool(window.no_default_ignores)),
+            ("one source at a time", bool(window.sequential)),
+        ):
+            if on:
+                flags.append(("", label))
+        baseline = str(window.baseline_path)
+        if baseline:
+            flags.append(("baseline", baseline))
+        return flags
+
+    def _set_run_step(self, key: tuple[str, str], state: str, detail: str = "") -> None:
+        """Update one checklist row in place, keeping its label and its indent."""
+        index = self._run_step_index.get(key)
+        if index is None:
+            return
+        existing = dict(self._run_steps[index])
+        self._run_steps[index] = _run_step(
+            str(existing["label"]), state, detail, nested=bool(existing["nested"])
+        )
+
+    def _on_detail(self, detail: RunDetail) -> None:
+        """One step of the run. Always on the loop thread; see ``Session._capture_observer``."""
+        if detail.phase == CAPTURE_PHASE:
+            self._set_run_step((detail.source, ""), "running")
+            self._set_run_step((detail.source, detail.step), "ok", f"{detail.count}")
+            return
+        if detail.phase == COMPARE_PHASE:
+            self._finish_pending_captures()
+            self._set_run_step(("", COMPARE_PHASE), "running")
+        elif detail.phase == REPORT_PHASE:
+            self._set_run_step(("", COMPARE_PHASE), "ok")
+            self._set_run_step(("", REPORT_PHASE), "running")
+
+    def _finish_pending_captures(self) -> None:
+        """Mark as skipped every capture step that never reported.
+
+        A source that failed to connect reports no steps at all, and a run that left ten rows
+        saying "pending" would read as a run that stalled there rather than one that never got in.
+        """
+        for (label, step), index in self._run_step_index.items():
+            if not label or not step:
+                continue
+            if str(dict(self._run_steps[index])["state"]) == "pending":
+                self._set_run_step((label, step), "skipped")
+
+    def _close_run_dialog(self) -> None:
+        self.window.run_open = False
+
+    def _show_run_results(self) -> None:
+        """Close the dialog and go where the report is. The one button that moves you on."""
+        self.window.run_open = False
+        self.window.current_view = RESULTS_VIEW
 
     async def _finish_run(self, work: Coroutine[Any, Any, ComparisonReport]) -> None:
         try:
@@ -1031,7 +1170,35 @@ class Application:
             self._finished(report)
         finally:
             self.window.running = False
+            self._settle_run_dialog()
             self._refresh()
+
+    def _settle_run_dialog(self) -> None:
+        """Stop the dialog claiming to be busy, and put the outcome in it.
+
+        Runs on every exit path, including a cancel and an unexpected failure: a dialog left busy
+        shows Cancel and no way out, which is the one state the window must never be in.
+        """
+        window = self.window
+        if not bool(window.run_open):
+            return
+        window.run_busy = False
+        self._finish_pending_captures()
+        level, sentence = self._verdict
+        for phase in (COMPARE_PHASE, REPORT_PHASE):
+            index = self._run_step_index.get(("", phase))
+            if index is None:
+                continue
+            was = str(dict(self._run_steps[index])["state"])
+            if was in ("pending", "running"):
+                self._set_run_step(("", phase), "ok" if self.results is not None else "skipped")
+        if sentence:
+            window.run_summary = sentence
+            window.run_summary_level = level or "ok"
+        else:
+            # No report, so no verdict. The status line says why; the dialog must not imply one.
+            window.run_summary = _sanitise(str(window.status_message))
+            window.run_summary_level = "error"
 
     def _run_failed(self, message: str) -> None:
         """No report, so no verdict: the banner says nothing has finished and the status says why.
@@ -1214,6 +1381,10 @@ class Application:
             self._progress.append(row)
         else:
             self._progress[index] = row
+        # The dialog's heading row for this source is its state, so it comes from here rather than
+        # from the step observer: a source that fails to connect reports no steps at all, and its
+        # heading would otherwise sit at "pending" for the rest of the run.
+        self._set_run_step((event.label, ""), _STEP_STATE.get(event.state, "running"))
 
     # -- the Results tab ---------------------------------------------------------------------
 
@@ -1429,6 +1600,56 @@ def _has_comments(path: Path) -> bool:
     except OSError:  # pragma: no cover - the loader has just read this file
         return False
     return any(line.lstrip().startswith("#") for line in text.splitlines())
+
+
+def _run_step(label: str, state: str, detail: str, *, nested: bool) -> dict[str, Any]:
+    """One checklist row. Every field, because Slint neither defaults nor rejects a partial row."""
+    return {"label": label, "state": state, "detail": detail, "nested": nested}
+
+
+def _run_input(label: str, value: str, *, nested: bool = False) -> dict[str, Any]:
+    return {"label": label, "value": value, "nested": nested}
+
+
+def _run_inputs(config: ComparerConfig, flags: Sequence[tuple[str, str]]) -> list[dict[str, Any]]:
+    """What is about to be compared, as lines for the dialog.
+
+    Every value here is one the configuration file holds, so none of it is secret and no
+    connection string is assembled to show it: a source is described by where it is, not by how it
+    is reached.
+    """
+    rows = [_run_input("name", config.name)]
+    for source in config.sources:
+        role = "master" if source.label == config.master.label else "target"
+        rows.append(_run_input(role, f"{source.label}  {_where(source)}"))
+        if source.schemas:
+            rows.append(_run_input("", f"schemas: {', '.join(source.schemas)}", nested=True))
+        else:
+            rows.append(_run_input("", "schemas: every non-system schema", nested=True))
+        if source.schema_map:
+            mapped = ", ".join(f"{k}={v}" for k, v in source.schema_map.items())
+            rows.append(_run_input("", f"schema map: {mapped}", nested=True))
+        if source.ssh is not None:
+            rows.append(_run_input("", f"through {describe_gateway(source.ssh)}", nested=True))
+    if config.exclude_schemas:
+        rows.append(_run_input("excluded", ", ".join(config.exclude_schemas)))
+    rows.extend(_run_input(label, value, nested=not label) for label, value in flags)
+    return rows
+
+
+def _where(source: SourceRef) -> str:
+    """A source's location, as the configuration spells it. Never a connection string.
+
+    An empty host is normal: a configuration written by hand names only a variable, and the window
+    has nothing to show but the name of the credential it will resolve.
+    """
+    host = source.host or ""
+    database = source.database or ""
+    if host and database:
+        return f"{host}/{database}"
+    if host or database:
+        return host or database
+    return f"${source.dsn_env}"
 
 
 def _summarise(errors: Sequence[GuiError]) -> str:

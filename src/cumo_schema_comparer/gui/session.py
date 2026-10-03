@@ -157,6 +157,37 @@ class ProgressEvent:
     """Already redacted. Never contains a connection string."""
 
 
+#: The steps one capture reports, and the changelog step that follows them. Taken from the
+#: library through ``runner`` rather than from ``build``, which the window layer may not import:
+#: the session is where this package meets the comparison.
+CAPTURE_STEP_NAMES = runner.CAPTURE_STEP_NAMES
+CHANGELOG_STEP = runner.CHANGELOG_STEP
+
+#: The phases of a comparison, in order, as the window lays them out before anything runs.
+CAPTURE_PHASE = "capture"
+COMPARE_PHASE = "compare"
+REPORT_PHASE = "report"
+
+
+@dataclass(frozen=True, slots=True)
+class RunDetail:
+    """One thing that happened inside a run, finer-grained than a source's state.
+
+    Separate from :class:`ProgressEvent` rather than folded into it. ``on_progress`` is one row per
+    source and the Run tab's list is built from it; a capture reports ten steps, so sending these
+    down the same channel would grow that list by a row per object kind. Different shape, different
+    lifetime, different consumer.
+
+    ``step`` is empty for a phase that is not inside a capture, and ``count`` is what the step
+    found. Never carries a credential: ``source`` is a label and ``step`` is a fixed name.
+    """
+
+    phase: str
+    source: str = ""
+    step: str = ""
+    count: int = 0
+
+
 class Session:
     """One configuration's checks and comparisons."""
 
@@ -166,10 +197,12 @@ class Session:
         credentials: CredentialStore,
         *,
         on_progress: Callable[[ProgressEvent], None] | None = None,
+        on_detail: Callable[[RunDetail], None] | None = None,
     ) -> None:
         self._config = config
         self._credentials = credentials
         self._on_progress = on_progress
+        self._on_detail = on_detail
         self._cancel_requested = threading.Event()
         self._running = False
         self._generation = 0
@@ -414,6 +447,9 @@ class Session:
         show_cosmetic: bool = False,
     ) -> ComparisonReport:
         captures = await self._capture_sources(sequential, skip_liquibase)
+        # Both phases are reported because both are invisible otherwise: a large comparison looks
+        # finished when the last source is captured, and then sits there while it diffs.
+        self._detail(RunDetail(phase=COMPARE_PHASE))
         report = await self._uncancellable(
             asyncio.ensure_future(
                 asyncio.to_thread(
@@ -427,6 +463,7 @@ class Session:
             )
         )
         self._raise_if_cancelled()
+        self._detail(RunDetail(phase=REPORT_PHASE))
         if baseline is not None:
             report = apply_baseline(report, baseline).report
         return report
@@ -496,10 +533,13 @@ class Session:
         workers = (
             1 if sequential or not options.parallel else min(len(sources), options.max_workers)
         )
+        # Taken here, on the loop thread. A worker cannot ask for the running loop — there is
+        # none on its thread — so the observer it is given has to be handed one.
+        loop = asyncio.get_running_loop()
         finished = await self._drive(
             sources,
             workers,
-            lambda source: self._capture_blocking(source, skip_liquibase),
+            lambda source: self._capture_blocking(source, skip_liquibase, loop),
             lambda source, exc: CaptureResult(
                 label=source.label,
                 error=f"{source.label}: capture failed unexpectedly ({type(exc).__name__})",
@@ -588,10 +628,16 @@ class Session:
         self._raise_if_cancelled()
         return finished
 
-    def _capture_blocking(self, source: SourceRef, skip_liquibase: bool) -> CaptureResult | None:
+    def _capture_blocking(
+        self,
+        source: SourceRef,
+        skip_liquibase: bool,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> CaptureResult | None:
         """Runs on a worker thread. Returns ``None`` if cancelled before it started.
 
-        Never raises, and never touches ``on_progress``.
+        Never raises, and never touches ``on_progress``: the step observer it passes to the library
+        only schedules onto ``loop``, which is where the consumer runs.
         """
         if self._cancel_requested.is_set():
             return None
@@ -615,6 +661,7 @@ class Session:
                 skip_liquibase=skip_liquibase,
                 # No opt-out in the GUI: what it shows is meant to be shareable.
                 redact_literals=True,
+                observer=None if loop is None else self._capture_observer(loop, source.label),
             )
         except Exception as exc:
             # Only the type: an unexpected exception's text is not under the library's redaction.
@@ -624,6 +671,34 @@ class Session:
         if result.error is not None:
             return CaptureResult(label=result.label, error=_scrub(result.error, dsn))
         return result
+
+    def _detail(self, detail: RunDetail) -> None:
+        """Report one step. Must be called on the event-loop thread, like :meth:`_emit`."""
+        if self._on_detail is None:
+            return
+        try:
+            self._on_detail(detail)
+        except Exception as exc:
+            # Same contract as on_progress: a broken progress display cannot fail a comparison.
+            log.warning("progress consumer failed (%s)", type(exc).__name__)
+
+    def _capture_observer(
+        self, loop: asyncio.AbstractEventLoop, label: str
+    ) -> Callable[[str, int], None]:
+        """An observer for ``runner.capture``, which runs on a worker thread.
+
+        Hands the event to the loop and does nothing else. The consumer writes Slint properties,
+        and a Slint value touched from another thread aborts the process rather than raising, so
+        this function is deliberately incapable of doing anything but scheduling.
+        """
+
+        def observe(step: str, count: int) -> None:
+            loop.call_soon_threadsafe(
+                self._detail,
+                RunDetail(phase=CAPTURE_PHASE, source=label, step=step, count=count),
+            )
+
+        return observe
 
     def _emit(self, event: ProgressEvent) -> None:
         if self._on_progress is None:
