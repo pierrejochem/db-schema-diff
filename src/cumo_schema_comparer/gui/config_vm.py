@@ -1,8 +1,9 @@
 """The configuration the Config tab edits, written out as the CLI's own YAML.
 
-A document is built here and saved; it is never read back. The application has no way to open a
-configuration file, so this has no way either — what used to preserve a loaded file's comments and
-key order went with it, because there is no loaded file to preserve anything of.
+A document is built here and saved. Reading one back is the library loader's job — the same one the
+command-line tool uses, called from ``app.Application._reopen`` — so this class has no loader of its
+own, and what used to preserve a loaded file's comments and key order went with it. A hand-edited
+file therefore keeps its comments until the window saves over it, which the window says out loud.
 
 A saved file must stay hand-editable, so only the fields that were actually set are written back.
 

@@ -1,9 +1,10 @@
 """The folder the desktop application keeps configurations in.
 
-The application does not read configurations back — no Open button, no path on the command line,
-nothing reopened on start-up — so this folder is write-only from its point of view and nothing here
-lists or chooses a file. What is left to defend is that it gets created, that a name typed by a
-person cannot choose a different folder, and that none of this touches a real home directory.
+There is one file in it and the application reads that one back when it starts, so nothing here
+lists or chooses a file — reading it is ``app.Application._reopen``, tested with the rest of the
+window. What is left to defend is that the folder gets created, that the path is always the same
+one, that a name typed by a person cannot choose a different folder, and that none of this touches
+a real home directory.
 """
 
 from __future__ import annotations

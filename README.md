@@ -360,23 +360,28 @@ already connected is abandoned rather than interrupted — PostgreSQL work in fl
 
 ### Where it keeps configurations
 
-**The application does not open configuration files.** There is no Open button, a path on the
-command line is refused with a message rather than ignored, and nothing is reopened on start-up: it
-starts empty every time. You build a configuration in the window and save it.
+On start-up it creates `~/.cumo_db_schema_comparer` if it is missing, reads `config.yaml` from it if
+that file is there, and **Save** writes it back. One file, always the same path.
 
-On start-up it creates `~/.cumo_db_schema_comparer` if it is missing, and **Save** writes
-`config.yaml` there. Before this a configuration made in the GUI could not be saved at all, because
-saving needed a path nobody had chosen yet.
+**There is still no Open button**, and a path on the command line is refused with a message rather
+than ignored — the window would otherwise be showing a different file from the one it says it is.
+Another `.yaml` sitting in the folder is not opened either: with no chooser, picking one by name or
+by modification time would make the window's contents a guess.
 
-There is one file and no name to choose. A configuration's `name` becomes the report title and the
-JUnit suite name, so it has to be something; the window defaults it rather than asking, because
-naming a comparison you cannot reopen adds nothing to it. **Saving again replaces that file.**
+There is no name to choose. A configuration's `name` becomes the report title and the JUnit suite
+name, so it has to be something; the window defaults it rather than asking.
+
+A `config.yaml` that cannot be read — bad YAML, or a shape the model rejects — does **not** stop the
+window opening. It says what went wrong, starts from an empty configuration, and the next **Save**
+replaces the bad file. Refusing to start would leave no way to recover from inside the application.
+
+Hand-editing that file is fine, and the command-line tool reads any path you give it. One caveat:
+the window rewrites the file from the configuration rather than patching it, so saving over a
+hand-edited file drops its comments. It says so when it loads a file that has any, while they are
+still there to copy somewhere else.
 
 `CUMO_SCHEMA_DIFF_HOME` points the folder somewhere else. The test suite sets it, because a test
 that reads or writes the home directory of whoever runs it has already failed.
-
-Editing an existing configuration is a job for an editor, or for the command-line tool, which reads
-any path you give it.
 
 The application follows the Cubic design system. Sections are cards with an uppercase eyebrow
 heading; every form label in every view comes from one shared column, so fields line up when you

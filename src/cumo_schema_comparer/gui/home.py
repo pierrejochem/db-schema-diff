@@ -7,9 +7,10 @@ so a config created in the GUI had to be given a location before it could be sav
 ``~/.cumo_db_schema_comparer`` is that place. It is created on start-up and it is where a
 configuration built in the application is saved.
 
-The application does not read configurations back: it has no Open button, takes no path on the
-command line, and reopens nothing. It starts empty every time. So nothing here lists or chooses a
-file — this module only says where one goes.
+There is one file, :data:`CONFIG_NAME`, and the application reads it back when it starts. It still
+has no Open button and still takes no path on the command line: nothing here lists or chooses a
+file, because there is nothing to choose between. This module says where that one file is; reading
+it is ``app.Application._reopen``.
 
 ``CUMO_SCHEMA_DIFF_HOME`` overrides the location. Tests set it, because a test that writes into the
 person running it's home directory is a test that has already failed.
@@ -58,8 +59,9 @@ def ensure() -> Path | None:
     return target
 
 
-#: The one file. The application builds a configuration and saves it; it is not asked for a name,
-#: and it cannot open what it wrote, so there is nothing for a second filename to distinguish.
+#: The one file. The application builds a configuration, saves it, and reads it back next time; it
+#: is not asked for a name, and it opens nothing else, so there is nothing for a second filename to
+#: distinguish.
 CONFIG_NAME = "config.yaml"
 
 
