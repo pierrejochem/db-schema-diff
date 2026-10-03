@@ -361,33 +361,33 @@ class TestEditing:
         assert [row["label"] for row in app.window.sources] == ["prod", "qa"]
 
     def test_a_config_level_option_is_editable_through_the_same_callback(self, app):
-        app.window.source_changed("", "max_workers", "9")
-        app.window.source_changed("", "parallel", "false")
-        app.window.source_changed("", "fail_on", "warning")
+        app.window.config_changed("max_workers", "9")
+        app.window.config_changed("parallel", "false")
+        app.window.config_changed("fail_on", "warning")
         assert app.config.config.options.max_workers == 9
         assert app.config.config.options.parallel is False
         assert app.config.config.options.fail_on == "warning"
         assert app.window.max_workers == 9
 
     def test_an_out_of_range_option_is_reported_by_validate_rather_than_crashing(self, app):
-        app.window.source_changed("", "max_workers", "999")
+        app.window.config_changed("max_workers", "999")
         app.window.validate_config()
         assert app.window.status_is_error is True
         assert "max_workers" in app.window.status_message
 
     def test_a_non_numeric_option_becomes_a_status_message(self, app):
-        app.window.source_changed("", "connect_timeout_seconds", "soon")
+        app.window.config_changed("connect_timeout_seconds", "soon")
         assert app.window.status_is_error is True
         assert app.config.config.options.connect_timeout_seconds == 10
 
     def test_exclude_schemas_round_trips_through_the_text_field(self, app):
-        app.window.source_changed("", "exclude_schemas", "quartz, audit_archive")
+        app.window.config_changed("exclude_schemas", "quartz, audit_archive")
         assert app.config.config.exclude_schemas == ("quartz", "audit_archive")
         assert list(app.window.exclude_schemas) == ["quartz", "audit_archive"]
 
     def test_a_half_typed_schema_list_is_not_rewritten_under_the_cursor(self, app):
         app.window.exclude_schemas_text = "quartz, "
-        app.window.source_changed("", "exclude_schemas", "quartz, ")
+        app.window.config_changed("exclude_schemas", "quartz, ")
         assert app.window.exclude_schemas_text == "quartz, "
 
     def test_schema_map_is_parsed_into_pairs(self, app):
@@ -750,7 +750,7 @@ class TestTheSessionLifecycle:
 
         with mock.patch(CAPTURE, record):
             await run_to_completion(app)
-            app.window.source_changed("", "exclude_schemas", "quartz")
+            app.window.config_changed("exclude_schemas", "quartz")
             await run_to_completion(app)
 
         assert seen[0] == ()
@@ -1008,13 +1008,13 @@ class TestRunning:
 
     def test_editing_the_configs_gate_carries_the_run_tab_with_it(self, tmp_path):
         app = application(tmp_path)
-        app.window.source_changed("", "fail_on", "any")
+        app.window.config_changed("fail_on", "any")
         assert (app.window.fail_on, app.window.run_fail_on) == ("any", "any")
         assert app._effective_config().options.fail_on == "any"
 
     @pytest.mark.asyncio
     async def test_a_configured_gate_reaches_the_written_report(self, app, tmp_path):
-        app.window.source_changed("", "fail_on", "never")
+        app.window.config_changed("fail_on", "never")
         with mock.patch(CAPTURE, drifted_capture):
             await run_to_completion(app)
         assert "--fail-on never" in app.window.verdict
@@ -1880,6 +1880,69 @@ class TestTheCardTabSurvivesARefresh:
         app.window.drive_select_source_tab("qa", 1)
         app.window.source_changed("qa", "label", "qa2")
         assert self.tab_of(app, "qa2") == 1
+
+
+class TestRetypingALabel:
+    """Reported: the master's label could not be saved.
+
+    Clearing a label and typing a new one is the ordinary way to rename something, and
+    ``source-changed`` used an empty label to mean "a config-level field, not a source". So the
+    moment the field was backspaced to nothing, the source it belonged to could no longer be
+    addressed: every further keystroke was reported as an unknown configuration option, the label
+    stayed empty, and Save then refused the configuration — with no way to fix it in the window.
+
+    It bit the master first because a target can be removed and added again, and the master cannot.
+    """
+
+    def labels(self, app):
+        return [row["label"] for row in rows(app.window.sources)]
+
+    def keystrokes(self, app, texts):
+        """Type into the first card's label field, as ``LineEdit.edited`` reports it."""
+        for text in texts:
+            app.window.source_changed(self.labels(app)[0], "label", text)
+
+    def test_the_master_label_can_be_cleared_and_typed_again(self, app):
+        self.keystrokes(app, ["pro", "pr", "p", "", "m", "ma", "mast", "master"])
+        assert self.labels(app) == ["master", "qa"]
+        assert app.window.status_is_error is False
+
+    def test_a_target_label_can_be_cleared_and_typed_again(self, app):
+        for text in ["q", "", "s", "st", "stage"]:
+            app.window.source_changed(self.labels(app)[1], "label", text)
+        assert self.labels(app) == ["prod", "stage"]
+        assert app.window.status_is_error is False
+
+    def test_an_emptied_label_is_still_the_source_it_belongs_to(self, app):
+        """The one assertion the bug would fail: an empty label addresses a source, not an option.
+
+        A config-level field has its own callback now, so there is no spelling of a source edit
+        that means something else.
+        """
+        self.keystrokes(app, [""])
+        assert self.labels(app) == ["", "qa"]
+        app.window.source_changed("", "host", "db-prod")
+        assert app.window.status_is_error is False
+        assert rows(app.window.sources)[0]["host"] == "db-prod"
+
+    def test_a_cleared_label_is_refused_on_save_rather_than_silently_written(self, app):
+        self.keystrokes(app, [""])
+        app.window.save_config()
+        assert app.window.status_is_error is True
+        assert "label" in app.window.status_message
+
+    def test_the_second_source_cannot_also_be_emptied(self, app):
+        """Two sources addressed by one empty label is a state neither could be typed out of."""
+        self.keystrokes(app, [""])
+        app.window.source_changed("qa", "label", "")
+        assert app.window.status_is_error is True
+        assert "empty" in app.window.status_message
+        assert self.labels(app) == ["", "qa"]
+
+    def test_a_renamed_master_still_carries_the_accent(self, app):
+        """``is_master`` is derived from the label, so a rename must not move it to the target."""
+        self.keystrokes(app, ["", "m", "main"])
+        assert [row["is_master"] for row in rows(app.window.sources)] == [True, False]
 
 
 class TestTypingDoesNotDestroyTheFieldBeingTypedInto:

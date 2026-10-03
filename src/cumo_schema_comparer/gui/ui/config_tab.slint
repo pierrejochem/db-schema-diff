@@ -81,6 +81,10 @@ export component ConfigTab inherits ScrollView {
     in-out property <bool> include-grants;
 
     callback source-changed(string, string, string);   // label, field, value
+    // Separate from source-changed, not an empty label passed to it. A label is a field a
+    // person types into and can backspace to nothing, and a source addressed by its label
+    // would then be a source nothing could address.
+    callback config-changed(string, string);           // field, value
     callback add-target();
     callback remove-target(string);
     callback check-connection(string);
@@ -135,7 +139,7 @@ export component ConfigTab inherits ScrollView {
                     text <=> root.exclude-schemas-text;
                     placeholder-text: "quartz, audit_archive";
                     max-width: Tokens.field-max;
-                    edited(v) => { root.source-changed("", "exclude_schemas", v); }
+                    edited(v) => { root.config-changed("exclude_schemas", v); }
                 }
                 Rectangle { }
             }
@@ -447,7 +451,7 @@ export component ConfigTab inherits ScrollView {
                         width: 90px;
                         edited(v) => {
                             root.connect-timeout-seconds = v.to-float();
-                            root.source-changed("", "connect_timeout_seconds", v);
+                            root.config-changed("connect_timeout_seconds", v);
                         }
                     }
                     Text {
@@ -466,7 +470,7 @@ export component ConfigTab inherits ScrollView {
                         width: 90px;
                         edited(v) => {
                             root.statement-timeout-seconds = v.to-float();
-                            root.source-changed("", "statement_timeout_seconds", v);
+                            root.config-changed("statement_timeout_seconds", v);
                         }
                     }
                     Text {
@@ -485,7 +489,7 @@ export component ConfigTab inherits ScrollView {
                         width: 90px;
                         edited(v) => {
                             root.lock-timeout-seconds = v.to-float();
-                            root.source-changed("", "lock_timeout_seconds", v);
+                            root.config-changed("lock_timeout_seconds", v);
                         }
                     }
                     Text {
@@ -511,7 +515,7 @@ export component ConfigTab inherits ScrollView {
                         width: 90px;
                         edited(v) => {
                             root.max-workers = v.to-float();
-                            root.source-changed("", "max_workers", v);
+                            root.config-changed("max_workers", v);
                         }
                     }
                     Rectangle { }
@@ -522,7 +526,7 @@ export component ConfigTab inherits ScrollView {
                         model: ["error", "warning", "any", "never"];
                         current-value <=> root.fail-on;
                         max-width: 200px;
-                        selected(v) => { root.source-changed("", "fail_on", v); }
+                        selected(v) => { root.config-changed("fail_on", v); }
                     }
                     Rectangle { }
                 }
@@ -532,14 +536,14 @@ export component ConfigTab inherits ScrollView {
                         label: "parallel";
                         value <=> root.parallel;
                         toggled(v) => {
-                            root.source-changed("", "parallel", v ? "true" : "false");
+                            root.config-changed("parallel", v ? "true" : "false");
                         }
                     }
                     LabelledCheck {
                         label: "ignore column order";
                         value <=> root.ignore-column-order;
                         toggled(v) => {
-                            root.source-changed("", "ignore_column_order", v ? "true" : "false");
+                            root.config-changed("ignore_column_order", v ? "true" : "false");
                         }
                     }
                     Rectangle { }
@@ -555,21 +559,21 @@ export component ConfigTab inherits ScrollView {
                     label: "owners";
                     value <=> root.include-owners;
                     toggled(v) => {
-                        root.source-changed("", "include_owners", v ? "true" : "false");
+                        root.config-changed("include_owners", v ? "true" : "false");
                     }
                 }
                 LabelledCheck {
                     label: "comments";
                     value <=> root.include-comments;
                     toggled(v) => {
-                        root.source-changed("", "include_comments", v ? "true" : "false");
+                        root.config-changed("include_comments", v ? "true" : "false");
                     }
                 }
                 LabelledCheck {
                     label: "grants";
                     value <=> root.include-grants;
                     toggled(v) => {
-                        root.source-changed("", "include_grants", v ? "true" : "false");
+                        root.config-changed("include_grants", v ? "true" : "false");
                     }
                 }
                 Rectangle { }
