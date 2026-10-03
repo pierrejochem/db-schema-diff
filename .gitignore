@@ -27,3 +27,6 @@ htmlcov/
 /config/
 !/config/*.example.yaml
 /.env
+
+# macOS Finder metadata, created by merely opening a folder.
+.DS_Store
