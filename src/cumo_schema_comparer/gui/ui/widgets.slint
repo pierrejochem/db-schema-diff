@@ -62,21 +62,66 @@ export component LabelledCheck inherits HorizontalLayout {
     }
 }
 
-export component StatusLine inherits Rectangle {
+// What just happened, floating over the content instead of taking a strip of it.
+//
+// A failure stays until it is dismissed or replaced. Anything else clears itself after a few
+// seconds — but an error that vanished on a timer would be a report of a problem nobody read, and
+// this application's errors are the whole point of it.
+export component Toast inherits Rectangle {
     in property <string> message;
     in property <bool> is-error;
+    //: Bumped by the application for every message. Without it, the same text twice — two failed
+    //: connection checks of the same source, say — would show once, because nothing changed.
+    in property <int> token;
+    //: The token whose message has been seen off, by the timer or by the person.
+    private property <int> settled;
 
-    height: root.message == "" ? 0px : 28px;
+    out property <bool> showing: root.message != "" && root.token != root.settled;
+    out property <string> shown: root.showing ? root.message : "";
+    public function dismiss() { root.settled = root.token; }
+
+    //: How long a non-error stays. Long enough to read a sentence, short enough not to sit there.
+    in property <duration> linger: 5s;
+
+    // The width is set where this is placed: a component's own root has no parent to measure.
+    height: max(48px, body.preferred-height + 2 * Tokens.space-3);
+    visible: root.showing;
     background: root.is-error ? Tokens.danger-surface : Tokens.success-surface;
-    border-width: root.message == "" ? 0px : Tokens.hairline-width;
+    border-radius: Tokens.radius-card;
+    border-width: Tokens.hairline-width;
     border-color: root.is-error ? Tokens.danger : Tokens.success;
-    Text {
-        text: root.message;
-        color: root.is-error ? Tokens.danger : Tokens.success;
-        vertical-alignment: center;
-        font-size: Tokens.text-body;
-        font-weight: Tokens.weight-bold;
-        x: Tokens.space-3;
+
+    dismiss-after := Timer {
+        interval: root.linger;
+        running: root.showing && !root.is-error;
+        triggered => { root.dismiss(); }
+    }
+
+    HorizontalLayout {
+        padding: Tokens.space-3;
+        spacing: Tokens.space-2;
+        body := Text {
+            text: root.message;
+            color: root.is-error ? Tokens.danger : Tokens.success;
+            vertical-alignment: center;
+            font-size: Tokens.text-body;
+            font-weight: Tokens.weight-bold;
+            wrap: word-wrap;
+        }
+        // An error waits for this; everything else is already on its way out.
+        Rectangle {
+            width: 24px;
+            close := TouchArea { clicked => { root.dismiss(); } }
+            Text {
+                text: "✕";
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: Tokens.text-body;
+                color: close.has-hover
+                    ? (root.is-error ? Tokens.danger : Tokens.success)
+                    : Tokens.muted;
+            }
+        }
     }
 }
 

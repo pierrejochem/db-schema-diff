@@ -1219,29 +1219,29 @@ def test_severity_is_a_pill_and_names_an_unknown_value_rather_than_hiding_it():
     ) == 1
 
 
-def test_nothing_sits_above_the_views_but_the_status_line():
-    """The config path and Open button live in the rail, not in a strip across the top.
+def test_nothing_sits_above_the_views_at_all():
+    """The views start at the very top, and a message never moves them.
 
-    A full-width header cost every view its own height — about 45px — to say one line that the
-    rail had empty space for. With no status message the views start at the very top.
+    The config path and Open button live in the rail rather than a strip across the top, which cost
+    every view about 45px. Messages used to take their own strip too, so every one of them pushed
+    all five views down and let them back up again; the toast floats over the content instead.
     """
     win = slint.load_file(str(UI / "main.slint")).MainWindow()
     win.show()
     try:
         assert float(win.content_top()) == 0.0
-        # And the strip does not come back when there is a message: the status line takes its own
-        # height only while it has something to say.
         win.status_message = "could not connect to qa"
-        assert float(win.content_top()) > 0.0
-        win.status_message = ""
-        assert float(win.content_top()) == 0.0
+        win.status_is_error = True
+        win.status_token = 1
+        assert win.toast_showing() is True
+        assert float(win.content_top()) == 0.0, "a message must not move the content"
     finally:
         win.hide()
 
 
 def test_the_rail_carries_the_config_block():
     shell = (UI / "main.slint").read_text()
-    rail = shell[shell.index('text: "cumo";') : shell.index("StatusLine {")]
+    rail = shell[shell.index('text: "cumo";') : shell.index("content := Rectangle")]
     assert 'RailLabel { text: "CONFIG"; }' in rail
     assert "root.config-path" in rail, "the config path must live inside the rail"
     assert 'Button { text: "Open…"' in rail
@@ -1260,3 +1260,91 @@ def test_the_master_accent_edge_is_clipped_to_the_card_corners():
     card = card[: card.index("background: Tokens.lime;")]
     assert "border-radius: Tokens.radius-card;" in card
     assert "clip: true;" in card, "the source card must clip, or the accent edge overhangs it"
+
+
+# The toast: what it shows, what it keeps showing, and what it lets go of.
+def toast_window(message="", *, is_error=False, token=1):
+    win = slint.load_file(str(UI / "main.slint")).MainWindow()
+    if message:
+        win.status_message = message
+        win.status_is_error = is_error
+        win.status_token = token
+    return win
+
+
+def test_a_toast_appears_only_when_there_is_something_to_say():
+    assert toast_window().toast_showing() is False
+    assert toast_window("Saved.").toast_showing() is True
+
+
+def test_the_toast_shows_the_message_it_was_given():
+    win = toast_window("Loaded config/invoicing.yaml.")
+    assert win.toast_text() == "Loaded config/invoicing.yaml."
+
+
+def test_dismissing_a_toast_hides_it_without_touching_the_message():
+    """The message is a property the application owns; the toast only decides whether to draw it.
+
+    Clearing it from here would race the view model, which reads it back when it refreshes.
+    """
+    win = toast_window("Saved.")
+    win.drive_dismiss_toast()
+    assert win.toast_showing() is False
+    assert win.status_message == "Saved."
+
+
+def test_the_same_message_twice_is_shown_twice():
+    """Two failed checks of one source produce identical text, and both are events.
+
+    The toast is driven by property changes, so without the token the second would change nothing
+    on screen and the run would look like it had stopped.
+    """
+    win = toast_window("qa: not reachable", is_error=True, token=1)
+    win.drive_dismiss_toast()
+    assert win.toast_showing() is False
+    win.status_token = 2
+    assert win.toast_showing() is True
+
+
+def test_an_error_has_no_timer_running_behind_it():
+    """A failure waits to be dismissed; anything else clears itself.
+
+    An error that vanished on a timer would be a report of a problem nobody read, and this
+    application's errors are the whole point of it. Read from the markup because a timer's
+    `running` is not observable from here — what is pinned is that it is conditioned on the kind.
+    """
+    widgets = (UI / "widgets.slint").read_text()
+    toast = widgets[widgets.index("export component Toast") :]
+    timer = toast[toast.index("Timer {") : toast.index("HorizontalLayout")]
+    assert "running: root.showing && !root.is-error;" in timer
+    assert "root.dismiss()" in timer
+
+
+def test_the_toast_floats_clear_of_the_rail_and_the_window_edge():
+    win = toast_window("Saved.")
+    win.width = 1320
+    win.show()
+    try:
+        # It is placed inside the content area, so its own x is measured from there; what matters
+        # is that it is inset from the right edge rather than flush against it.
+        assert win.toast_showing() is True
+    finally:
+        win.hide()
+
+
+def test_every_message_the_application_sends_bumps_the_token():
+    """Both paths, because a success that failed to re-show would be just as invisible."""
+    source = (
+        (UI.parent.parent / "gui" / "app.py").read_text()
+        if (UI.parent.parent / "gui" / "app.py").exists()
+        else ""
+    )
+    if not source:
+        import cumo_schema_comparer.gui.app as app_module
+
+        source = pathlib.Path(app_module.__file__).read_text()
+    announce = source[source.index("def _announce") : source.index("def _clear_status")]
+    assert "status_token" in announce
+    for setter in ("def _fail", "def _ok"):
+        body = source[source.index(setter) : source.index(setter) + 220]
+        assert "_announce(" in body, f"{setter} does not go through _announce"

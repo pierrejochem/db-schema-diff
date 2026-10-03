@@ -2,7 +2,7 @@
 // binds are declared here and forwarded down.
 
 import { Button } from "std-widgets.slint";
-import { StatusLine, NavItem, RailLabel } from "widgets.slint";
+import { Toast, NavItem, RailLabel } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
@@ -37,6 +37,9 @@ export component MainWindow inherits Window {
     in-out property <bool> dirty;
     in-out property <string> status-message;
     in-out property <bool> status-is-error;
+    // Bumped by the application for every message. The same text twice — two failed checks of
+    // one source — is two events, and without this the second would show nothing.
+    in-out property <int> status-token;
     in property <[SourceRow]> sources;
     in property <[string]> exclude-schemas;
     // The editable comma-separated form of exclude-schemas.
@@ -133,6 +136,9 @@ export component MainWindow inherits Window {
     // Where the views begin. Nothing but the status line — which is zero-height when there is
     // no message — may sit above them: a strip across the top costs every view its height.
     public function content-top() -> length { return content.y; }
+    public function toast-showing() -> bool { return toast.showing; }
+    public function toast-text() -> string { return toast.shown; }
+    public function drive-dismiss-toast() { toast.dismiss(); }
     public function results-findings-box() -> [length] { return results-tab.findings-box; }
     public function results-detail-box() -> [length] { return results-tab.detail-box; }
     public function results-diff-pane-width() -> length { return results-tab.diff-pane-width; }
@@ -266,8 +272,6 @@ export component MainWindow inherits Window {
         }
 
         VerticalLayout {
-            StatusLine { message: root.status-message; is-error: root.status-is-error; }
-
             // The content column, capped and centred: a wide window gives wide margins rather
             // than 900px-wide text fields. The width is declared once here and handed to the views
             // that need to know it — a ScrollView positioned outside a layout reports its own
@@ -382,6 +386,17 @@ export component MainWindow inherits Window {
                     store-credential(e, s) => { root.store-credential(e, s); }
                     forget-credential(e) => { root.forget-credential(e); }
                     }
+
+                // Drawn last, so it floats over whichever view is showing rather than displacing
+                // it. Bottom right, clear of the rail.
+                toast := Toast {
+                    message: root.status-message;
+                    is-error: root.status-is-error;
+                    token: root.status-token;
+                    width: min(420px, parent.width - 2 * Tokens.space-5);
+                    x: parent.width - self.width - Tokens.space-5;
+                    y: parent.height - self.height - Tokens.space-5;
+                }
             }
         }
     }
