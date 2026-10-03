@@ -61,7 +61,7 @@ from ..diff.changelog import ChangelogOptions
 from ..diff.ignores import IgnoreRuleSet, load_default_ignores
 from ..diff.model import ComparisonReport
 from ..errors import ComparerError
-from ..runner import ConnectionStatus
+from ..runner import ConnectionStatus, describe_gateway
 from . import dialogs, home
 from .config_vm import ConfigDocument
 from .credentials import CredentialStatus, CredentialStore
@@ -1043,8 +1043,6 @@ class Application:
         source = self._source(label)
         if source.ssh is None:
             raise GuiError("this source has no ssh gateway to test", field="ssh")
-
-        from .db_names import describe_gateway
 
         window = self.window
         window.tunnel_gateway = describe_gateway(source.ssh)

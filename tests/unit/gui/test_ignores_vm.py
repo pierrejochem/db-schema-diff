@@ -10,6 +10,7 @@ import textwrap
 
 import pytest
 
+from cumo_schema_comparer.config.loader import load_config_files
 from cumo_schema_comparer.gui.config_vm import ConfigDocument
 from cumo_schema_comparer.gui.errors import GuiError
 from cumo_schema_comparer.gui.ignores_vm import (
@@ -40,6 +41,17 @@ RULES = textwrap.dedent(
 ).lstrip()
 
 
+def read_config(path) -> ConfigDocument:
+    """A configuration document from a file, through the library's loader.
+
+    `ConfigDocument` does not read files any more; the application never opens one.
+    """
+    from pathlib import Path
+
+    ((_, config),) = load_config_files([Path(path)])
+    return ConfigDocument(path=Path(path), config=config)
+
+
 @pytest.fixture
 def document(tmp_path) -> IgnoresDocument:
     path = tmp_path / "ignores.yaml"
@@ -51,7 +63,7 @@ def document(tmp_path) -> IgnoresDocument:
         "targets:\n- label: qa\n  dsn_env: Q\n"
         "ignores_file: ignores.yaml\n"
     )
-    return IgnoresDocument.for_config(ConfigDocument.load(config_path))
+    return IgnoresDocument.for_config(read_config(config_path))
 
 
 class TestPickLists:
@@ -158,7 +170,7 @@ class TestBothSourcesDeclared:
         (tmp_path / "ignores.yaml").write_text(RULES)
 
         with pytest.raises(GuiError) as exc:
-            IgnoresDocument.for_config(ConfigDocument.load(config_path))
+            IgnoresDocument.for_config(read_config(config_path))
         assert "not both" in str(exc.value)
         assert exc.value.field == "ignores"
 
@@ -169,7 +181,7 @@ class TestBothSourcesDeclared:
             "master:\n  label: prod\n  dsn_env: P\n"
             "targets:\n- label: qa\n  dsn_env: Q\n"
         )
-        document = IgnoresDocument.for_config(ConfigDocument.load(config_path))
+        document = IgnoresDocument.for_config(read_config(config_path))
         assert document.config.rules == ()
         assert document.default_rows()  # the bundled ones are still shown
 
@@ -227,9 +239,7 @@ class TestSaving:
     def test_untouched_round_trip_is_byte_identical(self, document):
         indented = document.to_yaml()
         document.path.write_text(indented)
-        reloaded = IgnoresDocument.for_config(
-            ConfigDocument.load(document.path.parent / "invoicing.yaml")
-        )
+        reloaded = IgnoresDocument.for_config(read_config(document.path.parent / "invoicing.yaml"))
         assert reloaded.to_yaml() == indented
         assert reloaded.config == document.config
 
@@ -245,7 +255,7 @@ class TestSaving:
             "version: 1\nname: c\nmaster:\n  label: p\n  dsn_env: P\n"
             "targets:\n- label: q\n  dsn_env: Q\n"
         )
-        document = IgnoresDocument.for_config(ConfigDocument.load(config_path))
+        document = IgnoresDocument.for_config(read_config(config_path))
         with pytest.raises(GuiError):
             document.save()
         document.add_rule("r")
@@ -428,7 +438,7 @@ class TestLoading:
             "version: 1\nname: c\nmaster:\n  label: p\n  dsn_env: P\n"
             "targets:\n- label: qa\n  dsn_env: Q\nignores_file: ignores.yaml\n"
         )
-        document = IgnoresDocument.for_config(ConfigDocument.load(config_path))
+        document = IgnoresDocument.for_config(read_config(config_path))
         assert document.config.rules[0].names == ("a.*",)
         assert document.config.rules[0].targets == ("qa",)
         assert document.dirty is False
@@ -439,7 +449,7 @@ class TestLoading:
             "version: 1\nname: c\nmaster:\n  label: p\n  dsn_env: P\n"
             "targets:\n- label: qa\n  dsn_env: Q\nignores_file: later.yaml\n"
         )
-        document = IgnoresDocument.for_config(ConfigDocument.load(config_path))
+        document = IgnoresDocument.for_config(read_config(config_path))
         assert document.path == tmp_path / "later.yaml"
         assert document.config.rules == ()
         document.add_rule("r")

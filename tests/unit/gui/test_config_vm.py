@@ -11,6 +11,7 @@ import textwrap
 
 import pytest
 
+from cumo_schema_comparer.config.loader import load_config_files
 from cumo_schema_comparer.gui.config_vm import ConfigDocument
 from cumo_schema_comparer.gui.errors import GuiError
 
@@ -45,30 +46,31 @@ FULL = textwrap.dedent(
 ).lstrip()
 
 
+def read(path) -> ConfigDocument:
+    """A document from a file, for tests that need one to start from.
+
+    `ConfigDocument` does not read files any more — the application never opens one — so this uses
+    the library's own loader, which the command-line tool uses and which is not part of the GUI.
+    """
+    ((_, config),) = load_config_files([pathlib.Path(path)])
+    return ConfigDocument(path=pathlib.Path(path), config=config)
+
+
 @pytest.fixture
 def document(tmp_path) -> ConfigDocument:
     path = tmp_path / "invoicing.yaml"
     path.write_text(FULL)
-    return ConfigDocument.load(path)
+    return read(path)
 
 
 class TestRoundTrip:
-    def test_loading_and_saving_an_untouched_file_changes_nothing(self, document, tmp_path):
-        """The strongest guarantee this layer offers.
-
-        Somebody opens a config to look at it, saves out of habit, and the diff must be empty.
-        """
-        out = tmp_path / "again.yaml"
-        document.save(out)
-        assert out.read_text() == FULL
-
     def test_the_shipped_example_round_trips_byte_identically(self, tmp_path):
         source = pathlib.Path("config.example.yaml")
         # The example carries comments, which YAML loading discards; compare the parsed result.
-        loaded = ConfigDocument.load(source)
+        loaded = read(source)
         out = tmp_path / "example.yaml"
         loaded.save(out)
-        assert ConfigDocument.load(out).config == loaded.config
+        assert read(out).config == loaded.config
 
     def test_only_non_default_fields_are_written(self, tmp_path):
         document = ConfigDocument.blank("payment")
@@ -88,7 +90,7 @@ class TestRoundTrip:
         """
         out = tmp_path / "again.yaml"
         document.save(out)
-        reloaded = ConfigDocument.load(out)
+        reloaded = read(out)
         assert reloaded.config.master.schemas == ("cumo-invoicing", "public")
         assert reloaded.config.targets[0].schema_map == {"cumo-invoicing": "invoicing_qa"}
         assert reloaded.config.targets[1].liquibase.schema_name == "cumo-invoicing"
@@ -98,7 +100,7 @@ class TestRoundTrip:
         document.update_source("prod", "database", "fakturierung_äöü")
         out = tmp_path / "x.yaml"
         document.save(out)
-        assert ConfigDocument.load(out).config.master.database == "fakturierung_äöü"
+        assert read(out).config.master.database == "fakturierung_äöü"
 
 
 class TestEditing:
@@ -147,13 +149,6 @@ class TestValidation:
         assert errors
         assert all(isinstance(error, GuiError) for error in errors)
 
-    def test_loading_an_invalid_file_raises_a_gui_error(self, tmp_path):
-        path = tmp_path / "broken.yaml"
-        path.write_text(FULL.replace("dsn_env: QA_INVOICING_DSN", "dsn_ev: QA_INVOICING_DSN"))
-        with pytest.raises(GuiError) as exc:
-            ConfigDocument.load(path)
-        assert "dsn_ev" in str(exc.value)
-
 
 class TestSaveFailures:
     """Review Focus 3: saving can fail, and must not produce a traceback."""
@@ -178,30 +173,6 @@ class TestSaveFailures:
         with pytest.raises(GuiError):
             document.save(tmp_path / "absent" / "out.yaml")
         assert document.dirty is True
-
-
-class TestComments:
-    def test_a_file_with_comments_is_flagged_once(self, tmp_path):
-        """Loading discards comments; saving would drop them silently.
-
-        The application warns rather than quietly rewriting somebody's annotated file.
-        """
-        path = tmp_path / "commented.yaml"
-        path.write_text("# why this exists\n" + FULL)
-        assert ConfigDocument.load(path).had_comments() is True
-
-    def test_a_file_without_comments_is_not_flagged(self, document):
-        assert document.had_comments() is False
-
-    def test_a_hash_inside_a_value_is_not_a_comment(self, tmp_path):
-        path = tmp_path / "hash.yaml"
-        path.write_text(FULL.replace("name: invoicing", "name: invoicing#1"))
-        assert ConfigDocument.load(path).had_comments() is False
-
-    def test_an_indented_comment_is_flagged(self, tmp_path):
-        path = tmp_path / "c.yaml"
-        path.write_text(FULL.replace("  host: db-prod", "  # primary\n  host: db-prod"))
-        assert ConfigDocument.load(path).had_comments() is True
 
 
 SECRET = "postgresql://u:s3cret@h/db"
@@ -246,7 +217,7 @@ class TestFurtherEditing:
         document.add_target("dev")
         out = tmp_path / "e.yaml"
         document.save(out)
-        again = ConfigDocument.load(out).config
+        again = read(out).config
         assert again.master.host == "db-prod-2"
         assert again.master.schemas == ("a-b", "c")
         assert [t.label for t in again.targets] == ["qa", "local", "dev"]
@@ -267,12 +238,6 @@ class TestFurtherEditing:
         assert document.dirty is False
         assert document.path == out
 
-    def test_loading_a_directory_of_configs_is_a_gui_error(self, tmp_path):
-        (tmp_path / "a.yaml").write_text(FULL)
-        (tmp_path / "b.yaml").write_text(FULL)
-        with pytest.raises(GuiError, match="single"):
-            ConfigDocument.load(tmp_path)
-
     def test_sequences_are_indented_under_their_key(self, document):
         assert "  schemas:\n    - cumo-invoicing\n" in document.to_yaml()
 
@@ -283,10 +248,10 @@ class TestFurtherEditing:
         second.mkdir(parents=True)
         (first / "ignores.yaml").write_text("version: 1\n")
         (first / "c.yaml").write_text(FULL + "ignores_file: ignores.yaml\n")
-        document = ConfigDocument.load(first / "c.yaml")
+        document = read(first / "c.yaml")
         out = second / "c.yaml"
         document.save(out)
-        reloaded = ConfigDocument.load(out)
+        reloaded = read(out)
         assert reloaded.config.ignores_file is not None
         assert (second / reloaded.config.ignores_file).resolve() == (
             first / "ignores.yaml"
@@ -347,7 +312,7 @@ class TestPastedConnectionStrings:
         first.mkdir()
         second.mkdir(parents=True)
         (first / "c.yaml").write_text(FULL + "ignores_file: ignores.yaml\n")
-        document = ConfigDocument.load(first / "c.yaml")
+        document = read(first / "c.yaml")
         out = second / "c.yaml"
         document.save(out)
         written = out.read_text()
