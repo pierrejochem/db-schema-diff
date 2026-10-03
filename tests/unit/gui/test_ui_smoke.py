@@ -80,6 +80,7 @@ SOURCE_ROW_FIELDS = [
     "ssh_user",
     "ssh_key",
     "ssh_passphrase_env",
+    "tab",
     "is_master",
     "credential_source",
     "connection_status",
@@ -102,6 +103,7 @@ def make_row(**overrides):
         "ssh_user": "",
         "ssh_key": "",
         "ssh_passphrase_env": "",
+        "tab": 0,
         "is_master": False,
         "credential_source": "unset",
         "connection_status": "",
@@ -271,6 +273,7 @@ def test_a_source_row_round_trips_every_field(window):
         ssh_user="deploy",
         ssh_key="~/.ssh/id_ed25519",
         ssh_passphrase_env="PROD_SSH_PASSPHRASE",
+        tab=1,
         is_master=True,
         credential_source="environment",
         connection_status="ok",
@@ -1272,7 +1275,7 @@ def test_the_master_accent_edge_is_clipped_to_the_card_corners():
     into a tapered sliver. The card clips instead, so the bar is cut along the corner arc.
     """
     source = (UI / "config_tab.slint").read_text()
-    card = source[source.index("for row[i] in root.sources: Rectangle {") :]
+    card = source[source.index("for row[i] in root.sources: card := Rectangle {") :]
     card = card[: card.index("background: Tokens.lime;")]
     assert "border-radius: Tokens.radius-card;" in card
     assert "clip: true;" in card, "the source card must clip, or the accent edge overhangs it"
@@ -1364,3 +1367,66 @@ def test_every_message_the_application_sends_bumps_the_token():
     for setter in ("def _fail", "def _ok"):
         body = source[source.index(setter) : source.index(setter) + 220]
         assert "_announce(" in body, f"{setter} does not go through _announce"
+
+
+# The source card's two tabs, and the controls that belong to each.
+def test_the_card_does_not_own_its_own_tab():
+    """It did once, and that was the bug.
+
+    Every refresh replaces the row model, which rebuilds each repeated card and resets any property
+    the card declared — so the tab jumped back to Database on any edit, any check, and on cancelling
+    the key picker. The tab is state about a source, so it belongs to the view model, keyed by
+    label, like every other per-source thing here.
+    """
+    markup = (UI / "config_tab.slint").read_text()
+    card = markup[markup.index("for row[i] in root.sources: card := Rectangle {") :]
+    assert "property <int> tab" not in card
+    assert "selected: row.tab == 0;" in card
+    assert "root.select-source-tab(row.label, 1);" in card
+
+
+def test_the_database_and_the_gateway_are_on_separate_tabs():
+    markup = (UI / "config_tab.slint").read_text()
+    assert 'label: "Database";' in markup
+    assert "if row.tab == 0: VerticalLayout" in markup
+    assert "if row.tab == 1: VerticalLayout" in markup
+
+
+@pytest.mark.parametrize(
+    ("field", "tab"),
+    [
+        ("host", 0),
+        ("database", 0),
+        ("liquibase schema", 0),
+        ("ssh gateway", 1),
+        ("ssh user", 1),
+        ("ssh key", 1),
+        ("ssh passphrase variable", 1),
+    ],
+)
+def test_every_field_is_on_the_tab_it_belongs_to(field, tab):
+    """A field on the wrong tab is unreachable in practice, and nothing else would notice."""
+    markup = (UI / "config_tab.slint").read_text()
+    first = markup.index("if row.tab == 0: VerticalLayout")
+    second = markup.index("if row.tab == 1: VerticalLayout")
+    where = markup.index(f'label: "{field}";')
+    assert (first < where < second) is (tab == 0)
+
+
+def test_the_tunnel_tab_says_when_one_is_configured():
+    """Otherwise the setting hides behind a tab nobody thinks to open."""
+    markup = (UI / "config_tab.slint").read_text()
+    assert 'row.ssh_host == "" ? "SSH tunnel" : "SSH tunnel ·"' in markup
+
+
+def test_the_tunnel_can_only_be_tested_when_there_is_one():
+    markup = (UI / "config_tab.slint").read_text()
+    button = markup[markup.index('text: "Test tunnel";') :]
+    assert 'enabled: row.ssh_host != "";' in button[: button.index("}")]
+
+
+def test_the_key_field_has_a_file_picker_beside_it():
+    markup = (UI / "config_tab.slint").read_text()
+    key_row = markup[markup.index('label: "ssh key";') :]
+    key_row = key_row[: key_row.index('label: "ssh passphrase')]
+    assert "root.choose-ssh-key(row.label)" in key_row

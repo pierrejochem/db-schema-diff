@@ -69,6 +69,7 @@ SOURCE_ROW_FIELDS = {
     "ssh_user",
     "ssh_key",
     "ssh_passphrase_env",
+    "tab",
     "is_master",
     "credential_source",
     "connection_status",
@@ -1638,3 +1639,276 @@ class TestTheGatewayStaysReadableInTheWindow:
     def test_a_passphrase_that_somehow_reached_a_message_would_still_be_cut(self):
         # The gateway description is safe by construction; this is the layer behind it.
         assert "hunter2" not in app_module._sanitise("sslpassword=hunter2 gateway b:22")
+
+
+class TestTheKeyFilePicker:
+    def test_choosing_a_key_fills_the_field_without_reading_the_file(self, app, tmp_path):
+        """Only the path is taken. Nothing opens the key, here or anywhere in the GUI."""
+        key = tmp_path / "id_ed25519"
+        key.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nsecret-material\n")
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.choose_path = lambda purpose, current: str(key)
+
+        app.window.drive_choose_ssh_key("qa")
+
+        assert app.config.config.targets[0].ssh.private_key == str(key)
+        assert "secret-material" not in everything_rendered(app)
+
+    def test_the_picker_opens_where_the_field_already_points(self, app, tmp_path):
+        asked: list[tuple[str, str]] = []
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_key", str(tmp_path / "old_key"))
+        app.choose_path = lambda purpose, current: asked.append((purpose, current)) or None
+        app.path_dialogs_available = lambda: True
+
+        app.window.drive_choose_ssh_key("qa")
+
+        assert asked == [("ssh-key", str(tmp_path / "old_key"))]
+
+    def test_cancelling_leaves_the_field_alone(self, app, tmp_path):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_key", str(tmp_path / "kept"))
+        app.choose_path = lambda purpose, current: None
+        app.path_dialogs_available = lambda: True
+
+        app.window.drive_choose_ssh_key("qa")
+
+        assert app.config.config.targets[0].ssh.private_key == str(tmp_path / "kept")
+        assert app.window.status_is_error is False
+
+    def test_without_a_dialog_it_says_to_type_the_path(self, app):
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.drive_choose_ssh_key("qa")
+        assert app.window.status_is_error is True
+        assert "type" in app.window.status_message
+
+
+class TestTheTunnelTestButton:
+    def test_a_source_with_no_gateway_is_refused(self, app):
+        """Nothing to test, and the message says which field is missing rather than failing late."""
+        app.window.drive_test_tunnel("qa")
+        assert app.window.status_is_error is True
+        assert "no ssh gateway" in app.window.status_message
+
+    @pytest.mark.asyncio
+    async def test_a_reachable_gateway_is_reported_as_reached(self, app):
+        from cumo_schema_comparer.runner import TunnelStatus
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        answer = TunnelStatus(label="qa", ok=True, detail="gateway bastion.internal:22: reached h")
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        assert app.window.status_is_error is False
+        assert "bastion.internal" in app.window.status_message
+
+    @pytest.mark.asyncio
+    async def test_a_refused_gateway_is_an_error_naming_the_gateway(self, app):
+        from cumo_schema_comparer.runner import TunnelStatus
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        answer = TunnelStatus(
+            label="qa",
+            ok=False,
+            detail="gateway bastion.internal:22: authentication was refused.",
+        )
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        assert app.window.status_is_error is True
+        # The gateway stays legible: this is what the odd "gateway host:port" spelling buys.
+        assert "bastion.internal" in app.window.status_message
+        assert "***" not in app.window.status_message
+
+    @pytest.mark.asyncio
+    async def test_a_passphrase_cannot_reach_the_window_through_the_result(self, app):
+        from cumo_schema_comparer.runner import TunnelStatus
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        answer = TunnelStatus(label="qa", ok=False, detail="refused sslpassword=hunter2")
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        assert "hunter2" not in everything_rendered(app)
+
+
+class TestTheCardTabSurvivesARefresh:
+    """Reported from use: cancelling the key picker jumped the card back to the Database tab.
+
+    The cause was not the dialog. Every refresh replaces the whole row model, which rebuilds each
+    repeated card and resets a property the card owned — so the tab reset on *any* refresh: a field
+    edit, a connection check, anything. Cancelling was simply where nothing else changed to hide it.
+    The tab now belongs to the view model, keyed by label like every other per-source thing here.
+    """
+
+    def tab_of(self, app, label):
+        return next(r for r in rows(app.window.sources) if r["label"] == label)["tab"]
+
+    def test_the_tab_starts_on_the_database(self, app):
+        assert self.tab_of(app, "qa") == 0
+
+    def test_cancelling_the_key_picker_leaves_the_tab_alone(self, app):
+        app.window.drive_select_source_tab("qa", 1)
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.choose_path = lambda purpose, current: None
+        app.path_dialogs_available = lambda: True
+
+        app.window.drive_choose_ssh_key("qa")
+
+        assert self.tab_of(app, "qa") == 1
+
+    def test_choosing_a_key_also_leaves_the_tab_alone(self, app, tmp_path):
+        app.window.drive_select_source_tab("qa", 1)
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.choose_path = lambda purpose, current: str(tmp_path / "id_ed25519")
+
+        app.window.drive_choose_ssh_key("qa")
+
+        assert self.tab_of(app, "qa") == 1
+
+    def test_editing_any_field_leaves_the_tab_alone(self, app):
+        """The general case. The dialog was never special; the refresh was."""
+        app.window.drive_select_source_tab("qa", 1)
+        app.window.source_changed("qa", "host", "db-qa.internal")
+        assert self.tab_of(app, "qa") == 1
+
+    def test_each_card_keeps_its_own_tab(self, app):
+        app.window.drive_select_source_tab("qa", 1)
+        assert self.tab_of(app, "qa") == 1
+        assert self.tab_of(app, "prod") == 0
+
+    def test_a_renamed_source_keeps_the_tab_it_was_on(self, app):
+        app.window.drive_select_source_tab("qa", 1)
+        app.window.source_changed("qa", "label", "qa2")
+        assert self.tab_of(app, "qa2") == 1
+
+
+class TestTypingDoesNotDestroyTheFieldBeingTypedInto:
+    """Reported from use: every text field lost focus after one character.
+
+    Every edit ends in a refresh, and the refresh replaced the whole row model. Replacing a model
+    rebuilds every repeated element under it — including the LineEdit the person was typing into,
+    which is destroyed and recreated empty of focus. Rows are now written into the existing model,
+    and only a change in how many there are rebuilds it.
+
+    Focus itself cannot be observed from here, so what these pin is the thing that destroys it:
+    whether the model survived the edit.
+    """
+
+    def model_id(self, app, name):
+        return id(getattr(app.window, name))
+
+    def test_editing_a_source_keeps_the_same_model(self, app):
+        before = self.model_id(app, "sources")
+        app.window.source_changed("qa", "host", "d")
+        app.window.source_changed("qa", "host", "db")
+        assert self.model_id(app, "sources") == before
+
+    def test_editing_a_source_still_updates_what_it_shows(self, app):
+        """In place, but not inert: the row must still carry the new value."""
+        app.window.source_changed("qa", "host", "db-qa.internal")
+        row = next(r for r in rows(app.window.sources) if r["label"] == "qa")
+        assert row["host"] == "db-qa.internal"
+
+    def test_adding_a_target_does_rebuild_it(self, app):
+        """A different number of rows has to rebuild, and nothing is being typed into then."""
+        before = self.model_id(app, "sources")
+        app.window.add_target()
+        assert self.model_id(app, "sources") != before
+        assert len(rows(app.window.sources)) == 3
+
+    def test_removing_a_target_rebuilds_it_too(self, app):
+        app.window.add_target()
+        before = len(rows(app.window.sources))
+        app.window.remove_target(rows(app.window.sources)[-1]["label"])
+        assert len(rows(app.window.sources)) == before - 1
+
+    def test_a_renamed_source_keeps_the_model_so_the_label_field_keeps_focus(self, app):
+        """The label field is the one that would otherwise rebuild on its own keystrokes."""
+        before = self.model_id(app, "sources")
+        app.window.source_changed("qa", "label", "q")
+        assert self.model_id(app, "sources") == before
+
+    def test_editing_an_ignore_rule_keeps_its_model(self, app):
+        """The rules list has editable fields of its own, and the same refresh behind them.
+
+        A rule has to exist first: with none, the model is never assigned and every read returns a
+        fresh empty default, which would make this pass without proving anything.
+        """
+        app.window.add_rule()
+        rule_id = rows(app.window.rules)[0]["id"]
+        before = self.model_id(app, "rules")
+        app.window.rule_changed(rule_id, "reason", "quartz is runtime state")
+        assert self.model_id(app, "rules") == before
+        assert rows(app.window.rules)[0]["reason"] == "quartz is runtime state"
+
+    def test_the_credentials_model_survives_a_refresh(self, app):
+        """The Store field holds a typed secret and is not bound to the model at all.
+
+        Rebuilding the row would clear it mid-entry, with no indication why.
+        """
+        before = self.model_id(app, "credentials")
+        app.window.source_changed("qa", "host", "x")
+        assert self.model_id(app, "credentials") == before
+
+
+class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
+    """Reported from use: filling in the gateway and pressing Test tunnel raised
+    MissingCredentialsError, with everything filled in except the optional passphrase.
+
+    The error was about the DSN, not the passphrase. The check resolved it only to learn the
+    database's address — but somebody filling in gateway fields has usually not set the database
+    credential yet, so checking an ssh key depended on a secret that has nothing to do with the key.
+    That made the two checks one again, which is the thing this button exists to avoid.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_gateway_is_still_tested_without_a_dsn(self, app, monkeypatch):
+        from cumo_schema_comparer.errors import MissingCredentialsError
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        monkeypatch.setattr(
+            app.credentials,
+            "resolve",
+            mock.Mock(side_effect=MissingCredentialsError("$QA_DSN is not set")),
+        )
+        seen: dict[str, object] = {}
+
+        def record(source, dsn, *, ssh_passphrase=None):
+            seen["dsn"] = dsn
+            from cumo_schema_comparer.runner import TunnelStatus
+
+            return TunnelStatus(label="qa", ok=True, detail="gateway bastion.internal:22: reached")
+
+        with mock.patch("cumo_schema_comparer.runner.check_tunnel", side_effect=record):
+            app.window.drive_test_tunnel("qa")
+            await app.wait_for_idle()
+
+        assert seen["dsn"] is None, "the check should run without a database credential"
+        assert app.window.status_is_error is False
+
+    @pytest.mark.asyncio
+    async def test_a_named_but_unset_passphrase_says_so_in_its_own_words(self, app, monkeypatch):
+        """The library's wording tells people to set it to a libpq connection string, which a key
+        passphrase is not. That sends them to the wrong place."""
+        from cumo_schema_comparer.errors import MissingCredentialsError
+
+        app.window.source_changed("qa", "ssh_host", "bastion.internal")
+        app.window.source_changed("qa", "ssh_passphrase_env", "QA_SSH_PASSPHRASE")
+        monkeypatch.setattr(
+            app.credentials,
+            "resolve_secret",
+            mock.Mock(side_effect=MissingCredentialsError("missing")),
+        )
+
+        app.window.drive_test_tunnel("qa")
+        await app.wait_for_idle()
+
+        message = app.window.status_message
+        assert app.window.status_is_error is True
+        assert "QA_SSH_PASSPHRASE" in message
+        assert "libpq" not in message
+        assert "clear the field" in message

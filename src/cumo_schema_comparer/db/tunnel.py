@@ -131,6 +131,45 @@ def _handler(transport: Any, to_host: str, to_port: int) -> type[socketserver.Ba
     return Handler
 
 
+def probe(
+    ssh: SshRef,
+    *,
+    to_host: str | None = None,
+    to_port: int | None = None,
+    passphrase: Secret | None = None,
+    client_factory: Callable[[], Any] | None = None,
+) -> str:
+    """Try everything the tunnel needs, without touching the database. Returns what it proved.
+
+    With a target, this asks the gateway to open a channel to it. That matters because opening a
+    forward proves nothing on its own: the local listener accepts whatever connects to it, and the
+    channel is only opened when something does. Asking directly exercises the whole chain — host
+    key, authentication, whether forwarding is permitted, and whether the gateway reaches the
+    database — and is the difference between "it let me in" and "this will work".
+
+    Without one, the gateway is still worth testing on its own: somebody filling in these fields has
+    usually not set the database credential yet, and needing it to check an ssh key would make the
+    two checks one again.
+    """
+    paramiko = _paramiko()
+    with _connected(ssh, passphrase, paramiko, client_factory) as client:
+        if to_host is None or to_port is None:
+            return f"{describe(ssh)}: reached and authenticated"
+        transport = client.get_transport()
+        if transport is None:  # pragma: no cover - paramiko sets this on a successful connect
+            raise ConnectionFailed(f"{describe(ssh)}: connected but gave no transport")
+        try:
+            channel = transport.open_channel("direct-tcpip", (to_host, to_port), ("127.0.0.1", 0))
+        except Exception as exc:
+            raise ConnectionFailed(
+                f"{describe(ssh)}: connected, but it would not open a channel to "
+                f"{to_host}:{to_port} ({type(exc).__name__}). The gateway may forbid forwarding, "
+                "or may not reach the database itself."
+            ) from None
+        channel.close()
+    return f"{describe(ssh)}: reached {to_host}:{to_port}"
+
+
 @contextmanager
 def open_tunnel(
     ssh: SshRef,
@@ -146,6 +185,26 @@ def open_tunnel(
     in parallel cannot collide on it.
     """
     paramiko = _paramiko()
+    with _connected(ssh, passphrase, paramiko, client_factory) as client:
+        transport = client.get_transport()
+        if transport is None:  # pragma: no cover - paramiko sets this on a successful connect
+            raise ConnectionFailed(f"{describe(ssh)}: connected but gave no transport")
+        yield from _forwarding(transport, ssh, to_host, to_port)
+
+
+@contextmanager
+def _connected(
+    ssh: SshRef,
+    passphrase: Secret | None,
+    paramiko: Any,
+    client_factory: Callable[[], Any] | None = None,
+) -> Iterator[Any]:
+    """An authenticated client for ``ssh``, closed on the way out.
+
+    Shared by the forward and by :func:`probe`, so that what the button tests is the same sequence
+    the connection performs — a check that authenticates differently from the real thing is worse
+    than no check.
+    """
     client = (client_factory or paramiko.SSHClient)()
 
     known_hosts = Path(ssh.known_hosts or DEFAULT_KNOWN_HOSTS).expanduser()
@@ -187,11 +246,16 @@ def open_tunnel(
         # not under this tool's redaction.
         raise ConnectionFailed(f"{describe(ssh)}: not reachable ({type(exc).__name__})") from None
 
-    transport = client.get_transport()
-    if transport is None:  # pragma: no cover - paramiko sets this on a successful connect
+    try:
+        yield client
+    finally:
         client.close()
-        raise ConnectionFailed(f"{describe(ssh)}: connected but gave no transport")
 
+
+def _forwarding(
+    transport: Any, ssh: SshRef, to_host: str, to_port: int
+) -> Iterator[tuple[str, int]]:
+    """The local listener, for as long as the caller needs it."""
     server = _Forwarder(("127.0.0.1", 0), _handler(transport, to_host, to_port))
     thread = threading.Thread(target=server.serve_forever, name="ssh-tunnel", daemon=True)
     thread.start()
@@ -202,5 +266,4 @@ def open_tunnel(
     finally:
         server.shutdown()
         server.server_close()
-        client.close()
         thread.join(timeout=5)

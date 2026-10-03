@@ -111,7 +111,7 @@ from ..diff.ignores import IgnoreRuleSet
 from ..diff.model import ComparisonReport, DiffOptions
 from ..errors import MissingCredentialsError
 from ..report.json_report import load_report
-from ..runner import CaptureResult, ConnectionStatus
+from ..runner import CaptureResult, ConnectionStatus, TunnelStatus
 from .credentials import CredentialStore
 from .errors import GuiError
 
@@ -189,6 +189,64 @@ class Session:
         if ref is None or not ref.passphrase_env:
             return None
         return self._credentials.resolve_secret(ref.passphrase_env)
+
+    def check_tunnel(self, label: str) -> Coroutine[Any, Any, TunnelStatus]:
+        """Test one source's gateway, without touching the database.
+
+        Takes the same claim as a connection check, so it cannot run beside a comparison and the
+        two cannot report over each other.
+        """
+        source = self._source(label)
+        claim = self._claim()
+
+        async def work() -> TunnelStatus:
+            return await asyncio.get_running_loop().run_in_executor(
+                None, self._check_tunnel_now, source
+            )
+
+        coro = work()
+        return self._watched(claim, coro, self._run(claim, coro))
+
+    def _check_tunnel_now(self, source: SourceRef) -> TunnelStatus:
+        """Blocking half, run off the loop: paramiko is synchronous."""
+        dsn: Dsn | None
+        try:
+            dsn = self._credentials.resolve(source.dsn_env)
+        except MissingCredentialsError:
+            # Not an error here. The DSN only says where the database is, and somebody filling in
+            # gateway fields has usually not set it yet; the gateway is still worth testing. What
+            # could not be tested because of it is said in the result.
+            dsn = None
+        except Exception as exc:
+            log.warning("%s: credential lookup failed (%s)", source.label, type(exc).__name__)
+            return TunnelStatus(
+                label=source.label,
+                ok=False,
+                detail=f"{source.label}: credential lookup failed ({type(exc).__name__})",
+            )
+        try:
+            passphrase = self._ssh_passphrase(source)
+        except MissingCredentialsError:
+            # Named but not set, which *is* a mistake, and worth its own words: the library's
+            # message tells people to set it to a libpq connection string, which it is not.
+            variable = source.ssh.passphrase_env if source.ssh is not None else ""
+            return TunnelStatus(
+                label=source.label,
+                ok=False,
+                detail=(
+                    f"the key passphrase variable ${variable} is named but not set. Set it, store "
+                    "it in the Credentials tab, or clear the field if the key has no passphrase."
+                ),
+            )
+        try:
+            return runner.check_tunnel(source, dsn, ssh_passphrase=passphrase)
+        except Exception as exc:
+            log.warning("%s: tunnel check failed (%s)", source.label, type(exc).__name__)
+            return TunnelStatus(
+                label=source.label,
+                ok=False,
+                detail=f"{source.label}: tunnel check failed ({type(exc).__name__})",
+            )
 
     def check_connection(self, label: str) -> Coroutine[Any, Any, ConnectionStatus]:
         """Check one source. A failure is returned; an unknown label raises ``GuiError``.

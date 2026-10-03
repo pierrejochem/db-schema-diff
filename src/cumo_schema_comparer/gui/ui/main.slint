@@ -110,6 +110,9 @@ export component MainWindow inherits Window {
     callback add-target();
     callback remove-target(string);
     callback check-connection(string);
+    callback test-tunnel(string);
+    callback choose-ssh-key(string);
+    callback select-source-tab(string, int);
     callback check-all();
     callback validate-config();
     callback save-config();
@@ -150,6 +153,11 @@ export component MainWindow inherits Window {
     public function results-heading-shown() -> string { return results-tab.heading-shown; }
     public function drive-select-row(index: int) { results-tab.choose-row(index); }
     public function drive-select-view(index: int) { root.current-view = index; }
+    public function drive-test-tunnel(label: string) { root.test-tunnel(label); }
+    public function drive-choose-ssh-key(label: string) { root.choose-ssh-key(label); }
+    public function drive-select-source-tab(label: string, index: int) {
+        root.select-source-tab(label, index);
+    }
     pure public function view-visible(index: int) -> bool {
         return index == 0 ? config-tab.visible
             : index == 1 ? run-tab.visible
@@ -302,6 +310,9 @@ export component MainWindow inherits Window {
                     add-target => { root.add-target(); }
                     remove-target(l) => { root.remove-target(l); }
                     check-connection(l) => { root.check-connection(l); }
+                    test-tunnel(l) => { root.test-tunnel(l); }
+                    choose-ssh-key(l) => { root.choose-ssh-key(l); }
+                    select-source-tab(l, i) => { root.select-source-tab(l, i); }
                     check-all => { root.check-all(); }
                     validate-config => { root.validate-config(); }
                     save-config => { root.save-config(); }

@@ -314,3 +314,24 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
 
     def test_available_answers_rather_than_raising(self):
         assert tunnel.available() is True
+
+
+class TestProbingWithoutADatabaseAddress:
+    """The gateway is worth testing before the database credential exists."""
+
+    def test_it_authenticates_and_says_only_that(self, monkeypatch, tmp_path):
+        client = FakeClient()
+        monkeypatch.setattr(client, "get_transport", lambda: pytest.fail("should not forward"))
+        proved = tunnel.probe(
+            SshRef(host="bastion.internal", known_hosts=str(tmp_path / "kh")),
+            client_factory=lambda: client,
+        )
+        assert "reached and authenticated" in proved
+        assert client.closed is True
+
+    def test_a_refused_gateway_still_fails(self, tmp_path):
+        with pytest.raises(ConnectionFailed):
+            tunnel.probe(
+                SshRef(host="b", known_hosts=str(tmp_path / "kh")),
+                client_factory=lambda: FakeClient(paramiko.AuthenticationException()),
+            )
