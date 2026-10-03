@@ -221,7 +221,34 @@ class TestFurtherEditing:
         assert again.master.host == "db-prod-2"
         assert again.master.schemas == ("a-b", "c")
         assert [t.label for t in again.targets] == ["qa", "local", "dev"]
-        assert again.targets[2].dsn_env == "DEV_DSN"
+        # Generated from the label rather than typed: nobody is asked to invent a variable name.
+        assert again.targets[2].dsn_env == "CUMO_DEV_DSN"
+
+    def test_two_labels_that_differ_only_in_punctuation_get_separate_variables(self, document):
+        """Punctuation collapses to underscores, so these two generate the same name.
+
+        Filed under one variable they would share one keychain entry — one password for two
+        databases, and the configuration would only *warn* that a target reads the master's
+        credential.
+        """
+        document.add_target("db.qa")
+        document.add_target("db-qa")
+        names = [t.dsn_env for t in document.config.targets[-2:]]
+        assert names == ["CUMO_DB_QA_DSN", "CUMO_DB_QA_2_DSN"]
+
+    def test_a_rename_onto_a_colliding_name_is_separated_too(self, document):
+        document.add_target("db.qa")
+        document.add_target("other")
+        document.update_source("other", "label", "db-qa")
+        envs = {t.label: t.dsn_env for t in document.config.targets}
+        assert envs["db.qa"] != envs["db-qa"]
+
+    def test_a_rename_may_reuse_the_name_the_source_itself_held(self, document):
+        """Its own entry is not a collision: ``qa`` to ``qa`` and back must not drift to ``_2``."""
+        document.add_target("dev")
+        document.update_source("dev", "label", "dev-x")
+        document.update_source("dev-x", "label", "dev")
+        assert document.config.targets[-1].dsn_env == "CUMO_DEV_DSN"
 
     def test_a_comma_separated_string_becomes_schema_names(self, document):
         document.update_source("prod", "schemas", "a, b-c ,")

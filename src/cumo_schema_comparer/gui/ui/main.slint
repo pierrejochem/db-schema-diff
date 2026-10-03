@@ -6,13 +6,12 @@ import { Toast, NavItem, RailLabel } from "widgets.slint";
 import { Tokens } from "tokens.slint";
 import { ConfigTab, SourceRow } from "config_tab.slint";
 import { IgnoresTab, RuleRow } from "ignores_tab.slint";
-import { CredentialsTab, CredentialRow } from "credentials_tab.slint";
 import { AboutTab } from "about_tab.slint";
 import { TunnelDialog, TunnelStep } from "tunnel_dialog.slint";
 import { RunTab, ProgressRow } from "run_tab.slint";
 import { ResultsTab, FindingRow, DeltaRow, DiffLine } from "results_tab.slint";
 
-export { SourceRow, RuleRow, CredentialRow, ProgressRow, FindingRow, DeltaRow, DiffLine }
+export { SourceRow, RuleRow, ProgressRow, FindingRow, DeltaRow, DiffLine }
 export { TunnelStep }
 
 export component MainWindow inherits Window {
@@ -62,7 +61,6 @@ export component MainWindow inherits Window {
     in property <[RuleRow]> default-rules;
     in-out property <bool> case-insensitive-globs;
 
-    in property <[CredentialRow]> credentials;
     in property <bool> keychain-available;
     in property <string> keychain-problem;
 
@@ -123,13 +121,13 @@ export component MainWindow inherits Window {
     callback add-rule();
     callback remove-rule(string);
     callback save-ignores();
-    callback store-credential(string, string);
-    callback forget-credential(string);
 
     callback source-changed(string, string, string);
     callback add-target();
     callback remove-target(string);
     callback check-connection(string);
+    callback store-password(string, string);
+    callback forget-password(string);
     callback test-tunnel(string);
     callback choose-ssh-key(string);
     callback select-source-tab(string, int);
@@ -141,10 +139,6 @@ export component MainWindow inherits Window {
     // the handler it would be testing, so these run the real forwarding chain instead.
     public function ignores-rule-count() -> int { return ignores-tab.rule-count; }
     public function ignores-default-rule-count() -> int { return ignores-tab.default-rule-count; }
-    public function credential-row-count() -> int { return credentials-tab.row-count; }
-    public function drive-store-credential(env-name: string, secret: string) {
-        credentials-tab.submit(env-name, secret);
-    }
 
     public function run-progress-count() -> int { return run-tab.progress-count; }
     public function results-finding-count() -> int { return results-tab.finding-count; }
@@ -173,6 +167,10 @@ export component MainWindow inherits Window {
     public function drive-select-row(index: int) { results-tab.choose-row(index); }
     public function drive-select-view(index: int) { root.current-view = index; }
     public function drive-test-tunnel(label: string) { root.test-tunnel(label); }
+    public function drive-store-password(label: string, secret: string) {
+        config-tab.submit(label, secret);
+    }
+    public function drive-forget-password(label: string) { config-tab.drop(label); }
     public function drive-close-tunnel-dialog() { root.close-tunnel-dialog(); }
     public function tunnel-dialog-open() -> bool { return dialog.visible; }
     public function tunnel-step-count() -> int { return root.tunnel-steps.length; }
@@ -185,11 +183,10 @@ export component MainWindow inherits Window {
             : index == 1 ? run-tab.visible
             : index == 2 ? results-tab.visible
             : index == 3 ? ignores-tab.visible
-            : index == 4 ? credentials-tab.visible
-            : index == 5 ? about-tab.visible
+            : index == 4 ? about-tab.visible
             : false;
     }
-    out property <int> view-count: 6;
+    out property <int> view-count: 5;
     public function run-start-enabled() -> bool { return run-tab.start-enabled; }
     public function run-cancel-enabled() -> bool { return run-tab.cancel-enabled; }
     public function results-banner-kind() -> string { return results-tab.banner-kind; }
@@ -267,14 +264,9 @@ export component MainWindow inherits Window {
                     clicked => { root.current-view = 3; }
                 }
                 NavItem {
-                    label: "Credentials";
+                    label: "About";
                     selected: root.current-view == 4;
                     clicked => { root.current-view = 4; }
-                }
-                NavItem {
-                    label: "About";
-                    selected: root.current-view == 5;
-                    clicked => { root.current-view = 5; }
                 }
 
                 // Takes the slack, so the config block below sits at the foot of the rail.
@@ -312,6 +304,8 @@ export component MainWindow inherits Window {
                     width: root.column-width;
                     height: parent.height;
                     sources: root.sources;
+                    keychain-available: root.keychain-available;
+                    keychain-problem: root.keychain-problem;
                     exclude-schemas-text <=> root.exclude-schemas-text;
                     connect-timeout-seconds <=> root.connect-timeout-seconds;
                     statement-timeout-seconds <=> root.statement-timeout-seconds;
@@ -328,6 +322,8 @@ export component MainWindow inherits Window {
                     add-target => { root.add-target(); }
                     remove-target(l) => { root.remove-target(l); }
                     check-connection(l) => { root.check-connection(l); }
+                    store-password(l, s) => { root.store-password(l, s); }
+                    forget-password(l) => { root.forget-password(l); }
                     test-tunnel(l) => { root.test-tunnel(l); }
                     choose-ssh-key(l) => { root.choose-ssh-key(l); }
                     select-source-tab(l, i) => { root.select-source-tab(l, i); }
@@ -402,23 +398,9 @@ export component MainWindow inherits Window {
                     save-ignores => { root.save-ignores(); }
                     }
 
-                credentials-tab := CredentialsTab {
-                    // Every view is instantiated; the rail chooses which is drawn.
-                    visible: root.current-view == 4;
-                    x: (parent.width - root.column-width) / 2;
-                    width: root.column-width;
-                    height: parent.height;
-                    credentials: root.credentials;
-                    keychain-available: root.keychain-available;
-                    keychain-problem: root.keychain-problem;
-
-                    store-credential(e, s) => { root.store-credential(e, s); }
-                    forget-credential(e) => { root.forget-credential(e); }
-                    }
-
                 about-tab := AboutTab {
                     // Every view is instantiated; the rail chooses which is drawn.
-                    visible: root.current-view == 5;
+                    visible: root.current-view == 4;
                     x: (parent.width - root.column-width) / 2;
                     width: root.column-width;
                     height: parent.height;
