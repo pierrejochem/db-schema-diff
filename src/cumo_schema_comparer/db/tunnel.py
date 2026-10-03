@@ -64,6 +64,15 @@ def _paramiko() -> Any:
     return paramiko
 
 
+def available() -> bool:
+    """Whether the optional extra that provides tunnelling is installed."""
+    try:
+        import paramiko  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def describe(ssh: SshRef) -> str:
     """The gateway, in a form safe to show anywhere.
 

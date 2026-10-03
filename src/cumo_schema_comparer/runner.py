@@ -34,7 +34,7 @@ from .diff.engine import diff_inventories
 from .diff.ignores import IgnoreRuleSet
 from .diff.model import ComparisonReport, DiffOptions, Note, NoteKind, TargetDiff
 from .diff.severity import Severity
-from .errors import ComparerError
+from .errors import ComparerError, ConfigError
 from .model.changelog import ChangelogLocation, ChangelogState
 from .model.inventory import Inventory
 
@@ -88,6 +88,25 @@ def capture(
         log.warning("%s: capture failed", source.label)
         return CaptureResult(label=source.label, error=str(exc))
     return CaptureResult(label=source.label, inventory=inventory)
+
+
+def require_tunnel_support(config: ComparerConfig) -> None:
+    """Fail now, once, if this config needs tunnelling and cannot do it.
+
+    Left to the connection, a missing extra arrives as one probe failure per tunnelled source and
+    exits 3 — the code that means "retry later". Installing a package is not a retry, so this is
+    checked before anything connects and exits 2, which is the code for input that cannot be used.
+    """
+    from .db.tunnel import available
+
+    tunnelled = [source.label for source in config.sources if source.ssh is not None]
+    if not tunnelled or available():
+        return
+    raise ConfigError(
+        f"{', '.join(repr(label) for label in tunnelled)} "
+        f"{'is' if len(tunnelled) == 1 else 'are'} reached through an SSH tunnel, which needs the "
+        "optional 'ssh' extra: pip install 'cumo-db-schema-comparer[ssh]'"
+    )
 
 
 def connection_options(config: ComparerConfig) -> ConnectionOptions:

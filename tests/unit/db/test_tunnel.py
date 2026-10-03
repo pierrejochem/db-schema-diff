@@ -240,3 +240,77 @@ class TestPointingTheConnectionThroughIt:
         )
         assert "hostaddr" not in built
         assert "port=5432" in built
+
+
+class TestAHostaddrTheUserSetThemselves:
+    """A DSN may already pin an IP. Through a tunnel it cannot keep it."""
+
+    def test_the_tunnel_endpoint_replaces_it(self):
+        built = _build_conninfo(
+            Dsn("postgresql://u@db.internal:5432/x?hostaddr=10.0.0.5", env_name="X"),
+            ConnectionOptions(),
+            "1.0",
+            ("127.0.0.1", 5555),
+        )
+        # There is nowhere else for the connection to go: the forward is on loopback. `host` is
+        # still the name the certificate is checked against, which is the part that must survive.
+        assert "hostaddr=127.0.0.1" in built
+        assert "hostaddr=10.0.0.5" not in built
+        assert "host=db.internal" in built
+
+    def test_without_a_tunnel_it_is_left_exactly_as_written(self):
+        built = _build_conninfo(
+            Dsn("postgresql://u@db.internal:5432/x?hostaddr=10.0.0.5", env_name="X"),
+            ConnectionOptions(),
+            "1.0",
+        )
+        assert "hostaddr=10.0.0.5" in built
+
+
+class TestTheExtraIsCheckedBeforeAnythingConnects:
+    """A missing package is not a retryable failure, and must not be reported as one.
+
+    Left to the connection it arrives as one probe failure per tunnelled source and exits 3 — the
+    code CI treats as "try again later". Installing a package is not a try-again.
+    """
+
+    def config(self, *, tunnelled: bool):
+        from cumo_schema_comparer.config.model import ComparerConfig, SourceRef
+
+        return ComparerConfig(
+            version=1,
+            name="n",
+            master=SourceRef(label="prod", dsn_env="PROD_DSN"),
+            targets=(
+                SourceRef(
+                    label="qa",
+                    dsn_env="QA_DSN",
+                    ssh=SshRef(host="b") if tunnelled else None,
+                ),
+            ),
+        )
+
+    def test_it_passes_when_nothing_is_tunnelled(self, monkeypatch):
+        from cumo_schema_comparer import runner
+
+        monkeypatch.setattr(tunnel, "available", lambda: False)
+        runner.require_tunnel_support(self.config(tunnelled=False))
+
+    def test_it_passes_when_the_extra_is_there(self):
+        from cumo_schema_comparer import runner
+
+        runner.require_tunnel_support(self.config(tunnelled=True))
+
+    def test_it_names_the_sources_and_the_extra(self, monkeypatch):
+        from cumo_schema_comparer import runner
+
+        monkeypatch.setattr(tunnel, "available", lambda: False)
+        with pytest.raises(ConfigError) as raised:
+            runner.require_tunnel_support(self.config(tunnelled=True))
+
+        message = str(raised.value)
+        assert "'qa'" in message
+        assert "cumo-db-schema-comparer[ssh]" in message
+
+    def test_available_answers_rather_than_raising(self):
+        assert tunnel.available() is True

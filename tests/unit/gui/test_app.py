@@ -1606,3 +1606,35 @@ class TestSshGateway:
         text = app.config.to_yaml()
         assert "QA_SSH_PASSPHRASE" in text
         assert "passphrase:" not in text
+
+
+class TestTheGatewayStaysReadableInTheWindow:
+    """`_sanitise` redacts any token holding `@` or `://` on its way to a property.
+
+    That is why the tunnel names a gateway as "gateway host:port as user" and not the usual
+    `user@host`. Spelled the usual way the whole token becomes `***`, and a person staring at a
+    failed connection is told nothing at all. The two modules are checked together because each one
+    alone looks correct.
+    """
+
+    def gateway(self, **kwargs):
+        from cumo_schema_comparer.config.model import SshRef
+        from cumo_schema_comparer.db.tunnel import describe
+
+        return describe(SshRef(host="bastion.internal", port=2222, **kwargs))
+
+    def test_a_gateway_failure_survives_sanitising_intact(self):
+        message = f"{self.gateway(user='deploy')}: authentication was refused."
+        cleaned = app_module._sanitise(message)
+        assert "bastion.internal" in cleaned
+        assert "2222" in cleaned
+        assert "deploy" in cleaned
+        assert "***" not in cleaned
+
+    def test_the_usual_spelling_would_not_have_survived(self):
+        """The counter-example, so the reason for the odd spelling is on the record."""
+        assert app_module._sanitise("deploy@bastion.internal:2222 refused") == "*** refused"
+
+    def test_a_passphrase_that_somehow_reached_a_message_would_still_be_cut(self):
+        # The gateway description is safe by construction; this is the layer behind it.
+        assert "hunter2" not in app_module._sanitise("sslpassword=hunter2 gateway b:22")
