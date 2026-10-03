@@ -82,6 +82,26 @@ def resolve_ignores(config: ComparerConfig, config_path: Path | None = None) -> 
     return load_ignores(base / config.ignores_file)
 
 
+def resolve_output_dir(config: ComparerConfig, config_path: Path | None = None) -> Path | None:
+    """Where this config says reports go, as a path. ``None`` when it does not say.
+
+    Resolves relative to the config that named it, exactly as ``ignores_file`` does, so a config
+    directory can be checked out anywhere without rewriting paths. An absolute path is left where
+    it points, and ``~`` is expanded — somebody will type one, and a directory literally named
+    ``~`` is not what they meant.
+
+    The one place this decision is made. Both the command line and the desktop application call
+    it, so neither can disagree with the other about where a config's reports belong.
+    """
+    if config.output_dir is None:
+        return None
+    named = Path(config.output_dir).expanduser()
+    if named.is_absolute():
+        return named
+    base = config_path.parent if config_path is not None else Path()
+    return base / named
+
+
 def _load_one(path: Path) -> ComparerConfig:
     raw = _read_yaml(path)
     try:

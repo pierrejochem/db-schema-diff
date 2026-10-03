@@ -245,6 +245,24 @@ targets:
     liquibase: { schema: cumo-invoicing, table: DATABASECHANGELOG }
 ```
 
+### Where the reports go
+
+A config can name its own output directory, so a service's reports land in the same place on every
+machine with no flag to remember:
+
+```yaml
+output_dir: reports        # relative to this config file
+```
+
+Relative is the form to prefer, for the same reason as `ignores_file`: this file is committed, and
+an absolute path names one machine. An absolute path is accepted and used as written. `--out-dir`
+overrides it, because a flag is what the person asked for now and the file is what the project
+asked for in general.
+
+A config without the field behaves exactly as before — no flag, no files. The desktop application
+writes the field when you choose a directory, so the choice survives a restart, and saving the
+config to another directory rewrites a relative path to keep pointing where it pointed.
+
 ### Quietening expected differences
 
 Some differences are expected rather than wrong. The bundled ruleset already covers Quartz runtime
@@ -308,7 +326,7 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 | `--no-default-ignores` | Suppress nothing by default. |
 | `--show-ignored` | List what the rules suppressed, and which rule did it. |
 | `--html PATH` | Write the standalone HTML report. |
-| `--out-dir DIR` | Write all three machine-readable reports into one directory. |
+| `--out-dir DIR` | Write all three machine-readable reports into one directory. Overrides the config's `output_dir`. |
 | `--sequential` | Capture one source at a time, for debugging. |
 | `--redact-literals` / `--no-redact-literals` | Mask credential-shaped string literals in definition text and in enum labels. **On by default**; see below. |
 

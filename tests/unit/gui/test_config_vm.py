@@ -268,6 +268,30 @@ class TestFurtherEditing:
     def test_sequences_are_indented_under_their_key(self, document):
         assert "  schemas:\n    - cumo-invoicing\n" in document.to_yaml()
 
+    def test_a_sources_connection_is_written_in_the_order_it_is_asked_for(self, document):
+        """A saved file has to stay hand-editable, and that includes reading sensibly.
+
+        Before the connection fields were added to the ordering list, ``port`` was written after
+        ``dsn_env`` while ``host`` sat before it — the fields of one connection split either side
+        of an unrelated key.
+        """
+        for field, value in (
+            ("host", "db-prod"),
+            ("port", 5432),
+            ("user", "cumo"),
+            ("sslmode", "require"),
+        ):
+            document.update_source("prod", field, value)
+        rendered = document.to_yaml()
+        written = [
+            line.strip().split(":")[0]
+            for line in rendered.splitlines()[rendered.splitlines().index("master:") + 1 :]
+            if line.startswith("  ") and not line.startswith("    ")
+        ]
+        connection = [f for f in written if f in {"host", "port", "database", "user", "sslmode"}]
+        assert connection == ["host", "port", "database", "user", "sslmode"]
+        assert written.index("sslmode") < written.index("dsn_env")
+
     def test_ignores_file_is_rewritten_on_save_as_elsewhere(self, tmp_path):
         first = tmp_path / "a"
         second = tmp_path / "b" / "deeper"

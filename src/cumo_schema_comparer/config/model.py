@@ -321,9 +321,30 @@ class ComparerConfig(BaseModel):
     exclude_schemas: tuple[str, ...] = ()
     ignores_file: str | None = None
     """Path to an ignore ruleset, relative to this config file."""
+    output_dir: str | None = None
+    """Where ``compare`` writes its reports, relative to this config file.
+
+    A property of the comparison rather than of one run of it: this service's reports go here.
+    ``--out-dir`` overrides it, because a flag is what the person asked for now and the file is
+    what the project asked for in general.
+
+    Relative by preference, for the same reason as :attr:`ignores_file`: this file may be
+    committed, and an absolute path then names one machine. An absolute path is accepted and left
+    alone. :func:`config.loader.resolve_output_dir` is the only place that decides which it is.
+    """
     ignores: IgnoreConfig | None = None
     """An inline ruleset, for a project small enough not to want a second file."""
     options: Options = Field(default_factory=Options)
+
+    @field_validator("output_dir", "ignores_file")
+    @classmethod
+    def _a_path_is_not_blank(cls, value: str | None) -> str | None:
+        """An empty string would resolve to the config's own directory, which nobody typed."""
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("a path must not be empty")
+        return value
 
     @model_validator(mode="after")
     def _labels_are_unique(self) -> ComparerConfig:
