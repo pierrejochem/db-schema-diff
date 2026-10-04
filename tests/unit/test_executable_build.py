@@ -130,6 +130,11 @@ class TestBuildFlags:
         """
         assert "--no-deployment-flag=self-execution" in self.flags()
 
+    def test_the_c_accelerators_the_plugin_would_drop_are_kept(self):
+        """Without these Python quietly falls back to its slower pure-Python json and bisect."""
+        assert "--include-module=_json" in self.flags()
+        assert "--include-module=_bisect" in self.flags()
+
     def test_the_build_never_waits_for_an_answer(self):
         # A prompt for a toolchain download would hang a CI job or a `make` run with no tty.
         assert "--assume-yes-for-downloads" in self.flags()

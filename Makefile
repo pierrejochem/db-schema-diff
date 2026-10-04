@@ -100,9 +100,15 @@ build: ## Build the wheel and sdist.
 # as an attempt to re-execute itself the way `python -c` would. `-c` is this CLI's short form of
 # --config, so without this the binary refuses its own primary invocation:
 #     Error, the program tried to call itself with '-c' argument: 'config.example.yaml'.
+#
+# --include-module=_json --include-module=_bisect because Nuitka's anti-bloat plugin drops the C
+# accelerators of json and bisect by default, and Python then falls back to its pure-Python
+# versions. Parsing a large Liquibase changelog or a captured inventory goes through json, so the
+# faster implementation is worth the few kilobytes.
 NUITKA_FLAGS := --output-dir=build --assume-yes-for-downloads \
 	--include-package-data=db_schema_diff --nofollow-import-to=mypy \
-	--no-deployment-flag=self-execution
+	--no-deployment-flag=self-execution \
+	--include-module=_json --include-module=_bisect
 
 UNAME_S := $(shell uname -s)
 
