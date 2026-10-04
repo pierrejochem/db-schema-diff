@@ -257,7 +257,7 @@ class TestEmptyTargetIsNotReportedAsClean:
     """An empty target produces one note and zero findings, by design.
 
     Printing "no schema differences" underneath that note reads as reassurance about a database that
-    holds nothing at all. Seen in a real run against the RMV stack.
+    holds nothing at all. Seen in a real run.
     """
 
     def _report(self):

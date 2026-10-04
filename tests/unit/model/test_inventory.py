@@ -181,7 +181,7 @@ class TestEmptinessIgnoresDefaultExtensions:
 class TestKindPlurals:
     """Report headings are user-visible, and a naive plural shows.
 
-    "1 indexs" appeared in a real probe run against the RMV stack.
+    "1 indexs" appeared in a real probe run.
     """
 
     def test_index_pluralises_correctly(self):

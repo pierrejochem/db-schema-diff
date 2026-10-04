@@ -10,7 +10,7 @@ changelog state.
 
 Built for a platform where ~18 independent Spring Boot services each own a database
 on a shared PostgreSQL server and each apply their own Liquibase changelogs across
-`rmv-dev` / `rmv-test` / `rmv-qa` / prod. Nothing else answers *"is qa's schema actually the
+`dev` / `test` / `qa` / prod. Nothing else answers *"is qa's schema actually the
 same as prod's?"* until something fails at runtime.
 
 ## Status
@@ -520,12 +520,12 @@ keeping the dialog out of this process.
 
 Exit **3 takes precedence over 1**: a partial comparison is never reported as a clean gate.
 
-## A worked example: the RMV stack
+## A worked example
 
-`local-qa-env/RMV` runs one PostgreSQL holding a database per service. This walks through
-pointing the comparer at it and reading what comes back.
+Take a PostgreSQL server that holds one database per service. This walks through comparing one
+service's database across environments and reading what comes back.
 
-Bring the stack up, then create a config per service database. Start with `invoicing`, because it is
+Create a config per service database. Start with `invoicing`, because it is
 the awkward one — its Liquibase changelog lives in a hyphenated schema of its own:
 
 ```yaml

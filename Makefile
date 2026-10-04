@@ -1,4 +1,4 @@
-# Development entry points. Mirrors local-qa-env/RMV's Makefile conventions.
+# Development entry points.
 #
 # A Windows virtual environment keeps its programs in Scripts/, everywhere else in bin/. OS is set
 # by Windows itself and is what a `make` run from Git Bash sees. uv wants the interpreter's real

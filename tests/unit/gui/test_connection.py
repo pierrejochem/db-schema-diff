@@ -145,7 +145,7 @@ class TestTheGeneratedVariableName:
         [
             ("qa", "DB_QA_DSN"),
             ("prod", "DB_PROD_DSN"),
-            ("rmv-qa", "DB_RMV_QA_DSN"),
+            ("team-qa", "DB_TEAM_QA_DSN"),
             ("staging 2", "DB_STAGING_2_DSN"),
             ("a.b.c", "DB_A_B_C_DSN"),
             ("--odd--", "DB_ODD_DSN"),
@@ -158,7 +158,7 @@ class TestTheGeneratedVariableName:
         assert connection.variable_name(label) == expected
 
     @pytest.mark.parametrize(
-        "label", ["qa", "rmv-qa", "staging 2", "a.b.c", "--odd--", "", "!!!", "ümlaut"]
+        "label", ["qa", "team-qa", "staging 2", "a.b.c", "--odd--", "", "!!!", "ümlaut"]
     )
     def test_the_result_is_always_a_name_the_config_will_accept(self, label):
         """``config_vm`` refuses a ``dsn_env`` that is not a POSIX variable name, and nobody types

@@ -32,7 +32,7 @@ FIXTURE_SQL = Path(__file__).parent.parent / "fixtures" / "sql"
 MASTER_DB = "master_db"
 TARGET_DB = "target_db"
 POSTGRES_IMAGE = os.environ.get("DB_SCHEMA_DIFF_TEST_IMAGE", "postgres:15")
-"""Mirrors local-qa-env/RMV, which runs postgres:15."""
+"""The default server version; CI also runs 13 and 17."""
 
 
 def docker_available() -> bool:
