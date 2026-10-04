@@ -59,7 +59,9 @@ ssh = [
 # job needs it. `make exe` installs it on demand.
 exe = [
   # 4.2 is the first release that compiles under Python 3.14, which the GUI requires.
-  "nuitka>=4.2,<5",
+  # The onefile extra brings zstandard, which onefile mode compresses its payload with; without it
+  # Nuitka warns and ships an uncompressed binary, several times larger.
+  "nuitka[onefile]>=4.2,<5",
   # Nuitka's Linux standalone mode shells out to `patchelf`. The PyPI wheel ships the binary, so
   # `make exe` needs no system package; the Makefile puts the venv on PATH so Nuitka finds it.
   "patchelf>=0.17; sys_platform == 'linux'",

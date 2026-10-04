@@ -202,6 +202,13 @@ class TestDeclaredDependency:
         assert any(spec.startswith("nuitka") for spec in extras["exe"])
         assert not any("nuitka" in spec for spec in extras["dev"])
 
+    def test_onefile_compression_is_installed_with_nuitka(self):
+        """Without zstandard, onefile mode warns and ships its payload uncompressed."""
+        spec = next(
+            s for s in PYPROJECT["project"]["optional-dependencies"]["exe"] if "nuitka" in s
+        )
+        assert "nuitka[onefile]" in spec
+
     def test_the_pin_rules_out_releases_that_cannot_build_the_gui(self):
         # Nuitka gained Python 3.14 support in 4.2, and the GUI environment is 3.14.
         spec = next(s for s in PYPROJECT["project"]["optional-dependencies"]["exe"])
