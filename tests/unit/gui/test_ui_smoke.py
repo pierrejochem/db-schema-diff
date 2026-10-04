@@ -1548,7 +1548,7 @@ def test_the_rail_carries_the_media_lockup_not_a_text_stand_in():
     # Colour type 6 is RGBA. The lockup is on a transparent ground; an opaque background would
     # show as a slab on the rail.
     assert data[25] == 6
-    assert (width, height) == (780, 320)
+    assert (width, height) == (312, 128)
     assert "* 320 / 780" in shell
 
 

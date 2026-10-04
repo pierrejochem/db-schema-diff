@@ -6,9 +6,11 @@ rather than drawn: the geometry and the palette come from `packaging/logo.py`, w
 colours from `gui/ui/tokens.slint`. The icon and `media/logo-mark.svg` are therefore the same mark,
 and a brand change is one edit in one file.
 
-`sips` resizes and `iconutil` assembles, both of which ship with macOS; this script does nothing
-anywhere else, which is correct, because nothing but macOS consumes an `.icns`. The portable
-outputs are `media/`, written by `make_logo.py`.
+An .icns is a small container -- the bytes `icns`, a total length, then one entry per size made of
+a four-letter type, its own length and a PNG -- so this writes it directly and needs neither `sips`
+nor `iconutil`. That keeps it runnable on any machine, and renders every size from the grid rather
+than shrinking one large image, so the 16 and 32 pixel entries are drawn for the size they are shown
+at.
 
 Run it when the brand changes:
 
@@ -19,67 +21,49 @@ It rewrites packaging/db-schema-diff-gui.icns, which `make exe` passes to --maco
 
 from __future__ import annotations
 
-import subprocess
-import sys
+import struct
+import tempfile
 from pathlib import Path
 
-from logo import GRID, render, write_png
+from logo import render, write_png
 
 HERE = Path(__file__).resolve().parent
 ICNS = HERE / "db-schema-diff-gui.icns"
 
-#: Absolute, because these ship with macOS at fixed locations and a bare name would be
-#: resolved through PATH.
-SIPS = "/usr/bin/sips"
-ICONUTIL = "/usr/bin/iconutil"
+#: Entry type -> pixel size. The `@2x` entries are the same picture at twice the pixels, which is
+#: why a size can appear under two types; each type is a distinct slot the system looks up.
+ENTRIES = (
+    ("icp4", 16),
+    ("icp5", 32),
+    ("ic11", 32),  # 16@2x
+    ("ic12", 64),  # 32@2x
+    ("ic07", 128),
+    ("ic13", 256),  # 128@2x
+    ("ic08", 256),
+    ("ic14", 512),  # 256@2x
+    ("ic09", 512),
+    ("ic10", 1024),  # 512@2x
+)
+
+
+def png_bytes(size: int) -> bytes:
+    with tempfile.TemporaryDirectory() as scratch:
+        path = Path(scratch) / f"{size}.png"
+        write_png(path, size, render(size))
+        return path.read_bytes()
+
+
+def build() -> bytes:
+    rendered = {size: png_bytes(size) for size in sorted({size for _, size in ENTRIES})}
+    body = b"".join(
+        kind.encode("ascii") + struct.pack(">I", 8 + len(rendered[size])) + rendered[size]
+        for kind, size in ENTRIES
+    )
+    return b"icns" + struct.pack(">I", 8 + len(body)) + body
 
 
 def main() -> int:
-    if sys.platform != "darwin":
-        print("iconutil and sips are macOS tools; nothing to do here.", file=sys.stderr)
-        return 0
-
-    iconset = HERE / "db-schema-diff-gui.iconset"
-    iconset.mkdir(exist_ok=True)
-    master = iconset / "icon_512x512@2x.png"
-    write_png(master, GRID, render(GRID))
-
-    # Every size the iconset format asks for, resampled by sips from the one render. Resampling is
-    # acceptable here and not in media/: the Finder and the dock never show these at 16px without
-    # also having the 32 and 64 to pick from, whereas a favicon or a README image is shown at
-    # exactly the size it was written at.
-    for name, pixels in (
-        ("icon_16x16", 16),
-        ("icon_16x16@2x", 32),
-        ("icon_32x32", 32),
-        ("icon_32x32@2x", 64),
-        ("icon_128x128", 128),
-        ("icon_128x128@2x", 256),
-        ("icon_256x256", 256),
-        ("icon_256x256@2x", 512),
-        ("icon_512x512", 512),
-    ):
-        subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [
-                SIPS,
-                "-z",
-                str(pixels),
-                str(pixels),
-                str(master),
-                "--out",
-                str(iconset / f"{name}.png"),
-            ],
-            check=True,
-            capture_output=True,
-        )
-
-    subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [ICONUTIL, "--convert", "icns", str(iconset), "--output", str(ICNS)],
-        check=True,
-    )
-    for leftover in iconset.glob("*.png"):
-        leftover.unlink()
-    iconset.rmdir()
+    ICNS.write_bytes(build())
     print(f"wrote {ICNS.relative_to(HERE.parent)} ({ICNS.stat().st_size // 1024} KB)")
     return 0
 

@@ -29,7 +29,7 @@ change the mark:
 
    ```
    python3 packaging/make_logo.py   # the PNGs here
-   python3 packaging/make_icon.py   # the macOS .icns (macOS only)
+   python3 packaging/make_icon.py   # the macOS .icns
    ```
 
 Every PNG is rendered from the grid at its own size rather than resampled from the 1024, so the

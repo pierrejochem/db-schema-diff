@@ -256,6 +256,9 @@ export component MainWindow inherits Window {
                 // line, on a transparent ground, so it needs no recolouring here. Slint's SVG
                 // support draws no text, hence the raster. A layout supplies the gutter because an
                 // `x` on a layout child is ignored; the height follows the picture's 780:320.
+                // It is drawn at 312px wide for the 152px it is shown at: about twice the pixels, so a
+                // hi-dpi screen has them and a standard one shrinks them by a clean 2:1. The full-size
+                // render was five times too large and the scaler turned it to stair-steps.
                 HorizontalLayout {
                     padding-left: Tokens.space-4;
                     padding-right: Tokens.space-4;
