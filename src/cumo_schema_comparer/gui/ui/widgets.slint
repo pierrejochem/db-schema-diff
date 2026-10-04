@@ -132,15 +132,15 @@ export component Eyebrow inherits Text {
     font-size: Tokens.text-eyebrow;
     font-weight: Tokens.weight-bold;
     letter-spacing: Tokens.tracking-caps;
-    color: Tokens.blue;
+    color: Tokens.accent;
 }
 
-// The same label on the navy rail. Blue on navy fails contrast, so the rail's eyebrows are lime.
+// The same label on the steel rail. Dark blue on steel fails contrast, so the rail's eyebrows are the light accent.
 export component RailLabel inherits Text {
     font-size: Tokens.text-eyebrow;
     font-weight: Tokens.weight-bold;
     letter-spacing: Tokens.tracking-caps;
-    color: Tokens.lime;
+    color: Tokens.accent-light;
 }
 
 // A section: a card surface with an eyebrow heading. Cards never nest — a card inside a card reads
@@ -232,16 +232,16 @@ export component NavItem inherits Rectangle {
     callback clicked();
 
     height: 40px;
-    background: root.selected ? Tokens.navy-selected
-        : touch.has-hover ? Tokens.navy-selected.with-alpha(0.5) : transparent;
+    background: root.selected ? Tokens.steel-selected
+        : touch.has-hover ? Tokens.steel-selected.with-alpha(0.5) : transparent;
 
     touch := TouchArea { clicked => { root.clicked(); } }
 
-    // The selected view is marked in lime, the signature accent, rather than by fill alone.
+    // The selected view is marked in the light accent, the signature accent, rather than by fill alone.
     Rectangle {
         x: 0;
         width: root.selected ? Tokens.space-1 : 0px;
-        background: Tokens.lime;
+        background: Tokens.accent-light;
     }
     Text {
         x: Tokens.space-4;

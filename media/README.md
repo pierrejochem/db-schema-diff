@@ -1,13 +1,13 @@
 # media
 
 The brand mark, in the forms other things can consume. Everything here is one drawing: two columns
-of schema rows, a lime rule between them for the comparison, and one row that is lime and short —
+of schema rows, a light-steel rule between them for the comparison, and one row that is light steel and short —
 the drift the tool exists to find.
 
 | File | Use it for |
 |------|------------|
 | `logo.svg` | The lockup — mark plus wordmark — on a light ground. Docs, slides, the website, a README header. |
-| `logo-inverse.svg` | The same lockup on navy or any dark ground. The mark loses its own ground there, so the rows carry the shape. |
+| `logo-inverse.svg` | The same lockup on steel or any dark ground. The mark loses its own ground there, so the rows carry the shape. |
 | `logo-mark.svg` | The mark alone, square. Avatars, favicons, anywhere the wordmark will not fit. |
 | `logo-mark-mono.svg` | The mark in one ink, rows knocked out of the ground. Single-colour print, stencils, a stamp. Recolour it by changing the single `fill`. |
 | `logo-mark-<n>.png` | The mark where an SVG is not accepted: a Windows or Linux launcher entry, a favicon, a store listing, a Slack or Confluence avatar. |

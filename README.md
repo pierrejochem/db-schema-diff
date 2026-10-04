@@ -1,4 +1,4 @@
-<img src="media/logo.svg" alt="CUMO Schema Diff" width="390">
+<img src="media/logo.svg" alt="DB Schema Diff" width="390">
 
 # cumo-db-schema-comparer
 

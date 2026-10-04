@@ -16,7 +16,7 @@ export { SourceRow, RuleRow, ProgressRow, FindingRow, DeltaRow, DiffLine }
 export { TunnelStep }
 
 export component MainWindow inherits Window {
-    title: "cumo-schema-diff";
+    title: "DB Schema Diff";
     preferred-width: 1320px;
     preferred-height: 820px;
     background: Tokens.page;
@@ -242,32 +242,31 @@ export component MainWindow inherits Window {
     public function drive-open-html() { results-tab.request-open-html(); }
 
     HorizontalLayout {
-        // The navigation rail: a navy surface carrying the wordmark and the five views. The
-        // selected one is marked in lime rather than by fill alone.
+        // The navigation rail: a dark steel surface carrying the wordmark and the five views. The
+        // selected one is marked in the light accent rather than by fill alone.
         Rectangle {
             width: Tokens.rail-width;
-            background: Tokens.navy-rail;
+            background: Tokens.steel-rail;
             VerticalLayout {
                 padding-top: Tokens.space-5;
                 padding-bottom: Tokens.space-4;
                 spacing: Tokens.space-1;
 
-                // The Cubic lockup, mark and wordmark, already white on a transparent ground: it was
-                // cut from the brand's navy slide background, so it needs no recolouring here. A
-                // layout supplies the gutter because an `x` on a layout child is ignored; the
-                // height follows the picture's 410:80.
+                // `media/logo-inverse.svg` rendered to a PNG: mark, wordmark and the SCHEMA DIFF
+                // line, on a transparent ground, so it needs no recolouring here. Slint's SVG
+                // support draws no text, hence the raster. A layout supplies the gutter because an
+                // `x` on a layout child is ignored; the height follows the picture's 780:320.
                 HorizontalLayout {
                     padding-left: Tokens.space-4;
                     padding-right: Tokens.space-4;
                     alignment: start;
                     Image {
-                        source: @image-url("cubic-lockup.png");
+                        source: @image-url("logo-inverse.png");
                         image-fit: contain;
                         width: Tokens.rail-width - 2 * Tokens.space-4;
-                        height: self.width * 80 / 410;
+                        height: self.width * 320 / 780;
                     }
                 }
-                RailLabel { x: Tokens.space-4; text: "SCHEMA DIFF"; }
                 Rectangle { height: Tokens.space-5; }
 
                 NavItem {
@@ -299,7 +298,7 @@ export component MainWindow inherits Window {
                 // Takes the slack, so the config block below sits at the foot of the rail.
                 Rectangle { }
 
-                Rectangle { height: Tokens.hairline-width; background: Tokens.navy-selected; }
+                Rectangle { height: Tokens.hairline-width; background: Tokens.steel-selected; }
                 // No path and no label: the application writes to one place and does not open
                 // files, so a path in the navigation told nobody anything they could act on. What
                 // is still worth saying is whether there is anything unsaved.

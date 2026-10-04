@@ -101,7 +101,7 @@ UNAME_S := $(shell uname -s)
 # Everywhere else, and for the command-line tool on every platform, --onefile is right: one file to
 # copy onto a machine that has no Python.
 ifeq ($(UNAME_S),Darwin)
-GUI_PACKAGING := --standalone --macos-create-app-bundle --macos-app-name="CUMO Schema Diff" \
+GUI_PACKAGING := --standalone --macos-create-app-bundle --macos-app-name="DB Schema Diff" \
 	--macos-app-icon=packaging/cumo-schema-diff-gui.icns
 GUI_ARTIFACT := build/cumo-schema-diff-gui.app
 else

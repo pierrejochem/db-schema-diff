@@ -113,7 +113,7 @@ def test_no_svg_invents_a_colour(name):
         hexed(logo.NAVY),
         hexed(logo.LIME),
         hexed(logo.WHITE),
-        "#5b6a80",  # Tokens.muted, the wordmark's second line.
+        "#5d5d60",  # Tokens.muted, the wordmark's second line.
         "#000000",  # The mask's own alphabet, not a brand colour.
     }
     tree = ET.parse(MEDIA / name)

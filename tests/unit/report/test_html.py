@@ -410,7 +410,7 @@ TOKEN_TO_CSS_VARIABLE = {
     "card": "bg",
     "sunken": "panel",
     "heading": "heading",
-    "blue": "accent",
+    "accent": "accent",
 }
 
 

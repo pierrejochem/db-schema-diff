@@ -260,7 +260,7 @@ class TestMacosAppBundle:
             encoding="utf-8"
         )
         declared = dict(re.findall(r"out property <color> (\S+): #([0-9a-fA-F]{6});", tokens))
-        for name, constant in (("heading", "NAVY"), ("lime", "LIME")):
+        for name, constant in (("heading", "NAVY"), ("accent-light", "LIME")):
             expected = declared[name].lower()
             packed = re.search(rf"^{constant} = \(([^)]+)\)", generator, re.M)
             assert packed, f"{constant} is not defined in the generator"

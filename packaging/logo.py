@@ -31,8 +31,8 @@ from pathlib import Path
 GRID = 1024
 
 # Straight from gui/ui/tokens.slint.
-NAVY = (0x13, 0x2C, 0x5C)
-LIME = (0xAA, 0xDC, 0x23)
+NAVY = (0x1D, 0x2D, 0x3D)
+LIME = (0xB5, 0xD9, 0xFD)
 WHITE = (0xFF, 0xFF, 0xFF)
 
 #: macOS leaves a margin around the art: a 1024px icon is drawn at about 824px, so the ground

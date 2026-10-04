@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="t">
-  <title id="t">CUMO Schema Diff</title>
+  <title id="t">DB Schema Diff</title>
   <!-- One ink. The rows and the rule are knocked out of the ground rather than painted on it, so
        the mark survives a single-colour print, an embroidery file and a stencil, and so `fill`
        on the one <path> recolours the whole thing. -->
@@ -15,5 +15,5 @@
       <rect x="540" y="616" width="292" height="96" rx="48"/>
     </g>
   </mask>
-  <rect x="100" y="100" width="824" height="824" rx="180" fill="#132c5c" mask="url(#rows)"/>
+  <rect x="100" y="100" width="824" height="824" rx="180" fill="#1d2d3d" mask="url(#rows)"/>
 </svg>

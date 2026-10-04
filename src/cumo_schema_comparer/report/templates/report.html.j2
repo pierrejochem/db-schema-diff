@@ -24,18 +24,18 @@
   /* These values are the GUI's design tokens. The two are compared by a test, because a report and
      the window that produced it disagreeing about what "error" looks like is a defect people see. */
   --bg: #ffffff;
-  --panel: #f1f4f8;
-  --border: #dbe2ec;
-  --text: #334155;
-  --heading: #132c5c;
-  --muted: #5b6a80;
-  --accent: #2f6fc4;
+  --panel: #e9e9ea;
+  --border: #d4d4d7;
+  --text: #1d1f20;
+  --heading: #1d2d3d;
+  --muted: #5d5d60;
+  --accent: #416180;
   --error: #b02a30;
   --error-bg: #fce4e5;
   --warning: #8a5a00;
   --warning-bg: #fdf0d8;
-  --info: #1f4e8c;
-  --info-bg: #e3edfb;
+  --info: #2c455d;
+  --info-bg: #d6ebff;
   --ok: #15794a;
   --ok-bg: #dcf6e8;
   /* Named, never fetched. An absent face falls through to the stack behind it. */
@@ -47,21 +47,21 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    /* The dark scheme is the same palette on the brand's deep navy, not a neutral grey: the inks
+    /* The dark scheme is the same palette on deep steel, not a neutral grey: the inks
        are lightened until they clear their own tint, which is the opposite adjustment to light. */
-    --bg: #101c33;
-    --panel: #16243f;
-    --border: #2c3d5e;
-    --text: #dde4ee;
+    --bg: #151f29;
+    --panel: #1d2d3d;
+    --border: #2c455d;
+    --text: #e7e7ea;
     --heading: #ffffff;
-    --muted: #9aa8bf;
-    --accent: #7fb0f0;
+    --muted: #b7b7ba;
+    --accent: #94bce3;
     --error: #ff9c92;
     --error-bg: #5a1f22;
     --warning: #f5cf6b;
     --warning-bg: #4b3a10;
-    --info: #9dc7ff;
-    --info-bg: #1b3763;
+    --info: #b5d9fd;
+    --info-bg: #2c455d;
     --ok: #7ae0a8;
     --ok-bg: #11392a;
   }

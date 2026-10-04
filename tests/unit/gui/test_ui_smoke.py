@@ -1311,12 +1311,13 @@ def test_the_rail_carries_no_file_details():
     """
     shell = (UI / "main.slint").read_text()
     rail = shell[
-        shell.index('@image-url("cubic-lockup.png")') : shell.index("content := Rectangle")
+        shell.index('@image-url("logo-inverse.png")') : shell.index("content := Rectangle")
     ]
     assert "Open…" not in rail
     assert "config-path" not in rail
     assert "unsaved changes" in rail
-    # Blue on navy fails contrast, so rail labels are lime; a plain Eyebrow here would be a defect.
+    # Dark blue on steel fails contrast, so rail labels are the light accent; a plain Eyebrow here
+    # would be a defect.
     assert "Eyebrow {" not in rail
 
 
@@ -1328,7 +1329,7 @@ def test_the_master_accent_edge_is_clipped_to_the_card_corners():
     """
     source = (UI / "config_tab.slint").read_text()
     card = source[source.index("for row[i] in root.sources: card := Rectangle {") :]
-    card = card[: card.index("background: Tokens.lime;")]
+    card = card[: card.index("background: Tokens.accent-light;")]
     assert "border-radius: Tokens.radius-card;" in card
     assert "clip: true;" in card, "the source card must clip, or the accent edge overhangs it"
 
@@ -1537,18 +1538,18 @@ def test_a_card_keeps_its_content_at_the_top_when_stretched():
     assert "alignment: start;" in card
 
 
-def test_the_rail_carries_the_cubic_lockup_not_a_text_stand_in():
+def test_the_rail_carries_the_media_lockup_not_a_text_stand_in():
     shell = (UI / "main.slint").read_text()
-    assert '@image-url("cubic-lockup.png")' in shell
+    assert '@image-url("logo-inverse.png")' in shell
     assert 'text: "cumo"' not in shell
-    data = (UI / "cubic-lockup.png").read_bytes()
+    data = (UI / "logo-inverse.png").read_bytes()
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
     width, height = struct.unpack(">II", data[16:24])
-    # Colour type 6 is RGBA. The lockup is white on transparent; an opaque background would show as
-    # a lighter slab on the rail, because it was cut from a different navy.
+    # Colour type 6 is RGBA. The lockup is on a transparent ground; an opaque background would
+    # show as a slab on the rail.
     assert data[25] == 6
-    assert (width, height) == (410, 80)
-    assert "* 80 / 410" in shell
+    assert (width, height) == (780, 320)
+    assert "* 320 / 780" in shell
 
 
 def test_a_diff_line_starts_at_the_left_even_when_it_is_short():

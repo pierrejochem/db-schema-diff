@@ -30,3 +30,5 @@ htmlcov/
 
 # macOS Finder metadata, created by merely opening a folder.
 .DS_Store
+/docs/superpowers/
+/graphify-out/
