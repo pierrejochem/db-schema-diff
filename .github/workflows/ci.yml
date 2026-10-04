@@ -165,7 +165,7 @@ jobs:
       # `unit` matrix includes 3.11, where slint cannot be installed and every GUI test skips.
       # Measured at 93.32% when the floor was set.
       - run: >-
-          xvfb-run -a env SLINT_BACKEND=winit-software
+          xvfb-run -a env RUST_BACKTRACE=1
           pytest tests/unit/gui -v
           --cov --cov-config=.coveragerc-gui
           --cov-report=term-missing --cov-fail-under=90
