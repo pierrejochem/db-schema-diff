@@ -1,8 +1,7 @@
 # CI for the code this repo owns: the comparer package, its unit tests, and its integration
 # tests against real PostgreSQL containers.
 #
-# Standalone rather than a reusable workflow: cubic-germany/workflows provides ctsd-maven,
-# ctsd-springboot, ctsd-node and ctsd-rn-app, and nothing for Python.
+# Standalone rather than a reusable workflow: there is no shared Python workflow to build on.
 #
 # No job needs a secret, so this runs on forks. The integration jobs deliberately have no
 # `services:` block — testcontainers starts and stops its own containers, which keeps one

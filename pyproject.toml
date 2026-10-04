@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.21"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,11 +8,11 @@ version = "0.2.0"
 description = "Inventory a master PostgreSQL database and compare 1..n other environments for schema drift"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Proprietary" }
-authors = [{ name = "cubic-germany" }]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Pierre Jochem" }]
 keywords = ["postgresql", "schema", "drift", "liquibase", "ci"]
 classifiers = [
-  "Private :: Do Not Upload",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -87,7 +87,7 @@ db-schema-diff-gui = "db_schema_diff.gui.launcher:main"
 packages = ["src/db_schema_diff"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "README.md", "pyproject.toml"]
+include = ["src", "tests", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.ruff]
 line-length = 100

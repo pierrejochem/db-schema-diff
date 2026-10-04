@@ -470,7 +470,7 @@ still there to copy somewhere else.
 `DB_SCHEMA_DIFF_HOME` points the folder somewhere else. The test suite sets it, because a test
 that reads or writes the home directory of whoever runs it has already failed.
 
-The application follows the Cubic design system. Sections are cards with an uppercase eyebrow
+The application follows one design system. Sections are cards with an uppercase eyebrow
 heading; every form label in every view comes from one shared column, so fields line up when you
 move between views; and every list names its columns. On the Results view the findings and the
 detail pane sit side by side above 1000px of content width and stack below it. Every colour, size,
@@ -644,6 +644,11 @@ The logo lives in [`media/`](media/) — an SVG lockup, a light and a dark form,
 and PNGs for anywhere an SVG is not accepted. All of it is generated from `packaging/logo.py`,
 which takes its palette from `src/db_schema_diff/gui/ui/tokens.slint`, so the dock icon, the
 README header and a slide are the same drawing. `media/README.md` says how to change it.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The bundled typefaces are under the SIL Open Font License; their
+license texts sit beside the font files in `src/db_schema_diff/gui/fonts/`.
 
 ## Development
 

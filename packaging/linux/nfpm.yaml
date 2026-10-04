@@ -17,7 +17,7 @@ description: |
   Inventories one master database and compares it with 1..n others, structurally and by
   Liquibase changelog state. Ships the desktop application and the command-line tool.
 homepage: https://github.com/pierrejochem/db-schema-diff
-license: Proprietary
+license: MIT
 
 contents:
   - src: build/db-schema-diff-gui
@@ -28,6 +28,8 @@ contents:
     dst: /usr/bin/db-schema-diff
     file_info:
       mode: 0755
+  - src: LICENSE
+    dst: /usr/share/doc/db-schema-diff/LICENSE
   - src: packaging/linux/db-schema-diff.desktop
     dst: /usr/share/applications/db-schema-diff.desktop
   - src: media/logo-mark-256.png
