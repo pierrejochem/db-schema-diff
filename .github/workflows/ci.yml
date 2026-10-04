@@ -164,6 +164,16 @@ jobs:
       # The GUI carries its own coverage floor, because the default configuration omits it: the
       # `unit` matrix includes 3.11, where slint cannot be installed and every GUI test skips.
       # Measured at 93.32% when the floor was set.
+      - name: Diagnose
+        run: |
+          so=$(python -c "import slint._native as n; print(n.__file__)" 2>&1 | tail -1); echo "$so"
+          python - <<'PY'
+          import glob, subprocess, site
+          for so in glob.glob(site.getsitepackages()[0] + "/slint/*.so"):
+              print(so)
+              print(subprocess.run(["ldd", so], capture_output=True, text=True).stdout)
+          PY
+          xvfb-run -a python -X faulthandler -c "import slint; print('import ok')" || true
       - run: >-
           xvfb-run -a env RUST_BACKTRACE=1
           pytest tests/unit/gui -v
