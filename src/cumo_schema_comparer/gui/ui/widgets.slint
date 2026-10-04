@@ -57,6 +57,7 @@ export component LabelledCheck inherits HorizontalLayout {
     Text {
         text: root.label;
         vertical-alignment: center;
+        overflow: elide;
         font-size: Tokens.text-body;
         color: Tokens.body;
     }
@@ -165,7 +166,7 @@ export component Card inherits Rectangle {
 export component SeverityPill inherits Rectangle {
     in property <string> severity;
 
-    width: 80px;
+    width: Tokens.col-pill;
     height: Tokens.pill-height;
     border-radius: Tokens.radius-pill;
     background: root.severity == "error" ? Tokens.danger-surface
@@ -218,6 +219,7 @@ export component ColumnHead inherits Text {
     letter-spacing: Tokens.tracking-caps;
     color: Tokens.muted;
     vertical-alignment: center;
+    overflow: elide;
 }
 
 // One entry in the navigation rail.

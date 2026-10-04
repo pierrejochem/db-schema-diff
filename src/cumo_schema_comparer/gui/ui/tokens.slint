@@ -107,6 +107,11 @@ export global Tokens {
     out property <length> field-max: 420px;
     out property <length> row-height: 36px;
     out property <length> pill-height: 20px;
+    // The findings list's columns. The header and every row read these, so they cannot drift apart.
+    out property <length> col-target: 80px;
+    out property <length> col-kind: 70px;
+    out property <length> col-status: 90px;
+    out property <length> col-pill: 80px;
 
     // Spacing, on a 4px grid.
     out property <length> space-1: 4px;
