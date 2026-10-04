@@ -56,9 +56,15 @@ whether a column is generated — `pg_attribute.attgenerated` arrived in 12 — 
 of reporting every generated column as drift.
 
 ```sh
-python3.11 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+make venv       # .venv, Python 3.11 — the CLI and its tests
+make venv-gui   # .venv-gui, Python 3.12+ — adds the desktop application
 ```
+
+Both targets use [`uv`](https://docs.astral.sh/uv/) when it is installed, which downloads the exact
+interpreter, so they work the same on macOS and Linux. Without `uv` they need `python3.11` and
+`python3.12` on `PATH`. The desktop application runs on Linux (X11 or Wayland) as well as macOS; the
+**Choose…** pickers need `zenity` or `kdialog`, and storing credentials needs a Secret Service
+keyring (GNOME Keyring, KWallet) — without one the window says so and the environment is used.
 
 ### Standalone executables
 
@@ -78,7 +84,7 @@ or notarized, so Gatekeeper will warn anyone who did not build it themselves. On
 and for the command-line tool everywhere, the output is a single file.
 
 Each target installs Nuitka on demand (the `exe` extra, deliberately out of `dev`: no test or CI
-job compiles anything) and needs a C toolchain — Xcode command line tools on macOS. A build takes
+job compiles anything) and needs a C toolchain — Xcode command line tools on macOS, `gcc` and `patchelf` on Linux. A build takes
 several minutes.
 
 The build passes `--include-package-data=cumo_schema_comparer`, which is not optional. Everything

@@ -11,15 +11,27 @@ PY_GUI := .venv-gui/bin/python
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+# `uv` when present, because it fetches the exact interpreter on any OS -- a Linux box rarely has
+# python3.11 or python3.12 on PATH. Otherwise the versioned interpreter must already be installed.
+HAVE_UV := $(shell command -v uv 2>/dev/null)
+
+# $(call mkvenv,<python version>,<dir>,<pip flags>,<extras>). The extras go in through variables:
+# a literal comma inside a make argument would split it.
+EXTRAS_DEV := .[dev]
+EXTRAS_GUI := .[dev,gui]
+
+ifdef HAVE_UV
+mkvenv = uv venv --clear --python $(1) $(2) && uv pip install --python $(2)/bin/python $(3) -e '$(4)'
+else
+mkvenv = python$(1) -m venv --clear $(2) && $(2)/bin/python -m pip install --upgrade pip && \
+	$(2)/bin/python -m pip install $(3) -e '$(4)'
+endif
+
 venv: ## Create .venv and install the project with dev extras
-	python3.11 -m venv .venv
-	$(PY) -m pip install --upgrade pip
-	$(PY) -m pip install -e '.[dev]'
+	$(call mkvenv,3.11,.venv,,$(EXTRAS_DEV))
 
 venv-gui: ## Create .venv-gui for the desktop application. --pre: every slint release is one.
-	python3.12 -m venv .venv-gui
-	$(PY_GUI) -m pip install --upgrade pip
-	$(PY_GUI) -m pip install --pre -e '.[dev,gui]'
+	$(call mkvenv,3.12,.venv-gui,--pre,$(EXTRAS_GUI))
 
 test: ## Unit tests only. No Docker required.
 	$(PY) -m pytest
