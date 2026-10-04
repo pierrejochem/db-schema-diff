@@ -67,6 +67,14 @@ exe = [
   "patchelf>=0.17; sys_platform == 'linux'",
 ]
 
+# The documentation site (`mkdocs build`). MkDocs is held below 2.0, which drops the plugin system
+# and the theme overrides this site relies on.
+docs = [
+  "mkdocs>=1.6,<2",
+  "mkdocs-material>=9.6,<10",
+  "mkdocs-minify-plugin>=0.8,<1",
+]
+
 [project.scripts]
 db-schema-diff = "db_schema_diff.cli:main"
 db-schema-diff-gui = "db_schema_diff.gui.launcher:main"

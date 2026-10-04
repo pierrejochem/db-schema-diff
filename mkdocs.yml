@@ -1,0 +1,82 @@
+site_name: DB Schema Diff
+site_url: https://pierrejochem.github.io/db-schema-diff/
+site_description: >-
+  Compare PostgreSQL schemas across environments, structurally and by Liquibase changelog state.
+  Desktop app and command-line tool for Linux, macOS and Windows, with a CI gate.
+site_author: Pierre Jochem
+repo_url: https://github.com/pierrejochem/db-schema-diff
+repo_name: pierrejochem/db-schema-diff
+edit_uri: edit/main/documentation/
+docs_dir: documentation
+copyright: Copyright &copy; Pierre Jochem
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: en
+  logo: assets/logo-mark.svg
+  favicon: assets/favicon.png
+  # System fonts: no request to a font CDN, which is faster and sends no visitor data to a third party.
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/pierrejochem/db-schema-diff
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Install: install.md
+      - Worked example: worked-example.md
+  - Use:
+      - Command line: cli.md
+      - Desktop application: desktop.md
+      - Credentials and tunnels: credentials.md
+      - Configuration: configuration.md
+      - Liquibase: liquibase.md
+      - Ignore rules: ignores.md
+  - Reference:
+      - Exit codes: exit-codes.md
+      - Redaction and safe sharing: security.md
+      - FAQ: faq.md
+  - Contribute:
+      - Development: development.md

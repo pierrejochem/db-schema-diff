@@ -2,6 +2,8 @@
 
 # db-schema-diff
 
+**Documentation: <https://pierrejochem.github.io/db-schema-diff/>** · [Releases](https://github.com/pierrejochem/db-schema-diff/releases/latest)
+
 Inventory one **master** PostgreSQL database and compare it against **1..n other
 environments** of the same service to prove they are in sync — structurally and by Liquibase
 changelog state.

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://pierrejochem.github.io/db-schema-diff/sitemap.xml

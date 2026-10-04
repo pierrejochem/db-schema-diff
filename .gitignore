@@ -32,3 +32,5 @@ htmlcov/
 .DS_Store
 /docs/superpowers/
 /graphify-out/
+/site/
+/.venv-docs/

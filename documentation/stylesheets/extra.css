@@ -1,0 +1,22 @@
+/* The application's palette, so the documentation and the window look like one product. */
+:root,
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1d2d3d;
+  --md-primary-fg-color--light: #2c455d;
+  --md-primary-fg-color--dark: #151f29;
+  --md-primary-bg-color: #ffffff;
+  --md-accent-fg-color: #416180;
+  --md-default-bg-color: #f2f2f3;
+  --md-typeset-a-color: #416180;
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1d2d3d;
+  --md-primary-bg-color: #ffffff;
+  --md-accent-fg-color: #94bce3;
+  --md-default-bg-color: #151f29;
+  --md-default-fg-color: #e7e7ea;
+  --md-typeset-a-color: #94bce3;
+}
+.md-typeset h1, .md-typeset h2, .md-typeset h3 { letter-spacing: -0.01em; }
+.md-typeset .md-button { border-radius: 4px; }
+.md-typeset .md-button--primary { background-color: #416180; border-color: #416180; }
