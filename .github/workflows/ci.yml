@@ -150,6 +150,10 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      # Slint's Linux wheel links against system libraries the runner image does not ship; without
+      # libinput the very first `import slint` fails at collection, not at a test.
+      - run: sudo apt-get update && sudo apt-get install -y libinput10 libxkbcommon0 libfontconfig1 libgl1
+
       # --pre is required: every slint Python release is a pre-release. `dev` is not optional
       # either -- without pytest-asyncio the session tests fail rather than skip.
       - run: pip install --pre -e '.[dev,gui]'
@@ -242,7 +246,7 @@ jobs:
           names = {p.name for p in ui.iterdir()}
           assert names >= {
               "main.slint", "widgets.slint", "config_tab.slint",
-              "ignores_tab.slint", "credentials_tab.slint",
+              "ignores_tab.slint", "about_tab.slint", "logo-inverse.png",
               "run_tab.slint", "results_tab.slint",
           }, names
 
