@@ -54,14 +54,16 @@ export component FindingLine inherits Rectangle {
             spacing: Tokens.space-2;
             Text {
                 text: root.data.target;
-                width: 70px;
+                width: Tokens.col-target;
                 vertical-alignment: center;
+                overflow: elide;
                 color: Tokens.body;
             }
             Text {
                 text: root.data.kind;
-                width: 60px;
+                width: Tokens.col-kind;
                 vertical-alignment: center;
+                overflow: elide;
                 font-family: Tokens.family-mono;
                 color: Tokens.muted;
             }
@@ -74,19 +76,24 @@ export component FindingLine inherits Rectangle {
             }
             Text {
                 text: root.data.status;
-                width: 100px;
+                width: Tokens.col-status;
                 vertical-alignment: center;
+                overflow: elide;
                 font-family: Tokens.family-mono;
                 color: Tokens.muted;
             }
             SeverityPill { severity: root.data.severity; }
         }
-        if root.footnote != "": Text {
-            text: root.footnote;
-            x: 70px + Tokens.space-2;
-            font-size: Tokens.text-small;
-            color: Tokens.muted;
-            overflow: elide;
+        // In a layout, because an `x` on a layout child is ignored: this is what puts the footnote
+        // under the kind column and keeps it inside the row.
+        if root.footnote != "": HorizontalLayout {
+            padding-left: Tokens.col-target + Tokens.space-2;
+            Text {
+                text: root.footnote;
+                font-size: Tokens.text-small;
+                color: Tokens.muted;
+                overflow: elide;
+            }
         }
     }
 }
@@ -300,8 +307,10 @@ export component ResultsTab inherits ScrollView {
                     background: root.filter-hides-rows ? Tokens.caution-surface : transparent;
                     Text {
                         x: Tokens.space-3;
+                        width: parent.width - 2 * Tokens.space-3;
                         text: root.findings-summary;
                         vertical-alignment: center;
+                        overflow: elide;
                         font-weight: root.filter-hides-rows ? Tokens.weight-bold
                             : Tokens.weight-regular;
                         color: root.filter-hides-rows ? Tokens.caution : Tokens.body;
@@ -335,10 +344,11 @@ export component ResultsTab inherits ScrollView {
                         padding-left: Tokens.space-1;
                         spacing: Tokens.space-2;
                         height: Tokens.space-5;
-                        ColumnHead { text: "TARGET"; width: 90px; }
-                        ColumnHead { text: "KIND"; width: 80px; }
+                        ColumnHead { text: "TARGET"; width: Tokens.col-target; }
+                        ColumnHead { text: "KIND"; width: Tokens.col-kind; }
                         ColumnHead { text: "OBJECT"; }
-                        ColumnHead { text: "SEVERITY"; width: 70px; }
+                        ColumnHead { text: "STATUS"; width: Tokens.col-status; }
+                        ColumnHead { text: "SEVERITY"; width: Tokens.col-pill; }
                     }
                     for row[i] in root.findings: FindingLine {
                         background: mod(i, 2) == 0 ? transparent : Tokens.stripe;
@@ -403,6 +413,7 @@ export component ResultsTab inherits ScrollView {
                         Text {
                             text: d.severity;
                             width: 70px;
+                            overflow: elide;
                             color: d.severity == "error" ? Tokens.danger
                                 : d.severity == "warning" ? Tokens.caution : Tokens.muted;
                         }

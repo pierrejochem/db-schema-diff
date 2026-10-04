@@ -1479,3 +1479,40 @@ def test_the_key_field_has_a_file_picker_beside_it():
     key_row = markup[markup.index('label: "ssh key";') :]
     key_row = key_row[: key_row.index('label: "ssh passphrase')]
     assert "root.choose-ssh-key(row.label)" in key_row
+
+
+def _text_blocks(source):
+    """Every ``Text { ... }`` body in ``source``, braces balanced."""
+    for match in re.finditer(r"\bText \{", source):
+        depth, end = 1, match.end()
+        while depth:
+            depth += {"{": 1, "}": -1}.get(source[end], 0)
+            end += 1
+        yield source[match.end() : end]
+
+
+def test_a_fixed_width_text_in_the_results_view_elides_rather_than_painting_over_its_neighbour():
+    source = (UI / "results_tab.slint").read_text()
+    for block in _text_blocks(source):
+        if re.search(r"^\s*width: (\d+px|Tokens\.col-\w+);", block, re.M):
+            assert "overflow: elide" in block, block
+
+
+def test_the_findings_header_and_rows_share_their_column_widths():
+    source = (UI / "results_tab.slint").read_text()
+    for column in ("col-target", "col-kind", "col-status", "col-pill"):
+        assert f"width: Tokens.{column}" in source.split("component ResultsTab")[1], column
+    head = source[source.index('title: "FINDINGS"') :]
+    assert head.index('"STATUS"') < head.index('"SEVERITY"')
+
+
+def test_the_filter_summary_and_labels_cannot_run_off_their_card():
+    results = (UI / "results_tab.slint").read_text()
+    at = results.index("text: root.findings-summary")
+    summary = results[results.rindex("Text {", 0, at) : at] + results[at:].split("}")[0]
+    assert "overflow: elide" in summary
+    assert "width: parent.width" in summary
+    widgets = (UI / "widgets.slint").read_text()
+    for component in ("LabelledCheck", "ColumnHead"):
+        body = widgets[widgets.index(f"component {component}") :].split("\n}\n")[0]
+        assert "overflow: elide" in body, component
