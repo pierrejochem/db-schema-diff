@@ -1,0 +1,277 @@
+# Release pipeline: the desktop application and the command-line tool as installable artifacts.
+#
+#   Windows   x64 and arm64      .zip holding both .exe files
+#   Linux     amd64 and arm64    .deb and .rpm, each carrying both programs
+#   macOS     universal          .dmg holding one .app that runs on Intel and Apple silicon
+#
+# Nuitka compiles for the machine it runs on, so every artifact is built on a runner of its own
+# architecture. macOS is the one that needs joining afterwards: an Intel build and an Apple
+# silicon build are merged with `lipo` by packaging/macos_universal.py.
+#
+# Pushing a tag `v<version>` builds everything and publishes a GitHub release; the tag has to match
+# the version in pyproject.toml, so a release can never carry the wrong number. Running the workflow
+# by hand builds everything and keeps the artifacts on the run, which is how to try a change to this
+# file without tagging anything.
+#
+# Nothing is signed or notarized. That needs a certificate for each platform and, with it, secrets;
+# until they exist, Windows SmartScreen and macOS Gatekeeper warn on first launch.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NFPM_VERSION: '2.47.0'
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: read
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re, tomllib
+
+          with open("pyproject.toml", "rb") as handle:
+              version = tomllib.load(handle)["project"]["version"]
+          source = open("src/db_schema_diff/__init__.py", encoding="utf-8").read()
+          module = re.search(r'__version__ = "([^"]+)"', source).group(1)
+          assert version == module, f"pyproject.toml says {version}, __init__.py says {module}"
+
+          ref = os.environ["GITHUB_REF"]
+          if ref.startswith("refs/tags/v"):
+              tag = ref.removeprefix("refs/tags/v")
+              assert tag == version, f"tag v{tag} does not match the package version {version}"
+          print(f"version={version}")
+          PY
+
+  linux:
+    name: linux-${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 rather than latest: a binary links the glibc it was built against and runs on
+          # anything newer, so the oldest runner is the widest compatibility.
+          - { runner: ubuntu-22.04, arch: amd64, nfpm: x86_64 }
+          - { runner: ubuntu-22.04-arm, arch: arm64, nfpm: arm64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Build both programs
+        run: make venv venv-gui exe exe-cli
+
+      - name: Smoke-test the raw binaries
+        run: build/db-schema-diff --version
+
+      - name: Install nfpm
+        run: |
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_${{ matrix.nfpm }}.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin nfpm
+
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir dist
+          nfpm package --config packaging/linux/nfpm.yaml --packager deb --target dist/
+          nfpm package --config packaging/linux/nfpm.yaml --packager rpm --target dist/
+          ls -l dist
+
+      # Installing the .deb pulls in what its Depends line names, so this is the check that the
+      # list is complete: the GUI has to start on a machine that has only those libraries.
+      - name: Install the .deb and start it
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ./dist/*.deb xvfb
+          db-schema-diff --version
+          set +e
+          xvfb-run -a timeout 10 db-schema-diff-gui
+          status=$?
+          # 124 is timeout(1) killing a program that was still running: it started and stayed up.
+          test "$status" -eq 124 || { echo "the GUI exited with $status"; exit 1; }
+
+      - name: Inspect the .rpm
+        run: |
+          sudo apt-get install -y rpm
+          rpm -qpi dist/*.rpm
+          rpm -qpR dist/*.rpm
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: windows-${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, arch: x64 }
+          - { runner: windows-11-arm, arch: arm64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Build both programs
+        run: make venv venv-gui exe exe-cli
+
+      - name: Smoke-test
+        run: build/db-schema-diff.exe --version
+
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Compress-Archive -DestinationPath "dist/db-schema-diff-$env:VERSION-windows-${{ matrix.arch }}.zip" `
+            -Path build/db-schema-diff-gui.exe, build/db-schema-diff.exe, README.md
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  macos-build:
+    name: macos-${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15-intel, arch: x64 }
+          - { runner: macos-latest, arch: arm64 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Build the app bundle
+        run: make venv-gui exe
+
+      # A tarball, because upload-artifact stores files and a bundle's symlinks and permissions
+      # would not survive that.
+      - name: Archive the bundle
+        run: tar -C build -cf macos-${{ matrix.arch }}.tar db-schema-diff-gui.app
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.arch }}-app
+          path: macos-${{ matrix.arch }}.tar
+          if-no-files-found: error
+
+  macos-universal:
+    name: macos-universal
+    needs: [version, macos-build]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: macos-*-app
+          merge-multiple: true
+
+      - name: Merge the two builds
+        run: |
+          mkdir x64 arm64
+          tar -C x64 -xf macos-x64.tar
+          tar -C arm64 -xf macos-arm64.tar
+          python3 packaging/macos_universal.py \
+            x64/db-schema-diff-gui.app arm64/db-schema-diff-gui.app "DB Schema Diff.app"
+
+      # Merging breaks the signatures inside the bundle, and an arm64 binary without a valid one
+      # will not run. Ad hoc is the weakest signature there is, enough to launch on a machine where
+      # the user has approved the app; a Developer ID signature replaces this line.
+      - name: Sign ad hoc and check the architectures
+        run: |
+          codesign --force --deep --sign - "DB Schema Diff.app"
+          codesign --verify --deep --strict "DB Schema Diff.app"
+          main=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "DB Schema Diff.app/Contents/Info.plist")
+          lipo -archs "DB Schema Diff.app/Contents/MacOS/$main"
+          archs=$(lipo -archs "DB Schema Diff.app/Contents/MacOS/$main")
+          case "$archs" in *x86_64*arm64*|*arm64*x86_64*) ;; *) echo "not universal: $archs"; exit 1;; esac
+
+      - name: Start it
+        run: |
+          main=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "DB Schema Diff.app/Contents/Info.plist")
+          python3 - "$main" <<'PY'
+          import subprocess, sys
+
+          process = subprocess.Popen([f"DB Schema Diff.app/Contents/MacOS/{sys.argv[1]}"])
+          try:
+              process.wait(timeout=10)
+          except subprocess.TimeoutExpired:
+              process.kill()  # still running after ten seconds: it started and stayed up
+          else:
+              raise SystemExit(f"the app exited with {process.returncode}")
+          PY
+
+      - name: Build the disk image
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir dmg dist
+          cp -R "DB Schema Diff.app" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "DB Schema Diff" -srcfolder dmg -ov -format UDZO \
+            "dist/db-schema-diff-$VERSION-macos-universal.dmg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-universal
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, linux, windows, macos-universal]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: '{linux-*,windows-*,macos-universal}'
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * | tee SHA256SUMS
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

@@ -1,12 +1,20 @@
 # Development entry points. Mirrors local-qa-env/RMV's Makefile conventions.
-PY := .venv/bin/python
+#
+# A Windows virtual environment keeps its programs in Scripts/, everywhere else in bin/. OS is set
+# by Windows itself and is what a `make` run from Git Bash sees.
+ifeq ($(OS),Windows_NT)
+VENV_BIN := Scripts
+else
+VENV_BIN := bin
+endif
+PY := .venv/$(VENV_BIN)/python
 
 .PHONY: help venv venv-gui test test-integration test-all test-gui test-gui-cov lint fmt typecheck build \
 	gui exe exe-cli clean
 
 # The GUI needs 3.12+ (the Slint binding's floor); the CLI still supports 3.11, so the two
 # environments are separate and only this one has the gui extra.
-PY_GUI := .venv-gui/bin/python
+PY_GUI := .venv-gui/$(VENV_BIN)/python
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -22,10 +30,10 @@ EXTRAS_DEV := .[dev]
 EXTRAS_GUI := .[dev,gui]
 
 ifdef HAVE_UV
-mkvenv = uv venv --clear --python $(1) $(2) && uv pip install --python $(2)/bin/python $(3) -e '$(4)'
+mkvenv = uv venv --clear --python $(1) $(2) && uv pip install --python $(2)/$(VENV_BIN)/python $(3) -e '$(4)'
 else
-mkvenv = python$(1) -m venv --clear $(2) && $(2)/bin/python -m pip install --upgrade pip && \
-	$(2)/bin/python -m pip install $(3) -e '$(4)'
+mkvenv = python$(1) -m venv --clear $(2) && $(2)/$(VENV_BIN)/python -m pip install --upgrade pip && \
+	$(2)/$(VENV_BIN)/python -m pip install $(3) -e '$(4)'
 endif
 
 # Install into an existing venv. A venv made by uv has no pip, so `python -m pip` is not an option.
@@ -118,13 +126,33 @@ GUI_PACKAGING := --onefile --output-filename=db-schema-diff-gui
 GUI_ARTIFACT := build/db-schema-diff-gui
 endif
 
+# Windows is the one platform where the GUI needs more than --onefile: without the console mode
+# flag every launch opens a terminal window behind it, and the icon is what Explorer and the
+# taskbar show. The .exe is spelled out because the artifact name is not otherwise guessable.
+ifeq ($(OS),Windows_NT)
+GUI_PACKAGING := --onefile --output-filename=db-schema-diff-gui.exe \
+	--windows-console-mode=disable --windows-icon-from-ico=packaging/db-schema-diff-gui.ico
+GUI_ARTIFACT := build/db-schema-diff-gui.exe
+CLI_NAME := db-schema-diff.exe
+else
+CLI_NAME := db-schema-diff
+endif
+
+# Nuitka's Linux standalone mode shells out to `patchelf`, which the `exe` extra installs into the
+# venv. The venv is put on PATH for that one call. Only on Linux: a Windows PATH carries drive
+# letters, and a colon-joined entry there splits one.
+ifeq ($(UNAME_S),Linux)
+GUI_ENV := PATH="$(CURDIR)/.venv-gui/bin:$$PATH"
+CLI_ENV := PATH="$(CURDIR)/.venv/bin:$$PATH"
+endif
+
 # -e is not a detail. Installing this project non-editably into a development environment puts a
 # *copy* of the package in site-packages, which then shadows src/ -- Nuitka compiles the copy and
 # the tests exercise the copy, both silently stale. That is exactly how the first working build
 # came out missing a module that had been added minutes earlier.
 exe: ## Build the GUI: a .app bundle on macOS, one file elsewhere. Needs a C toolchain; minutes.
 	$(call pipinstall,$(PY_GUI),--pre,.[gui$(COMMA)exe])
-	PATH="$(CURDIR)/.venv-gui/bin:$$PATH" $(PY_GUI) -m nuitka $(NUITKA_FLAGS) $(GUI_PACKAGING) main.py
+	$(GUI_ENV) $(PY_GUI) -m nuitka $(NUITKA_FLAGS) $(GUI_PACKAGING) main.py
 ifeq ($(UNAME_S),Darwin)
 	rm -rf '$(GUI_ARTIFACT)'
 	mv build/main.app '$(GUI_ARTIFACT)'
@@ -133,7 +161,7 @@ endif
 
 exe-cli: ## Build a single-file CLI executable. Runs on the 3.11 environment, like the CLI itself.
 	$(call pipinstall,$(PY),,.[exe])
-	PATH="$(CURDIR)/.venv/bin:$$PATH" $(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=db-schema-diff main_cli.py
+	$(CLI_ENV) $(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=$(CLI_NAME) main_cli.py
 
 clean:
 	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage

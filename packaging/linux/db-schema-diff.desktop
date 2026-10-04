@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=DB Schema Diff
+GenericName=Database schema comparison
+Comment=Compare PostgreSQL schemas across environments
+Exec=db-schema-diff-gui
+Icon=db-schema-diff
+Terminal=false
+Categories=Development;Database;
+Keywords=postgresql;schema;diff;liquibase;
+StartupWMClass=db-schema-diff-gui

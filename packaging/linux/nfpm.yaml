@@ -1,0 +1,71 @@
+# One description for both Linux package formats; nfpm writes the .deb and the .rpm from it.
+#
+#   VERSION=1.2.3 ARCH=amd64 nfpm package --config packaging/linux/nfpm.yaml --packager deb --target dist/
+#
+# ARCH is the Debian spelling (amd64, arm64); nfpm translates it for the rpm. The binaries are the
+# ones `make exe` and `make exe-cli` leave in build/, built on the machine whose architecture the
+# package declares -- Nuitka does not cross-compile.
+name: db-schema-diff
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: database
+priority: optional
+maintainer: Pierre Jochem <pierrejochem@users.noreply.github.com>
+description: |
+  Compare the schema of PostgreSQL databases across environments.
+  Inventories one master database and compares it with 1..n others, structurally and by
+  Liquibase changelog state. Ships the desktop application and the command-line tool.
+homepage: https://github.com/pierrejochem/db-schema-diff
+license: Proprietary
+
+contents:
+  - src: build/db-schema-diff-gui
+    dst: /usr/bin/db-schema-diff-gui
+    file_info:
+      mode: 0755
+  - src: build/db-schema-diff
+    dst: /usr/bin/db-schema-diff
+    file_info:
+      mode: 0755
+  - src: packaging/linux/db-schema-diff.desktop
+    dst: /usr/share/applications/db-schema-diff.desktop
+  - src: media/logo-mark-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/db-schema-diff.png
+  - src: media/logo-mark-128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/db-schema-diff.png
+  - src: media/logo-mark-64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/db-schema-diff.png
+  - src: media/logo-mark-32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/db-schema-diff.png
+  - src: media/logo-mark-16.png
+    dst: /usr/share/icons/hicolor/16x16/apps/db-schema-diff.png
+
+# The binaries bundle Python and every Python dependency. What they link against is the windowing
+# stack: Slint loads libxkbcommon-x11 and libwayland at run time and links libinput and libgbm,
+# none of which a minimal server install has. The two distributions name the same libraries
+# differently, hence an override per format.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libfontconfig1
+      - libfreetype6
+      - libgbm1
+      - libgl1
+      - libinput10
+      - libwayland-client0
+      - libx11-6
+      - libxkbcommon-x11-0
+      - libxkbcommon0
+  rpm:
+    depends:
+      - fontconfig
+      - freetype
+      - libX11
+      - libinput
+      - libwayland-client
+      - libxkbcommon
+      - libxkbcommon-x11
+      - mesa-libGL
+      - mesa-libgbm
