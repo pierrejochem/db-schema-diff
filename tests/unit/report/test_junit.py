@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 from xml.etree import ElementTree as ET
 
-from db_schema_comparer.report.junit import JUnitReporter
+from db_schema_diff.report.junit import JUnitReporter
 from tests.support.reports import HOSTILE_TEXT, clean_report, full_report
 
 
@@ -160,14 +160,14 @@ class TestHostileCharacters:
 
 class TestCaseCap:
     def _many(self, count):
-        from db_schema_comparer.diff.model import (
+        from db_schema_diff.diff.model import (
             ComparisonReport,
             ObjectFinding,
             ObjectStatus,
             TargetDiff,
         )
-        from db_schema_comparer.diff.severity import Severity
-        from db_schema_comparer.model.keys import table_key
+        from db_schema_diff.diff.severity import Severity
+        from db_schema_diff.model.keys import table_key
 
         findings = tuple(
             ObjectFinding(

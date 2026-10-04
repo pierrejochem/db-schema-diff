@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.diff.model import ObjectStatus
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.model.kinds import ObjectKind
+from db_schema_diff.diff.model import ObjectStatus
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.model.kinds import ObjectKind
 from tests.integration.test_drift_scenarios import attributes_of, summary
 from tests.integration.test_no_drift import compare, inventory_of
 

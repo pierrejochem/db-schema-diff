@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from db_schema_comparer.config.model import SSL_MODES, SourceRef
+from db_schema_diff.config.model import SSL_MODES, SourceRef
 
 
 def source(**overrides) -> SourceRef:

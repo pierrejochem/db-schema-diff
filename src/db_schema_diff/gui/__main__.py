@@ -1,4 +1,4 @@
-"""Makes `python -m db_schema_comparer.gui` work.
+"""Makes `python -m db_schema_diff.gui` work.
 
 A shim only: the start-up itself is in `launcher.py`, because a compiled build cannot import a
 module called `__main__` without colliding with its own. See that module for the details.

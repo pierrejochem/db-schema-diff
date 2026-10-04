@@ -6,7 +6,7 @@ a value means. Both kinds cause silent wrong answers when mis-gated.
 
 import pytest
 
-from db_schema_comparer.db.features import (
+from db_schema_diff.db.features import (
     MINIMUM_VERSION_LABEL,
     MINIMUM_VERSION_NUM,
     ServerFeatures,

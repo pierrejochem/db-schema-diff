@@ -59,7 +59,7 @@ test-gui-cov: ## GUI tests with the floor the `gui` CI job applies.
 		--cov-report=term-missing --cov-fail-under=90
 
 gui: ## Run the desktop application from the current checkout.
-	$(PY_GUI) -m db_schema_comparer.gui
+	$(PY_GUI) -m db_schema_diff.gui
 
 lint: ## Format check, lint and type check.
 	$(PY) -m ruff format --check .
@@ -90,7 +90,7 @@ build: ## Build the wheel and sdist.
 # --config, so without this the binary refuses its own primary invocation:
 #     Error, the program tried to call itself with '-c' argument: 'config.example.yaml'.
 NUITKA_FLAGS := --output-dir=build --assume-yes-for-downloads \
-	--include-package-data=db_schema_comparer --nofollow-import-to=mypy \
+	--include-package-data=db_schema_diff --nofollow-import-to=mypy \
 	--no-deployment-flag=self-execution
 
 UNAME_S := $(shell uname -s)

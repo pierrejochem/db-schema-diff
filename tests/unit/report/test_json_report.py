@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from db_schema_comparer.diff.model import REPORT_SCHEMA_VERSION, ComparisonReport
-from db_schema_comparer.report.json_report import JsonReporter, load_report
+from db_schema_diff.diff.model import REPORT_SCHEMA_VERSION, ComparisonReport
+from db_schema_diff.report.json_report import JsonReporter, load_report
 from tests.support.reports import HOSTILE_TEXT, clean_report, full_report
 
 
@@ -64,9 +64,9 @@ class TestRoundTrip:
 
     def test_a_column_path_containing_a_dot_still_round_trips(self):
         # Table and column names may contain dots; the path has to be split by position.
-        from db_schema_comparer.diff.model import ObjectFinding, ObjectStatus, TargetDiff
-        from db_schema_comparer.diff.severity import Severity
-        from db_schema_comparer.model.keys import column_key
+        from db_schema_diff.diff.model import ObjectFinding, ObjectStatus, TargetDiff
+        from db_schema_diff.diff.severity import Severity
+        from db_schema_diff.model.keys import column_key
 
         key = column_key("acme-invoicing", "odd.name", "col")
         report = ComparisonReport(
@@ -127,14 +127,14 @@ class TestSuppressionIsVisible:
     """
 
     def _report_with_only_suppressed_findings(self):
-        from db_schema_comparer.diff.model import (
+        from db_schema_diff.diff.model import (
             ComparisonReport,
             ObjectFinding,
             ObjectStatus,
             TargetDiff,
         )
-        from db_schema_comparer.diff.severity import Severity
-        from db_schema_comparer.model.keys import table_key
+        from db_schema_diff.diff.severity import Severity
+        from db_schema_diff.model.keys import table_key
         from tests.support.builders import source
 
         return ComparisonReport(
@@ -161,7 +161,7 @@ class TestSuppressionIsVisible:
     def test_the_console_says_a_finding_was_suppressed_even_when_in_sync(self):
         import io
 
-        from db_schema_comparer.report.console import ConsoleReporter
+        from db_schema_diff.report.console import ConsoleReporter
 
         out = io.StringIO()
         ConsoleReporter().render(self._report_with_only_suppressed_findings(), out)
@@ -172,7 +172,7 @@ class TestSuppressionIsVisible:
     def test_show_ignored_lists_them_even_when_nothing_else_is_reported(self):
         import io
 
-        from db_schema_comparer.report.console import ConsoleReporter
+        from db_schema_diff.report.console import ConsoleReporter
 
         out = io.StringIO()
         ConsoleReporter(show_ignored=True).render(self._report_with_only_suppressed_findings(), out)
@@ -190,9 +190,9 @@ class TestChangelogInTheConsoleReport:
     """The Liquibase section must not contradict the schema section."""
 
     def _report(self, *, behind: int):
-        from db_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
-        from db_schema_comparer.diff.model import ComparisonReport, TargetDiff
-        from db_schema_comparer.diff.severity import Severity
+        from db_schema_diff.diff.changelog import ChangelogDiff, ChangelogStatus
+        from db_schema_diff.diff.model import ComparisonReport, TargetDiff
+        from db_schema_diff.diff.severity import Severity
         from tests.support.builders import source
 
         changelog = ChangelogDiff(
@@ -222,7 +222,7 @@ class TestChangelogInTheConsoleReport:
     def _render(self, *, behind: int) -> str:
         import io
 
-        from db_schema_comparer.report.console import ConsoleReporter
+        from db_schema_diff.report.console import ConsoleReporter
 
         out = io.StringIO()
         ConsoleReporter().render(self._report(behind=behind), out)
@@ -261,13 +261,13 @@ class TestEmptyTargetIsNotReportedAsClean:
     """
 
     def _report(self):
-        from db_schema_comparer.diff.model import (
+        from db_schema_diff.diff.model import (
             ComparisonReport,
             Note,
             NoteKind,
             TargetDiff,
         )
-        from db_schema_comparer.diff.severity import Severity
+        from db_schema_diff.diff.severity import Severity
         from tests.support.builders import source
 
         return ComparisonReport(
@@ -293,7 +293,7 @@ class TestEmptyTargetIsNotReportedAsClean:
     def _render(self) -> str:
         import io
 
-        from db_schema_comparer.report.console import ConsoleReporter
+        from db_schema_diff.report.console import ConsoleReporter
 
         out = io.StringIO()
         ConsoleReporter().render(self._report(), out)
@@ -311,8 +311,8 @@ class TestEmptyTargetIsNotReportedAsClean:
     def test_a_genuinely_clean_target_still_says_so(self):
         import io
 
-        from db_schema_comparer.diff.model import ComparisonReport, TargetDiff
-        from db_schema_comparer.report.console import ConsoleReporter
+        from db_schema_diff.diff.model import ComparisonReport, TargetDiff
+        from db_schema_diff.report.console import ConsoleReporter
         from tests.support.builders import source
 
         report = ComparisonReport(

@@ -66,15 +66,15 @@ exe = [
 ]
 
 [project.scripts]
-db-schema-diff = "db_schema_comparer.cli:main"
-db-schema-diff-gui = "db_schema_comparer.gui.launcher:main"
+db-schema-diff = "db_schema_diff.cli:main"
+db-schema-diff-gui = "db_schema_diff.gui.launcher:main"
 
 [tool.hatch.build.targets.wheel]
 # hatchling ships every file inside the package directory, including the .sql query files, the
 # Jinja templates and the bundled YAML. A force-include for them would add each one twice and
 # fail the build. The `build` CI job installs the wheel and loads a query from it, because a
 # packaging mistake here passes every test and fails on first real use.
-packages = ["src/db_schema_comparer"]
+packages = ["src/db_schema_diff"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "tests", "README.md", "pyproject.toml"]
@@ -124,10 +124,10 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["db_schema_comparer"]
+source = ["db_schema_diff"]
 branch = true
 # The GUI is an optional extra. slint cannot be installed on 3.11, which the `unit` matrix
 # includes, so there every GUI test skips and ~1600 statements would count as uncovered and fail
 # the gate. The GUI has its own floor in the `gui` job, which measures it with .coveragerc-gui
 # (same settings, without this omit) on an interpreter that can actually import slint.
-omit = ["*/db_schema_comparer/gui/*"]
+omit = ["*/db_schema_diff/gui/*"]

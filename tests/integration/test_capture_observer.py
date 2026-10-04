@@ -13,17 +13,17 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.build import (
+from db_schema_diff.build import (
     CAPTURE_ROWS,
     CHANGELOG_STEP,
     SCHEMA_STEP,
     STEP_KINDS,
     build_inventory,
 )
-from db_schema_comparer.config.model import SourceRef
-from db_schema_comparer.config.secrets import Dsn
-from db_schema_comparer.db.connect import open_connection
-from db_schema_comparer.model.kinds import ObjectKind
+from db_schema_diff.config.model import SourceRef
+from db_schema_diff.config.secrets import Dsn
+from db_schema_diff.db.connect import open_connection
+from db_schema_diff.model.kinds import ObjectKind
 
 pytestmark = pytest.mark.integration
 

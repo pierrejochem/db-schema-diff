@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from db_schema_comparer.literals import looks_like_connection_string
+from db_schema_diff.literals import looks_like_connection_string
 
 REJECTED = [
     "postgresql://u:s3cret@h/db",

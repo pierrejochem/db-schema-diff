@@ -16,8 +16,8 @@ from unittest import mock
 
 import pytest
 
-from db_schema_comparer import cli as cli_module
-from db_schema_comparer.exit_codes import ExitCode
+from db_schema_diff import cli as cli_module
+from db_schema_diff.exit_codes import ExitCode
 
 CONFIG = textwrap.dedent(
     """
@@ -59,7 +59,7 @@ def run(*args, env=None):
 
 @pytest.fixture
 def without_the_extra(monkeypatch):
-    from db_schema_comparer.db import tunnel
+    from db_schema_diff.db import tunnel
 
     monkeypatch.setattr(tunnel, "available", lambda: False)
 
@@ -80,7 +80,7 @@ def test_a_config_needing_the_extra_is_a_config_error(command, config, without_t
 
 def test_it_fails_before_it_tries_to_connect(config, without_the_extra):
     """Nothing should have been dialled: the answer is the same for every source."""
-    with mock.patch("db_schema_comparer.runner.open_connection") as connect:
+    with mock.patch("db_schema_diff.runner.open_connection") as connect:
         code, _ = run("compare", "-c", str(config), env=DSNS)
     assert code == ExitCode.CONFIG_ERROR
     connect.assert_not_called()

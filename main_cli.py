@@ -7,7 +7,7 @@ which is the floor the command-line tool keeps.
 
 from __future__ import annotations
 
-from db_schema_comparer.cli import main
+from db_schema_diff.cli import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

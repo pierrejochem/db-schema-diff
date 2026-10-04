@@ -17,7 +17,7 @@ import pytest
 
 slint = pytest.importorskip("slint", reason="the GUI extra is not installed")
 
-UI = pathlib.Path(__file__).resolve().parents[3] / "src/db_schema_comparer/gui/ui"
+UI = pathlib.Path(__file__).resolve().parents[3] / "src/db_schema_diff/gui/ui"
 
 
 def slint_files() -> list[pathlib.Path]:
@@ -232,7 +232,7 @@ def test_every_property_exists_and_round_trips(window, name, value):
 
 
 def test_the_property_list_has_one_entry_per_options_field():
-    from db_schema_comparer.config.model import Options
+    from db_schema_diff.config.model import Options
 
     names = {n for n, _ in PROPERTIES}
     assert set(Options.model_fields) <= names, set(Options.model_fields) - names
@@ -512,7 +512,7 @@ def test_a_bundled_default_accepts_input_nowhere(rule_line):
 
 
 def test_the_action_box_offers_exactly_what_the_view_model_accepts(rule_line):
-    from db_schema_comparer.gui.ignores_vm import RULE_ACTIONS
+    from db_schema_diff.gui.ignores_vm import RULE_ACTIONS
 
     assert list(rule_line.action_choices) == ["ignore", "warn", "info"]
     assert set(rule_line.action_choices) == set(RULE_ACTIONS)
@@ -932,7 +932,7 @@ def test_output_directory_binds_both_ways(window):
 def test_the_run_fail_on_choices_are_the_clis(window):
     import typing
 
-    from db_schema_comparer.config.model import FailOn
+    from db_schema_diff.config.model import FailOn
 
     assert tuple(window.run_fail_on_choices().split(",")) == typing.get_args(FailOn)
 
@@ -1036,7 +1036,7 @@ def test_the_markup_labels_lines_through_starts_group_only():
 
 
 def test_the_validator_field_lists_match_the_structs():
-    from db_schema_comparer.gui.results_vm import DELTA_ROW_FIELDS, DIFF_ROW_FIELDS
+    from db_schema_diff.gui.results_vm import DELTA_ROW_FIELDS, DIFF_ROW_FIELDS
 
     assert set(DELTA_ROW_FIELDS) == declared_fields("DeltaRow")
     assert set(DIFF_ROW_FIELDS) == declared_fields("DiffLine")
@@ -1412,7 +1412,7 @@ def test_every_message_the_application_sends_bumps_the_token():
         else ""
     )
     if not source:
-        import db_schema_comparer.gui.app as app_module
+        import db_schema_diff.gui.app as app_module
 
         source = pathlib.Path(app_module.__file__).read_text()
     announce = source[source.index("def _announce") : source.index("def _clear_status")]

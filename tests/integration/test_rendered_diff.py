@@ -18,9 +18,9 @@ import re
 
 import pytest
 
-from db_schema_comparer.diff.model import ComparisonReport
-from db_schema_comparer.report.html import HtmlReporter, _diff_for
-from db_schema_comparer.report.textdiff import DiffKind, unified
+from db_schema_diff.diff.model import ComparisonReport
+from db_schema_diff.report.html import HtmlReporter, _diff_for
+from db_schema_diff.report.textdiff import DiffKind, unified
 from tests.integration.conftest import apply_sql
 from tests.integration.test_no_drift import compare
 
@@ -148,7 +148,7 @@ class TestAGeneratedColumnIsNotADefault:
     def test_a_serial_column_still_shows_its_nextval_default(self, databases):
         # The benign variant: the compared value is a sentinel, so the raw nextval(...) is the only
         # text a reader can see, and it is a real default.
-        from db_schema_comparer.model.objects import SERIAL_SENTINEL
+        from db_schema_diff.model.objects import SERIAL_SENTINEL
         from tests.integration.test_no_drift import inventory_of
 
         databases.setup("base")

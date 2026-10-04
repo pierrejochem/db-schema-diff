@@ -12,11 +12,11 @@ from typing import Any
 
 import pytest
 
-from db_schema_comparer.config.model import SshRef
-from db_schema_comparer.config.secrets import Dsn, Secret
-from db_schema_comparer.db import tunnel
-from db_schema_comparer.db.connect import ConnectionOptions, _build_conninfo, _tunnel_target
-from db_schema_comparer.errors import ConfigError, ConnectionFailed
+from db_schema_diff.config.model import SshRef
+from db_schema_diff.config.secrets import Dsn, Secret
+from db_schema_diff.db import tunnel
+from db_schema_diff.db.connect import ConnectionOptions, _build_conninfo, _tunnel_target
+from db_schema_diff.errors import ConfigError, ConnectionFailed
 
 paramiko = pytest.importorskip("paramiko", reason="the ssh extra is not installed")
 
@@ -275,7 +275,7 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
     """
 
     def config(self, *, tunnelled: bool):
-        from db_schema_comparer.config.model import ComparerConfig, SourceRef
+        from db_schema_diff.config.model import ComparerConfig, SourceRef
 
         return ComparerConfig(
             version=1,
@@ -291,18 +291,18 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
         )
 
     def test_it_passes_when_nothing_is_tunnelled(self, monkeypatch):
-        from db_schema_comparer import runner
+        from db_schema_diff import runner
 
         monkeypatch.setattr(tunnel, "available", lambda: False)
         runner.require_tunnel_support(self.config(tunnelled=False))
 
     def test_it_passes_when_the_extra_is_there(self):
-        from db_schema_comparer import runner
+        from db_schema_diff import runner
 
         runner.require_tunnel_support(self.config(tunnelled=True))
 
     def test_it_names_the_sources_and_the_extra(self, monkeypatch):
-        from db_schema_comparer import runner
+        from db_schema_diff import runner
 
         monkeypatch.setattr(tunnel, "available", lambda: False)
         with pytest.raises(ConfigError) as raised:

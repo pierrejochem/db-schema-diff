@@ -3,7 +3,7 @@
 Defaults are the noisiest thing in a schema comparison, for two reasons.
 
 The server re-prints them from the parse tree, adding parentheses and casts the author never
-wrote. That part is handled by :mod:`db_schema_comparer.normalize.expressions`.
+wrote. That part is handled by :mod:`db_schema_diff.normalize.expressions`.
 
 The second reason is specific to ``serial``. ``id serial`` is not a type: it materialises as
 ``integer NOT NULL DEFAULT nextval('t_id_seq'::regclass)`` plus an ownership link. The

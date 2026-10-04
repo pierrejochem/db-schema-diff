@@ -10,20 +10,20 @@ import inspect
 
 from click.testing import CliRunner
 
-from db_schema_comparer import build as build_module
-from db_schema_comparer import runner
-from db_schema_comparer.build import (
+from db_schema_diff import build as build_module
+from db_schema_diff import runner
+from db_schema_diff.build import (
     _routines,
     build_inventory,
     masked_fields,
     redact_inventory,
 )
-from db_schema_comparer.cli import cli, compare_command, inventory_command
-from db_schema_comparer.config.model import SourceRef
-from db_schema_comparer.diff.attributes import SPECS
-from db_schema_comparer.model.keys import ObjectKey
-from db_schema_comparer.model.kinds import ObjectKind
-from db_schema_comparer.model.objects import Index, IndexKey, RawValues, Routine, UserType
+from db_schema_diff.cli import cli, compare_command, inventory_command
+from db_schema_diff.config.model import SourceRef
+from db_schema_diff.diff.attributes import SPECS
+from db_schema_diff.model.keys import ObjectKey
+from db_schema_diff.model.kinds import ObjectKind
+from db_schema_diff.model.objects import Index, IndexKey, RawValues, Routine, UserType
 from tests.support.builders import col, inventory, table
 
 #: The definition-bearing attributes. The same ``body=True`` flag drives masking, the choice of a
@@ -126,7 +126,7 @@ def test_the_masked_fields_are_exactly_the_pinned_set():
 def test_every_masked_field_exists_on_its_object():
     from dataclasses import fields
 
-    from db_schema_comparer.model import objects as m
+    from db_schema_diff.model import objects as m
 
     classes = {
         ObjectKind.TABLE: m.Table,

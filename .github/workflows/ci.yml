@@ -199,7 +199,7 @@ jobs:
           /tmp/wheel-venv/bin/db-schema-diff compare --help > /dev/null
           /tmp/wheel-venv/bin/python - <<'PY'
           import importlib, pkgutil
-          import db_schema_comparer
+          import db_schema_diff
 
           # Dependencies only the `gui` extra installs. This environment is the CLI's floor
           # (3.11), where slint cannot be installed at all, so a GUI module that imports is a
@@ -210,7 +210,7 @@ jobs:
           missing = []
           found = set()
           for info in pkgutil.walk_packages(
-              db_schema_comparer.__path__, f"{db_schema_comparer.__name__}."
+              db_schema_diff.__path__, f"{db_schema_diff.__name__}."
           ):
               found.add(info.name)
               try:
@@ -223,11 +223,11 @@ jobs:
 
           # Named explicitly: a module absent from the wheel is never walked, so the loop above
           # would pass by saying nothing about it.
-          for name in ("db_schema_comparer.gui.app", "db_schema_comparer.gui.__main__"):
+          for name in ("db_schema_diff.gui.app", "db_schema_diff.gui.__main__"):
               assert name in found, f"{name} is not in the wheel"
 
           # Package data is loaded at run time, so it fails on first real use, not at import.
-          from db_schema_comparer.db.introspect import load_query
+          from db_schema_diff.db.introspect import load_query
 
           for name in ("server", "schemas", "relations", "columns", "constraints", "indexes",
                        "views", "sequences", "routines", "triggers", "types", "extensions",
@@ -235,8 +235,8 @@ jobs:
               assert load_query(name).strip(), name
 
           # The HTML template and the bundled ignore ruleset are package data too.
-          from db_schema_comparer.diff.ignores import load_default_ignores
-          from db_schema_comparer.report.html import load_template_source
+          from db_schema_diff.diff.ignores import load_default_ignores
+          from db_schema_diff.report.html import load_template_source
 
           assert load_template_source().strip()
           assert load_default_ignores().rules
@@ -244,7 +244,7 @@ jobs:
           # The .slint files are loaded at run time, exactly like the Jinja template.
           import importlib.resources as resources
 
-          ui = resources.files("db_schema_comparer.gui").joinpath("ui")
+          ui = resources.files("db_schema_diff.gui").joinpath("ui")
           names = {p.name for p in ui.iterdir()}
           assert names >= {
               "main.slint", "widgets.slint", "config_tab.slint",

@@ -217,7 +217,7 @@ def tunnelling_available() -> bool:
     """Whether SSH tunnelling can be used, for the About view to say so.
 
     Asked through the runner rather than imported here: `tests/unit/gui/test_import_boundary.py`
-    forbids any module under `gui/` from importing `db_schema_comparer.db`, and the tunnel lives
+    forbids any module under `gui/` from importing `db_schema_diff.db`, and the tunnel lives
     there.
     """
     from ..runner import tunnelling_supported

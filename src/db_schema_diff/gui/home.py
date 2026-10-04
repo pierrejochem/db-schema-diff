@@ -4,7 +4,7 @@ A comparison config is a small non-secret YAML naming environment variables, and
 desktop application had nowhere to put one: it took a path on the command line and saved back to it,
 so a config created in the GUI had to be given a location before it could be saved at all.
 
-``~/.db_schema_comparer`` is that place. It is created on start-up and it is where a
+``~/.db_schema_diff`` is that place. It is created on start-up and it is where a
 configuration built in the application is saved.
 
 There is one file, :data:`CONFIG_NAME`, and the application reads it back when it starts. It still
@@ -25,7 +25,7 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 #: The directory name under the user's home.
-DIRECTORY_NAME = ".db_schema_comparer"
+DIRECTORY_NAME = ".db_schema_diff"
 
 #: Points the whole of this module somewhere else. Set by tests, and usable by anyone keeping their
 #: configurations outside their home directory.

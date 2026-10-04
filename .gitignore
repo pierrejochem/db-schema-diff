@@ -2,7 +2,7 @@
 # The build-output patterns are anchored with a leading slash on purpose. hatchling honours
 # .gitignore when deciding what goes into the wheel, so an unanchored `build/` or `config/`
 # silently excludes any package subdirectory of that name — which is how
-# db_schema_comparer/config/ once went missing from the wheel while every test still passed.
+# db_schema_diff/config/ once went missing from the wheel while every test still passed.
 __pycache__/
 *.py[cod]
 *.egg-info/

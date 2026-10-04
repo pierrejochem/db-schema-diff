@@ -15,12 +15,12 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from db_schema_comparer.diff.model import ObjectFinding, ObjectStatus
-from db_schema_comparer.diff.rename import reconcile_renames
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.model.keys import ObjectKey, table_key
-from db_schema_comparer.model.kinds import ObjectKind
-from db_schema_comparer.model.objects import RawValues
+from db_schema_diff.diff.model import ObjectFinding, ObjectStatus
+from db_schema_diff.diff.rename import reconcile_renames
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.model.keys import ObjectKey, table_key
+from db_schema_diff.model.kinds import ObjectKind
+from db_schema_diff.model.objects import RawValues
 
 
 @dataclass(frozen=True, slots=True)

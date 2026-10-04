@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from db_schema_comparer.normalize.redact import MASK_PREFIX, mask_literals
+from db_schema_diff.normalize.redact import MASK_PREFIX, mask_literals
 
 FUNCTION = """CREATE FUNCTION sync() RETURNS void AS $$
 BEGIN

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import io
 
-from db_schema_comparer.diff.model import ComparisonReport
-from db_schema_comparer.report.base import Reporter, render_to_path
-from db_schema_comparer.report.console import ConsoleReporter
+from db_schema_diff.diff.model import ComparisonReport
+from db_schema_diff.report.base import Reporter, render_to_path
+from db_schema_diff.report.console import ConsoleReporter
 
 
 class Fake:

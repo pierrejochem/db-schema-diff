@@ -8,8 +8,8 @@ A stored generated column is the case where that can happen, because its express
 same ``pg_attrdef`` slot as a default and is read by the same ``pg_get_expr(adbin)`` call.
 """
 
-from db_schema_comparer.build import _columns
-from db_schema_comparer.model.objects import SERIAL_SENTINEL
+from db_schema_diff.build import _columns
+from db_schema_diff.model.objects import SERIAL_SENTINEL
 
 
 def column(**row):

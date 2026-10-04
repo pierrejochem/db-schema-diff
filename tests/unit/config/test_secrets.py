@@ -5,9 +5,9 @@ from typing import ClassVar
 
 import pytest
 
-from db_schema_comparer.config.secrets import Dsn, resolve_dsn
-from db_schema_comparer.errors import MissingCredentialsError
-from db_schema_comparer.logging_setup import RedactingFilter
+from db_schema_diff.config.secrets import Dsn, resolve_dsn
+from db_schema_diff.errors import MissingCredentialsError
+from db_schema_diff.logging_setup import RedactingFilter
 
 SECRET = "sup3rs3cret"
 URI = f"postgresql://app:{SECRET}@db-prod.example:5432/invoicing?sslmode=require"
@@ -227,14 +227,14 @@ class TestFailClosed:
         assert Dsn(raw, env_name="X").safe_summary() == {"source": "$X", "parsed": "unparseable"}
 
     def test_dbname_with_slash_at_or_colon_fails_closed(self):
-        from db_schema_comparer.config import secrets
+        from db_schema_diff.config import secrets
 
         for bad in ("a@b", "a/b", "a:b"):
             assert secrets._looks_misparsed({"dbname": bad})
 
     @pytest.mark.parametrize("password", HOSTILE)
     def test_hostile_passwords_never_leak(self, password):
-        from db_schema_comparer.db.connect import _failure_message
+        from db_schema_diff.db.connect import _failure_message
 
         dsn = Dsn(f"postgresql://u:{password}@nohost.invalid:5432/db", env_name="X")
         summary = dsn.safe_summary()

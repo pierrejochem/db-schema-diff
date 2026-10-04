@@ -2,7 +2,7 @@
 
 This module has one job and one rule. The job is to run SQL and hand back raw rows. The rule is
 that it **never normalises anything** — no type aliasing, no expression canonicalisation, no
-sentinel substitution. All of that lives in :mod:`db_schema_comparer.normalize`, and keeping
+sentinel substitution. All of that lives in :mod:`db_schema_diff.normalize`, and keeping
 the two apart is what makes normalisation testable without a database and introspection
 testable without caring how values are canonicalised.
 

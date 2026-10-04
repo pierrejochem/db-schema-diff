@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from db_schema_comparer.gui import dialogs
+from db_schema_diff.gui import dialogs
 
 
 @pytest.fixture

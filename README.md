@@ -87,7 +87,7 @@ Each target installs Nuitka on demand (the `exe` extra, deliberately out of `dev
 job compiles anything) and needs a C toolchain — Xcode command line tools on macOS, `gcc` on Linux (`patchelf` comes with the `exe` extra). A build takes
 several minutes.
 
-The build passes `--include-package-data=db_schema_comparer`, which is not optional. Everything
+The build passes `--include-package-data=db_schema_diff`, which is not optional. Everything
 this program reads at run time is package data loaded through `importlib.resources`: the catalog
 queries, the report templates, the bundled ignore ruleset, the `.slint` markup and the typefaces.
 Nuitka ships none of it by default, so without that flag the build succeeds and the binary fails on
@@ -427,7 +427,7 @@ already connected is abandoned rather than interrupted — PostgreSQL work in fl
 
 ### Where it keeps configurations
 
-On start-up it creates `~/.db_schema_comparer` if it is missing, reads `config.yaml` from it if
+On start-up it creates `~/.db_schema_diff` if it is missing, reads `config.yaml` from it if
 that file is there, and **Save** writes it back. One file, always the same path.
 
 **There is still no Open button**, and a path on the command line is refused with a message rather
@@ -622,7 +622,7 @@ capture or `--baseline` file keeps working.
 
 The logo lives in [`media/`](media/) — an SVG lockup, a light and a dark form, the mark on its own,
 and PNGs for anywhere an SVG is not accepted. All of it is generated from `packaging/logo.py`,
-which takes its palette from `src/db_schema_comparer/gui/ui/tokens.slint`, so the dock icon, the
+which takes its palette from `src/db_schema_diff/gui/ui/tokens.slint`, so the dock icon, the
 README header and a slide are the same drawing. `media/README.md` says how to change it.
 
 ## Development

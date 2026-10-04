@@ -1,6 +1,6 @@
 """Command-line surface.
 
-This module wires click to :mod:`db_schema_comparer.runner` and does nothing else: no
+This module wires click to :mod:`db_schema_diff.runner` and does nothing else: no
 introspection, no diffing, no reporting. Keeping the logic out of here is what lets the
 commands be tested through their collaborators instead of through click.
 

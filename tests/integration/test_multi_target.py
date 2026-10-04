@@ -17,7 +17,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from db_schema_comparer.exit_codes import ExitCode
+from db_schema_diff.exit_codes import ExitCode
 from tests.integration.conftest import MASTER_DB, TARGET_DB, apply_sql, dsn_for
 
 pytestmark = pytest.mark.integration

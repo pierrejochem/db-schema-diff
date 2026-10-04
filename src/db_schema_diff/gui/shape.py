@@ -1,6 +1,6 @@
 """Credential-shape detection for the GUI.
 
-The implementation lives in :mod:`db_schema_comparer.literals` because build-time code
+The implementation lives in :mod:`db_schema_diff.literals` because build-time code
 needs it too, and no library module may import from ``gui``. This module stays so GUI callers and
 their tests keep one import path.
 """

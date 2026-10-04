@@ -6,12 +6,12 @@ added line. ``tests/integration/test_rendered_diff.py`` is the assertion that pr
 path; these pin the engine's half of it without a database.
 """
 
-from db_schema_comparer.diff.attributes import SPECS
-from db_schema_comparer.diff.engine import diff_inventories
-from db_schema_comparer.model.keys import ObjectKey
-from db_schema_comparer.model.kinds import ObjectKind
-from db_schema_comparer.model.objects import RawValues, View
-from db_schema_comparer.normalize.routines import canonical_body
+from db_schema_diff.diff.attributes import SPECS
+from db_schema_diff.diff.engine import diff_inventories
+from db_schema_diff.model.keys import ObjectKey
+from db_schema_diff.model.kinds import ObjectKind
+from db_schema_diff.model.objects import RawValues, View
+from db_schema_diff.normalize.routines import canonical_body
 from tests.support.builders import col, inventory, table
 
 PRINTED = " SELECT i.id,\n    i.total\n   FROM invoice i\n  WHERE i.open;"

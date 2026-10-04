@@ -13,17 +13,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from db_schema_comparer.model.changelog import (
+from db_schema_diff.model.changelog import (
     ChangelogLocation,
     ChangelogState,
     ChangeSetRow,
 )
-from db_schema_comparer.model.inventory import Inventory, SourceInfo
-from db_schema_comparer.model.keys import ObjectKey, column_key, table_key
-from db_schema_comparer.model.kinds import ObjectKind
-from db_schema_comparer.model.objects import Column, RawValues, Routine, Table
-from db_schema_comparer.normalize.routines import body_hash as hash_body
-from db_schema_comparer.normalize.routines import canonical_body
+from db_schema_diff.model.inventory import Inventory, SourceInfo
+from db_schema_diff.model.keys import ObjectKey, column_key, table_key
+from db_schema_diff.model.kinds import ObjectKind
+from db_schema_diff.model.objects import Column, RawValues, Routine, Table
+from db_schema_diff.normalize.routines import body_hash as hash_body
+from db_schema_diff.normalize.routines import canonical_body
 
 CAPTURED_AT = datetime(2026, 1, 15, 9, 30, tzinfo=UTC)
 

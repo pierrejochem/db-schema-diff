@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.model.inventory import Inventory
-from db_schema_comparer.model.keys import ObjectKey
-from db_schema_comparer.model.kinds import AUTO_NAMED_KINDS, ObjectKind
-from db_schema_comparer.model.objects import Constraint, Index, IndexKey, RawValues
+from db_schema_diff.model.inventory import Inventory
+from db_schema_diff.model.keys import ObjectKey
+from db_schema_diff.model.kinds import AUTO_NAMED_KINDS, ObjectKind
+from db_schema_diff.model.objects import Constraint, Index, IndexKey, RawValues
 from tests.support.builders import inventory
 
 
@@ -195,7 +195,7 @@ class TestRoundTrip:
 
 class TestRoutineProperties:
     def _routine(self, **overrides):
-        from db_schema_comparer.model.objects import Routine
+        from db_schema_diff.model.objects import Routine
 
         key = ObjectKey(ObjectKind.ROUTINE, "acme-invoicing", "f(integer)")
         return Routine(key=key, **overrides)
@@ -229,7 +229,7 @@ class TestRoutineProperties:
 
 class TestTriggerProperties:
     def _trigger(self, **overrides):
-        from db_schema_comparer.model.objects import Trigger
+        from db_schema_diff.model.objects import Trigger
 
         key = ObjectKey(ObjectKind.TRIGGER, "public", "invoice", "stamp")
         return Trigger(key=key, **overrides)
@@ -259,7 +259,7 @@ class TestUserTypeProperties:
         ],
     )
     def test_each_type_kind_has_a_label(self, typtype, label):
-        from db_schema_comparer.model.objects import UserType
+        from db_schema_diff.model.objects import UserType
 
         key = ObjectKey(ObjectKind.ENUM_TYPE, "public", "t")
         assert UserType(key=key, typtype=typtype).kind_label == label
@@ -267,8 +267,8 @@ class TestUserTypeProperties:
 
 class TestViewAndSequenceRoundTrip:
     def test_a_view_survives_the_json_round_trip(self):
-        from db_schema_comparer.model.inventory import Inventory
-        from db_schema_comparer.model.objects import View
+        from db_schema_diff.model.inventory import Inventory
+        from db_schema_diff.model.objects import View
         from tests.support.builders import inventory
 
         key = ObjectKey(ObjectKind.VIEW, "acme-invoicing", "invoice_summary")
@@ -281,8 +281,8 @@ class TestViewAndSequenceRoundTrip:
         assert restored.objects[key] == original
 
     def test_a_sequence_survives_the_json_round_trip(self):
-        from db_schema_comparer.model.inventory import Inventory
-        from db_schema_comparer.model.objects import Sequence
+        from db_schema_diff.model.inventory import Inventory
+        from db_schema_diff.model.objects import Sequence
         from tests.support.builders import inventory
 
         key = ObjectKey(ObjectKind.SEQUENCE, "acme-invoicing", "reference_seq")
@@ -291,8 +291,8 @@ class TestViewAndSequenceRoundTrip:
         assert restored.objects[key] == original
 
     def test_a_trigger_survives_the_json_round_trip(self):
-        from db_schema_comparer.model.inventory import Inventory
-        from db_schema_comparer.model.objects import Trigger
+        from db_schema_diff.model.inventory import Inventory
+        from db_schema_diff.model.objects import Trigger
         from tests.support.builders import inventory
 
         key = ObjectKey(ObjectKind.TRIGGER, "public", "invoice", "stamp")

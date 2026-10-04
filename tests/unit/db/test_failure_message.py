@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from db_schema_comparer.config.secrets import Dsn
-from db_schema_comparer.db.connect import _failure_message
+from db_schema_diff.config.secrets import Dsn
+from db_schema_diff.db.connect import _failure_message
 
 REASON = "failed to resolve host 'ss@nohost.invalid': [Errno 8] nodename nor servname provided"
 

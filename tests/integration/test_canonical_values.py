@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.model.objects import SERIAL_SENTINEL
+from db_schema_diff.model.objects import SERIAL_SENTINEL
 from tests.integration.test_no_drift import inventory_of
 
 pytestmark = pytest.mark.integration

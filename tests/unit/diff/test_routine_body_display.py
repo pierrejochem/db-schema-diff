@@ -5,11 +5,11 @@ canonicalises to the same hash and so produces no finding, and a version 1 captu
 against a fresh one is compared by hash exactly as before.
 """
 
-from db_schema_comparer.baseline import signature
-from db_schema_comparer.diff.engine import diff_inventories
-from db_schema_comparer.diff.model import AttributeDelta, DiffOptions
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.model.objects import RawValues
+from db_schema_diff.baseline import signature
+from db_schema_diff.diff.engine import diff_inventories
+from db_schema_diff.diff.model import AttributeDelta, DiffOptions
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.model.objects import RawValues
 from tests.support.builders import col, inventory, routine, table
 
 SIGNATURE = "f_add(integer, integer)"

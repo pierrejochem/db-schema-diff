@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.diff.changelog import ChangelogOptions, ChangelogStatus
-from db_schema_comparer.diff.severity import Severity
+from db_schema_diff.diff.changelog import ChangelogOptions, ChangelogStatus
+from db_schema_diff.diff.severity import Severity
 from tests.integration.test_no_drift import compare, inventory_of
 
 pytestmark = pytest.mark.integration
@@ -24,7 +24,7 @@ def changelog_of(databases, drift: str | None = None, **kwargs):
 
 def _gate(target, fail_on: str):
     """The report the exit code is computed from, built around one target."""
-    from db_schema_comparer.diff.model import ComparisonReport
+    from db_schema_diff.diff.model import ComparisonReport
 
     return ComparisonReport(name="t", master_label="prod", targets=(target,), fail_on=fail_on)
 
@@ -66,10 +66,10 @@ class TestLocating:
         assert inventory.changelog.last_tag == "R7.6.2"
 
     def test_skipping_liquibase_leaves_no_changelog(self, databases):
-        from db_schema_comparer.build import build_inventory
-        from db_schema_comparer.config.model import SourceRef
-        from db_schema_comparer.config.secrets import Dsn
-        from db_schema_comparer.db.connect import open_connection
+        from db_schema_diff.build import build_inventory
+        from db_schema_diff.config.model import SourceRef
+        from db_schema_diff.config.secrets import Dsn
+        from db_schema_diff.db.connect import open_connection
 
         databases.setup("base")
         source = SourceRef(label="prod", dsn_env="X")
@@ -213,10 +213,10 @@ class TestAbsence:
         With two candidate tables the tool refuses to choose, but naming one in the config makes the
         comparison deterministic again.
         """
-        from db_schema_comparer.build import build_inventory
-        from db_schema_comparer.config.model import SourceRef
-        from db_schema_comparer.config.secrets import Dsn
-        from db_schema_comparer.db.connect import open_connection
+        from db_schema_diff.build import build_inventory
+        from db_schema_diff.config.model import SourceRef
+        from db_schema_diff.config.secrets import Dsn
+        from db_schema_diff.db.connect import open_connection
 
         databases.setup("base", drift="drift_changelog_ambiguous")
         source = SourceRef(
@@ -255,8 +255,8 @@ class TestDefaultIgnoresInteraction:
         Their DDL is created by Liquibase and varies with its version. Their *contents* are the
         point of this whole section, so suppressing the tables must not suppress the comparison.
         """
-        from db_schema_comparer.diff.engine import diff_inventories
-        from db_schema_comparer.diff.ignores import IgnoreRuleSet, load_default_ignores
+        from db_schema_diff.diff.engine import diff_inventories
+        from db_schema_diff.diff.ignores import IgnoreRuleSet, load_default_ignores
 
         databases.setup("base", drift="drift_changelog_behind")
         result = diff_inventories(

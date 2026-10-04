@@ -6,7 +6,7 @@ inventory and every --baseline file refuse to load.
 
 import pytest
 
-from db_schema_comparer.model.inventory import (
+from db_schema_diff.model.inventory import (
     SCHEMA_VERSION,
     Inventory,
 )
@@ -134,7 +134,7 @@ def test_version_1_loads_when_version_2_is_readable(monkeypatch):
     }
 
     # Monkeypatch to simulate a future where version 2 exists
-    import db_schema_comparer.model.inventory as inventory_module
+    import db_schema_diff.model.inventory as inventory_module
 
     monkeypatch.setattr(inventory_module, "READABLE_SCHEMA_VERSIONS", frozenset({1, 2}))
     monkeypatch.setattr(inventory_module, "SCHEMA_VERSION", 2)

@@ -2,7 +2,7 @@
 
 import pytest
 
-from db_schema_comparer.diff.model import (
+from db_schema_diff.diff.model import (
     REPORT_SCHEMA_VERSION,
     ComparisonReport,
 )
@@ -107,7 +107,7 @@ def test_version_1_loads_when_version_2_is_readable(monkeypatch):
     }
 
     # Monkeypatch to simulate a future where version 2 exists
-    import db_schema_comparer.diff.model as model_module
+    import db_schema_diff.diff.model as model_module
 
     monkeypatch.setattr(model_module, "READABLE_REPORT_VERSIONS", frozenset({1, 2}))
     monkeypatch.setattr(model_module, "REPORT_SCHEMA_VERSION", 2)
@@ -120,7 +120,7 @@ def test_version_1_loads_when_version_2_is_readable(monkeypatch):
 
 def test_the_writer_emits_version_2():
     assert REPORT_SCHEMA_VERSION == 2
-    from db_schema_comparer.diff.model import READABLE_REPORT_VERSIONS
+    from db_schema_diff.diff.model import READABLE_REPORT_VERSIONS
 
     assert frozenset({1, 2}) == READABLE_REPORT_VERSIONS
 

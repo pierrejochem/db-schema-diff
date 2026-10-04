@@ -2,8 +2,8 @@
 
 import pytest
 
-from db_schema_comparer.model.objects import SERIAL_SENTINEL
-from db_schema_comparer.normalize.defaults import canonical_default, owned_sequence_name
+from db_schema_diff.model.objects import SERIAL_SENTINEL
+from db_schema_diff.normalize.defaults import canonical_default, owned_sequence_name
 
 
 class TestSerial:

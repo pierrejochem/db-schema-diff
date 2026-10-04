@@ -10,10 +10,10 @@ import textwrap
 
 import pytest
 
-from db_schema_comparer.config.loader import load_config_files
-from db_schema_comparer.gui.config_vm import ConfigDocument
-from db_schema_comparer.gui.errors import GuiError
-from db_schema_comparer.gui.ignores_vm import (
+from db_schema_diff.config.loader import load_config_files
+from db_schema_diff.gui.config_vm import ConfigDocument
+from db_schema_diff.gui.errors import GuiError
+from db_schema_diff.gui.ignores_vm import (
     RULE_ACTIONS,
     RULE_STATUSES,
     IgnoresDocument,
@@ -77,7 +77,7 @@ class TestPickLists:
         assert "match" not in RULE_STATUSES
 
     def test_kinds_come_from_the_object_kinds(self):
-        from db_schema_comparer.model.kinds import ObjectKind
+        from db_schema_diff.model.kinds import ObjectKind
 
         assert set(rule_kinds()) == {kind.value for kind in ObjectKind}
 
@@ -86,13 +86,13 @@ class TestPickLists:
 
     @pytest.mark.parametrize("status", RULE_STATUSES)
     def test_every_offered_status_validates(self, status):
-        from db_schema_comparer.config.model import IgnoreRule
+        from db_schema_diff.config.model import IgnoreRule
 
         IgnoreRule.model_validate({"id": "r", "statuses": [status]})
 
     @pytest.mark.parametrize("kind", rule_kinds())
     def test_every_offered_kind_validates(self, kind):
-        from db_schema_comparer.config.model import IgnoreRule
+        from db_schema_diff.config.model import IgnoreRule
 
         IgnoreRule.model_validate({"id": "r", "kinds": [kind]})
 
@@ -474,7 +474,7 @@ class TestShapeIsCredentialsOnly:
         ],
     )
     def test_refused(self, text):
-        from db_schema_comparer.gui.shape import looks_like_connection_string
+        from db_schema_diff.gui.shape import looks_like_connection_string
 
         assert looks_like_connection_string(text)
 
@@ -490,7 +490,7 @@ class TestShapeIsCredentialsOnly:
         ],
     )
     def test_accepted(self, text):
-        from db_schema_comparer.gui.shape import looks_like_connection_string
+        from db_schema_diff.gui.shape import looks_like_connection_string
 
         assert not looks_like_connection_string(text)
 

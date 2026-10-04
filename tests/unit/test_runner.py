@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.config.model import ComparerConfig
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.errors import ConfigError
-from db_schema_comparer.runner import CaptureResult, build_report
+from db_schema_diff.config.model import ComparerConfig
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.errors import ConfigError
+from db_schema_diff.runner import CaptureResult, build_report
 from tests.support.builders import col, inventory, table
 
 BASE = {

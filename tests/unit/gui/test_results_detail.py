@@ -7,10 +7,10 @@ interface is shaped to avoid. The diff must also agree with the HTML report's.
 
 from __future__ import annotations
 
-from db_schema_comparer.diff.model import ObjectFinding, ObjectStatus
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.report.html import MAX_DIFF_LINES
-from db_schema_comparer.report.html import _diff_for as html_diff_for
+from db_schema_diff.diff.model import ObjectFinding, ObjectStatus
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.report.html import MAX_DIFF_LINES
+from db_schema_diff.report.html import _diff_for as html_diff_for
 
 from .conftest import _model, _model_of, delta, differing, view_key
 
@@ -250,8 +250,8 @@ class TestKindsSharingAPath:
 
     @staticmethod
     def _model():
-        from db_schema_comparer.model.keys import ObjectKey
-        from db_schema_comparer.model.kinds import ObjectKind
+        from db_schema_diff.model.keys import ObjectKey
+        from db_schema_diff.model.kinds import ObjectKind
 
         def finding(kind, marker):
             return differing(
@@ -302,8 +302,8 @@ class TestKindsSharingAPath:
 
 import pytest as _pytest  # noqa: E402
 
-from db_schema_comparer.gui.errors import GuiError as _GuiError  # noqa: E402
-from db_schema_comparer.gui.results_vm import (  # noqa: E402
+from db_schema_diff.gui.errors import GuiError as _GuiError  # noqa: E402
+from db_schema_diff.gui.results_vm import (  # noqa: E402
     DELTA_ROW_FIELDS,
     DIFF_ROW_FIELDS,
     checked_delta_rows,

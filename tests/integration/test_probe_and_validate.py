@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from db_schema_comparer.exit_codes import ExitCode
+from db_schema_diff.exit_codes import ExitCode
 
 pytestmark = pytest.mark.integration
 

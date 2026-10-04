@@ -20,12 +20,12 @@ from unittest import mock
 
 import pytest
 
-from db_schema_comparer.config.model import ComparerConfig
-from db_schema_comparer.errors import ProbeError
-from db_schema_comparer.gui.credentials import CredentialStore
-from db_schema_comparer.gui.errors import GuiError
-from db_schema_comparer.gui.session import ProgressEvent, Session, SourceState
-from db_schema_comparer.runner import CaptureResult, ConnectionStatus, TunnelStatus
+from db_schema_diff.config.model import ComparerConfig
+from db_schema_diff.errors import ProbeError
+from db_schema_diff.gui.credentials import CredentialStore
+from db_schema_diff.gui.errors import GuiError
+from db_schema_diff.gui.session import ProgressEvent, Session, SourceState
+from db_schema_diff.runner import CaptureResult, ConnectionStatus, TunnelStatus
 from tests.support.builders import col, inventory, table
 
 CONFIG = ComparerConfig.model_validate(
@@ -42,8 +42,8 @@ CONFIG = ComparerConfig.model_validate(
 
 SECRET = "s3cretPassw0rd"
 DSN = f"postgresql://u:{SECRET}@h/db"
-CAPTURE = "db_schema_comparer.gui.session.runner.capture"
-CHECK = "db_schema_comparer.gui.session.runner.check_connection"
+CAPTURE = "db_schema_diff.gui.session.runner.capture"
+CHECK = "db_schema_diff.gui.session.runner.check_connection"
 TERMINAL = {SourceState.CAPTURED, SourceState.FAILED, SourceState.CANCELLED}
 LABELS = ("prod", "qa", "dev")
 
@@ -756,7 +756,7 @@ class TestCancelNeverYieldsResults:
         subject, _ = session()
         with (
             mock.patch(CAPTURE, side_effect=succeed),
-            mock.patch("db_schema_comparer.gui.session.runner.build_report", slow_build),
+            mock.patch("db_schema_diff.gui.session.runner.build_report", slow_build),
         ):
             task = asyncio.create_task(subject.compare())
             assert await asyncio.to_thread(entered.wait, 10)
@@ -830,7 +830,7 @@ class TestOffLoopCalls:
         subject, _ = session()
         before = (subject._running, subject._generation, subject._loop, subject._claim_held)
         with (
-            mock.patch("db_schema_comparer.gui.session._Claim", side_effect=ValueError("late")),
+            mock.patch("db_schema_diff.gui.session._Claim", side_effect=ValueError("late")),
             pytest.raises(ValueError, match="late"),
         ):
             subject.compare()
@@ -870,9 +870,7 @@ class TestDroppedCoroutine:
         gc.disable()
         try:
             with (
-                mock.patch(
-                    "db_schema_comparer.gui.session.weakref.finalize", new=lambda *a, **k: None
-                ),
+                mock.patch("db_schema_diff.gui.session.weakref.finalize", new=lambda *a, **k: None),
                 pytest.warns(RuntimeWarning, match="never awaited"),
             ):
                 call()
@@ -1235,7 +1233,7 @@ class TestRunDetails:
     """
 
     def built(self):
-        from db_schema_comparer.gui.session import RunDetail
+        from db_schema_diff.gui.session import RunDetail
 
         details: list[RunDetail] = []
         built = Session(CONFIG, store(), on_progress=[].append, on_detail=details.append)
@@ -1243,8 +1241,8 @@ class TestRunDetails:
 
     @pytest.mark.asyncio
     async def test_each_capture_step_is_reported_with_what_it_found(self, monkeypatch):
-        from db_schema_comparer.gui import session as session_module
-        from db_schema_comparer.gui.session import CAPTURE_PHASE
+        from db_schema_diff.gui import session as session_module
+        from db_schema_diff.gui.session import CAPTURE_PHASE
 
         def fake_capture(source, dsn, *, observer=None, **kwargs):
             observer("tables", 7)
@@ -1265,7 +1263,7 @@ class TestRunDetails:
     async def test_the_steps_reach_the_window_on_the_loop_thread(self, monkeypatch):
         """Slint values are pyo3 ``unsendable``: touching one from a worker aborts the process
         rather than raising. A capture runs in an executor, so every step is a cross-thread call."""
-        from db_schema_comparer.gui import session as session_module
+        from db_schema_diff.gui import session as session_module
 
         loop_thread = threading.get_ident()
         seen: list[int] = []
@@ -1287,8 +1285,8 @@ class TestRunDetails:
     async def test_the_diff_and_the_report_are_phases_of_their_own(self, monkeypatch):
         """Both are invisible otherwise: a large comparison looks finished when the last source is
         captured, and then sits there."""
-        from db_schema_comparer.gui import session as session_module
-        from db_schema_comparer.gui.session import COMPARE_PHASE, REPORT_PHASE
+        from db_schema_diff.gui import session as session_module
+        from db_schema_diff.gui.session import COMPARE_PHASE, REPORT_PHASE
 
         monkeypatch.setattr(session_module.runner, "capture", succeed)
         built, details = self.built()
@@ -1302,7 +1300,7 @@ class TestRunDetails:
     @pytest.mark.asyncio
     async def test_a_consumer_that_raises_does_not_fail_the_comparison(self, monkeypatch):
         """Same contract as ``on_progress``: a broken progress display is not a failed run."""
-        from db_schema_comparer.gui import session as session_module
+        from db_schema_diff.gui import session as session_module
 
         monkeypatch.setattr(session_module.runner, "capture", succeed)
 
@@ -1315,7 +1313,7 @@ class TestRunDetails:
 
     @pytest.mark.asyncio
     async def test_no_detail_consumer_is_fine(self, monkeypatch):
-        from db_schema_comparer.gui import session as session_module
+        from db_schema_diff.gui import session as session_module
 
         monkeypatch.setattr(session_module.runner, "capture", succeed)
         built, _ = session()
@@ -1332,7 +1330,7 @@ class TestTunnelStepsCrossThreadsSafely:
     async def test_the_observer_is_called_on_the_loop_thread(self, monkeypatch):
         import threading
 
-        from db_schema_comparer.gui import session as session_module
+        from db_schema_diff.gui import session as session_module
 
         loop_thread = threading.get_ident()
         seen: list[int] = []

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from db_schema_comparer.gui import fonts
+from db_schema_diff.gui import fonts
 
 TOKENS = Path(fonts.__file__).with_name("ui") / "tokens.slint"
 

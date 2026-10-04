@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.diff.changelog import (
+from db_schema_diff.diff.changelog import (
     ChangelogOptions,
     ChangelogStatus,
     diff_changelog,
 )
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.model.changelog import ChangelogState
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.model.changelog import ChangelogState
 from tests.support.builders import changelog, changeset
 
 
@@ -320,7 +320,7 @@ class TestAbsence:
         Picking one arbitrarily would make the answer depend on catalog ordering, which is exactly
         the kind of non-determinism that makes a report untrustworthy.
         """
-        from db_schema_comparer.model.changelog import ChangelogLocation
+        from db_schema_diff.model.changelog import ChangelogLocation
 
         ambiguous = ChangelogState(
             location=None,
@@ -365,7 +365,7 @@ class TestSerialization:
     def test_the_verdict_round_trips_through_json(self):
         import json
 
-        from db_schema_comparer.diff.model import _changelog_from_json
+        from db_schema_diff.diff.model import _changelog_from_json
 
         master = changelog(cs("a", md5="9:aaa", order=1), cs("b", order=2, tag="R1"))
         target = changelog(cs("a", md5="9:zzz", order=1))

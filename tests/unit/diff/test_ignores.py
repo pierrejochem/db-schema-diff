@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.config.model import IgnoreConfig, IgnoreRule
-from db_schema_comparer.diff.ignores import (
+from db_schema_diff.config.model import IgnoreConfig, IgnoreRule
+from db_schema_diff.diff.ignores import (
     Action,
     IgnoreRuleSet,
     load_default_ignores,
 )
-from db_schema_comparer.diff.model import ObjectStatus
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.model.keys import ObjectKey, column_key, table_key
-from db_schema_comparer.model.kinds import ObjectKind
+from db_schema_diff.diff.model import ObjectStatus
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.model.keys import ObjectKey, column_key, table_key
+from db_schema_diff.model.kinds import ObjectKind
 
 
 def ruleset(*rules: dict, case_insensitive: bool = True) -> IgnoreRuleSet:

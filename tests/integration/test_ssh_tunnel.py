@@ -15,10 +15,10 @@ import pytest
 pytest.importorskip("psycopg", reason="psycopg is required for integration tests")
 paramiko = pytest.importorskip("paramiko", reason="the ssh extra is not installed")
 
-from db_schema_comparer.config.model import SshRef  # noqa: E402
-from db_schema_comparer.config.secrets import Dsn  # noqa: E402
-from db_schema_comparer.db.connect import open_connection  # noqa: E402
-from db_schema_comparer.errors import ConnectionFailed  # noqa: E402
+from db_schema_diff.config.model import SshRef  # noqa: E402
+from db_schema_diff.config.secrets import Dsn  # noqa: E402
+from db_schema_diff.db.connect import open_connection  # noqa: E402
+from db_schema_diff.errors import ConnectionFailed  # noqa: E402
 
 from .conftest import POSTGRES_IMAGE, docker_available  # noqa: E402
 

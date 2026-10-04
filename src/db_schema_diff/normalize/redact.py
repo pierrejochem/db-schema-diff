@@ -25,12 +25,12 @@ from __future__ import annotations
 import hashlib
 import re
 
-from db_schema_comparer.literals import (
+from db_schema_diff.literals import (
     SECRET_KEYWORDS,
     looks_like_connection_string,
     looks_like_credential_url,
 )
-from db_schema_comparer.normalize.tokenizer import (
+from db_schema_diff.normalize.tokenizer import (
     DOLLAR_TAG,
     Token,
     TokenType,

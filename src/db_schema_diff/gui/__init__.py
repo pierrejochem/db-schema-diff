@@ -1,4 +1,4 @@
-"""Desktop application for the schema comparer.
+"""Desktop application for the schema diff.
 
 A presentation layer over the library, shipped as an optional extra. It maps configuration to
 widgets, calls the orchestration entry points and renders a report; it never compares, normalises

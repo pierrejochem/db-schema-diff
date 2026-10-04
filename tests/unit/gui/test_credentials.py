@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.config.secrets import Dsn
-from db_schema_comparer.errors import MissingCredentialsError
-from db_schema_comparer.gui.credentials import (
+from db_schema_diff.config.secrets import Dsn
+from db_schema_diff.errors import MissingCredentialsError
+from db_schema_diff.gui.credentials import (
     KEYCHAIN_SERVICE,
     CredentialSource,
     CredentialStore,

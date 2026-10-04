@@ -13,15 +13,15 @@ from dataclasses import replace
 import pytest
 from click.testing import CliRunner
 
-from db_schema_comparer.cli import cli
-from db_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus, diff_changelog
-from db_schema_comparer.diff.model import ComparisonReport
-from db_schema_comparer.diff.severity import Severity, gate
-from db_schema_comparer.exit_codes import ExitCode
-from db_schema_comparer.gui.results_vm import ResultsModel
-from db_schema_comparer.report.console import ConsoleReporter
-from db_schema_comparer.report.html import HtmlReporter
-from db_schema_comparer.report.json_report import JsonReporter
+from db_schema_diff.cli import cli
+from db_schema_diff.diff.changelog import ChangelogDiff, ChangelogStatus, diff_changelog
+from db_schema_diff.diff.model import ComparisonReport
+from db_schema_diff.diff.severity import Severity, gate
+from db_schema_diff.exit_codes import ExitCode
+from db_schema_diff.gui.results_vm import ResultsModel
+from db_schema_diff.report.console import ConsoleReporter
+from db_schema_diff.report.html import HtmlReporter
+from db_schema_diff.report.json_report import JsonReporter
 from tests.support.builders import changelog, changeset
 from tests.support.reports import in_sync_target
 
@@ -160,7 +160,7 @@ class TestFailureSide:
         assert result.exit_code == ExitCode.DRIFT
 
     def test_the_side_survives_a_json_round_trip(self):
-        from db_schema_comparer.report.json_report import load_report
+        from db_schema_diff.report.json_report import load_report
 
         diff = self._diff("FAILED", "EXECUTED")
         out = io.StringIO()
@@ -171,7 +171,7 @@ class TestFailureSide:
     def test_a_report_written_before_the_side_was_recorded_still_loads(self):
         import json
 
-        from db_schema_comparer.report.json_report import load_report
+        from db_schema_diff.report.json_report import load_report
 
         out = io.StringIO()
         JsonReporter().render(_report(self._diff("EXECUTED", "FAILED"), "error"), out)

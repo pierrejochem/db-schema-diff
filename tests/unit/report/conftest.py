@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import pytest
 
-from db_schema_comparer.diff.model import (
+from db_schema_diff.diff.model import (
     AttributeDelta,
     ComparisonReport,
     ObjectFinding,
     ObjectStatus,
     TargetDiff,
 )
-from db_schema_comparer.diff.severity import Severity
-from db_schema_comparer.model.keys import table_key
+from db_schema_diff.diff.severity import Severity
+from db_schema_diff.model.keys import table_key
 from tests.support.builders import source
 
 

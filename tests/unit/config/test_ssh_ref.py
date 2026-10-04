@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from db_schema_comparer.config.model import ComparerConfig, SourceRef, SshRef
-from db_schema_comparer.config.secrets import Secret
-from db_schema_comparer.errors import MissingCredentialsError
+from db_schema_diff.config.model import ComparerConfig, SourceRef, SshRef
+from db_schema_diff.config.secrets import Secret
+from db_schema_diff.errors import MissingCredentialsError
 
 
 class TestSshRef:

@@ -13,14 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from db_schema_comparer.gui import home
+from db_schema_diff.gui import home
 
 
 class TestWhereItIs:
     def test_it_is_a_dotted_folder_in_the_home_directory(self, monkeypatch):
         monkeypatch.delenv(home.HOME_VARIABLE, raising=False)
-        assert home.directory() == Path.home() / ".db_schema_comparer"
-        assert home.DIRECTORY_NAME == ".db_schema_comparer"
+        assert home.directory() == Path.home() / ".db_schema_diff"
+        assert home.DIRECTORY_NAME == ".db_schema_diff"
 
     def test_the_override_wins(self, tmp_path, monkeypatch):
         monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path))
@@ -38,7 +38,7 @@ class TestWhereItIs:
 
 class TestCreatingIt:
     def test_it_is_created_when_missing(self, tmp_path, monkeypatch):
-        target = tmp_path / "nested" / ".db_schema_comparer"
+        target = tmp_path / "nested" / ".db_schema_diff"
         monkeypatch.setenv(home.HOME_VARIABLE, str(target))
         assert home.ensure() == target
         assert target.is_dir()
