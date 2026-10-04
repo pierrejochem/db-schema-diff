@@ -1,20 +1,23 @@
 # Development entry points. Mirrors local-qa-env/RMV's Makefile conventions.
 #
 # A Windows virtual environment keeps its programs in Scripts/, everywhere else in bin/. OS is set
-# by Windows itself and is what a `make` run from Git Bash sees.
+# by Windows itself and is what a `make` run from Git Bash sees. uv wants the interpreter's real
+# file name, so the .exe is spelled out there too.
 ifeq ($(OS),Windows_NT)
 VENV_BIN := Scripts
+EXE := .exe
 else
 VENV_BIN := bin
+EXE :=
 endif
-PY := .venv/$(VENV_BIN)/python
+PY := .venv/$(VENV_BIN)/python$(EXE)
 
 .PHONY: help venv venv-gui test test-integration test-all test-gui test-gui-cov lint fmt typecheck build \
 	gui exe exe-cli clean
 
 # The GUI needs 3.12+ (the Slint binding's floor); the CLI still supports 3.11, so the two
 # environments are separate and only this one has the gui extra.
-PY_GUI := .venv-gui/$(VENV_BIN)/python
+PY_GUI := .venv-gui/$(VENV_BIN)/python$(EXE)
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -30,7 +33,7 @@ EXTRAS_DEV := .[dev]
 EXTRAS_GUI := .[dev,gui]
 
 ifdef HAVE_UV
-mkvenv = uv venv --clear --python $(1) $(2) && uv pip install --python $(2)/$(VENV_BIN)/python $(3) -e '$(4)'
+mkvenv = uv venv --clear --python $(1) $(2) && uv pip install --python $(2)/$(VENV_BIN)/python$(EXE) $(3) -e '$(4)'
 else
 mkvenv = python$(1) -m venv --clear $(2) && $(2)/$(VENV_BIN)/python -m pip install --upgrade pip && \
 	$(2)/$(VENV_BIN)/python -m pip install $(3) -e '$(4)'
