@@ -152,7 +152,7 @@ jobs:
 
       # Slint's Linux wheel links against system libraries the runner image does not ship; without
       # libinput the very first `import slint` fails at collection, not at a test.
-      - run: sudo apt-get update && sudo apt-get install -y libinput10 libxkbcommon0 libfontconfig1 libgl1 xvfb
+      - run: sudo apt-get update && sudo apt-get install -y libinput10 libxkbcommon0 libfontconfig1 libgl1 libxkbcommon-x11-0 libxcursor1 libxi6 libxrandr2 xvfb
 
       # --pre is required: every slint Python release is a pre-release. `dev` is not optional
       # either -- without pytest-asyncio the session tests fail rather than skip.
@@ -164,18 +164,8 @@ jobs:
       # The GUI carries its own coverage floor, because the default configuration omits it: the
       # `unit` matrix includes 3.11, where slint cannot be installed and every GUI test skips.
       # Measured at 93.32% when the floor was set.
-      - name: Diagnose
-        run: |
-          so=$(python -c "import slint._native as n; print(n.__file__)" 2>&1 | tail -1); echo "$so"
-          python - <<'PY'
-          import glob, subprocess, site
-          for so in glob.glob(site.getsitepackages()[0] + "/slint/*.so"):
-              print(so)
-              print(subprocess.run(["ldd", so], capture_output=True, text=True).stdout)
-          PY
-          xvfb-run -a python -X faulthandler -c "import slint; print('import ok')" || true
       - run: >-
-          xvfb-run -a env RUST_BACKTRACE=1
+          xvfb-run -a
           pytest tests/unit/gui -v
           --cov --cov-config=.coveragerc-gui
           --cov-report=term-missing --cov-fail-under=90
