@@ -1,6 +1,6 @@
 # Release pipeline: the desktop application and the command-line tool as installable artifacts.
 #
-#   Windows   x64 and arm64      .zip holding both .exe files
+#   Windows   x64                .zip holding both .exe files; runs on Windows on Arm by emulation
 #   Linux     amd64 and arm64    .deb and .rpm, each carrying both programs
 #   macOS     universal          .dmg holding one .app that runs on Intel and Apple silicon
 #
@@ -130,8 +130,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # No arm64 build: PyPI has no Windows arm64 wheel for psycopg-binary or for slint, so the
+          # dependencies cannot be installed there. Windows 11 on Arm runs the x64 build under its
+          # own emulation. Add `{ runner: windows-11-arm, arch: arm64 }` back once both publish one.
           - { runner: windows-latest, arch: x64 }
-          - { runner: windows-11-arm, arch: arm64 }
     defaults:
       run:
         shell: bash

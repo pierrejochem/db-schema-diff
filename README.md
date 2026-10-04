@@ -66,6 +66,24 @@ interpreter, so they work the same on macOS and Linux. Without `uv` they need `p
 **Choose…** pickers need `zenity` or `kdialog`, and storing credentials needs a Secret Service
 keyring (GNOME Keyring, KWallet) — without one the window says so and the environment is used.
 
+### Releases
+
+Pushing a tag `v<version>` runs `.github/workflows/release.yml`, which builds every artifact on a
+runner of its own architecture and publishes a GitHub release with checksums. The tag must equal the
+version in `pyproject.toml` and `src/db_schema_diff/__init__.py`, or the run stops before building.
+Running the workflow by hand builds the same artifacts without publishing.
+
+| Platform | Artifact |
+|----------|----------|
+| Linux amd64, arm64 | `db-schema-diff_<version>_<arch>.deb` and `db-schema-diff-<version>-1.<arch>.rpm`, installing both programs, a menu entry and an icon |
+| macOS universal | `db-schema-diff-<version>-macos-universal.dmg` — one app for Intel and Apple silicon, built as two native builds joined by `packaging/macos_universal.py` |
+| Windows x64 | `db-schema-diff-<version>-windows-x64.zip` with both executables |
+
+There is no Windows arm64 build: `psycopg-binary` and `slint` publish no wheel for it, so its
+dependencies cannot be installed. Windows on Arm runs the x64 build under emulation.
+
+Nothing is signed or notarized, so Windows SmartScreen and macOS Gatekeeper warn on first launch.
+
 ### Standalone executables
 
 For a machine with no Python at all, Nuitka compiles either entry point into a single file:

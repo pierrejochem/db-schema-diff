@@ -32,10 +32,13 @@ class TestPlatforms:
         assert set(arches) == {"amd64", "arm64"}
         assert arches["arm64"].endswith("-arm")
 
-    def test_windows_is_built_natively_for_both_architectures(self):
-        arches = {row["arch"]: row["runner"] for row in matrix("windows")}
-        assert set(arches) == {"x64", "arm64"}
-        assert "arm" in arches["arm64"]
+    def test_windows_is_built_for_x64_only_until_its_dependencies_have_arm64_wheels(self):
+        """psycopg-binary and slint publish no win_arm64 wheel, so an arm64 job cannot install.
+
+        The x64 build runs on Windows on Arm under emulation. When both wheels exist, add the
+        arm64 runner back and replace this with the two-architecture check.
+        """
+        assert [row["arch"] for row in matrix("windows")] == ["x64"]
 
     def test_macos_is_built_on_both_architectures_and_then_joined(self):
         assert {row["arch"] for row in matrix("macos-build")} == {"x64", "arm64"}
