@@ -27,13 +27,14 @@ export component MainWindow inherits Window {
     default-font-weight: Tokens.weight-regular;
 
     // Which view the rail has selected. All five are instantiated; one is visible.
-    // The width the views get: the window less the rail and the gutters, capped. Derived from the
+    // The width the views get: the window less the rail and the gutters, and nothing else, so the
+    // views use the whole window and follow it as it is resized or maximized. Derived from the
     // window rather than from the content column itself, which would be self-referential and
     // evaluates to zero. In-out so a test can drive the Results breakpoint: setting a Window's own
     // `width` before it is shown is not honoured — it reports its minimum — so the breakpoint
     // would otherwise be untestable.
-    in-out property <length> column-width: min(
-        root.width - Tokens.rail-width - 2 * Tokens.space-5, Tokens.container-max);
+    in-out property <length> column-width: max(
+        0px, root.width - Tokens.rail-width - 2 * Tokens.space-5);
     in-out property <int> current-view: 0;
     in-out property <string> config-path;
     in-out property <bool> dirty;
@@ -317,10 +318,10 @@ export component MainWindow inherits Window {
         }
 
         VerticalLayout {
-            // The content column, capped and centred: a wide window gives wide margins rather
-            // than 900px-wide text fields. The width is declared once here and handed to the views
-            // that need to know it — a ScrollView positioned outside a layout reports its own
-            // visible-width as zero, so it cannot measure itself.
+            // The content column, as wide as the window leaves it: the same gutter either side at
+            // every size. The width is declared once here and handed to the views that need to
+            // know it — a ScrollView positioned outside a layout reports its own visible-width as
+            // zero, so it cannot measure itself.
             content := Rectangle {
 
                 config-tab := ConfigTab {

@@ -1555,3 +1555,13 @@ def test_a_diff_line_starts_at_the_left_even_when_it_is_short():
     source = (UI / "results_tab.slint").read_text()
     at = source.index("text: line.text;")
     assert "HorizontalLayout {" in source[source.rindex("Rectangle {", 0, at) : at]
+
+
+def test_the_content_column_takes_the_whole_window_and_is_not_capped():
+    """A cap left wide empty margins on a maximized window. The column is the window less the rail
+    and the gutters, so it follows every resize."""
+    shell = (UI / "main.slint").read_text()
+    column = shell[shell.index("property <length> column-width:") :].split(";")[0]
+    assert "root.width - Tokens.rail-width - 2 * Tokens.space-5" in column
+    assert "min(" not in column
+    assert "container-max" not in shell + (UI / "tokens.slint").read_text()
