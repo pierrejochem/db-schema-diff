@@ -1516,3 +1516,19 @@ def test_the_filter_summary_and_labels_cannot_run_off_their_card():
     for component in ("LabelledCheck", "ColumnHead"):
         body = widgets[widgets.index(f"component {component}") :].split("\n}\n")[0]
         assert "overflow: elide" in body, component
+
+
+def test_the_delta_table_is_sized_from_the_detail_card_not_from_fixed_widths():
+    source = (UI / "results_tab.slint").read_text()
+    pane = source[source.index('title: "DETAIL"') :]
+    assert "detail-inner" in source
+    assert not re.search(r"width: (1[6-9]\d|[2-9]\d\d)px", pane), "a fixed column wider than 160px"
+    for block in _text_blocks(pane):
+        if "d.master" in block or "d.target" in block or "d.note" in block:
+            assert "root.delta-column-width" in block, block
+
+
+def test_a_card_keeps_its_content_at_the_top_when_stretched():
+    widgets = (UI / "widgets.slint").read_text()
+    card = widgets[widgets.index("component Card") :].split("\n}\n")[0]
+    assert "alignment: start;" in card

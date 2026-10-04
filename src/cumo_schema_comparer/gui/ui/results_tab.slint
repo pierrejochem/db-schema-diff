@@ -236,6 +236,19 @@ export component ResultsTab inherits ScrollView {
     // against root.width: a width derived from content inside a ScrollView is a binding loop.
     out property <length> split-at: 1000px;
     out property <bool> side-by-side: root.column-width >= root.split-at;
+    // What the detail card has inside its padding, in either arrangement. The delta table's
+    // columns are carved out of this: fixed widths summing to more than it paint over the edge.
+    out property <length> detail-inner:
+        (root.side-by-side
+            ? (root.column-width - 2 * Tokens.space-5 - Tokens.space-4) * root.detail-share / 100
+            : root.column-width - 2 * Tokens.space-5)
+        - 2 * Tokens.space-4;
+    out property <length> delta-attribute-width: 140px;
+    out property <length> delta-severity-width: 70px;
+    // Master, target and note share what the fixed columns leave.
+    out property <length> delta-column-width: max(48px,
+        (root.detail-inner - root.delta-attribute-width - root.delta-severity-width
+            - 4 * Tokens.space-2) / 3);
 
     public function request-filter-changed() { root.filter-changed(); }
     public function request-choose-output-directory() { root.choose-output-directory(); }
@@ -341,7 +354,9 @@ export component ResultsTab inherits ScrollView {
                     spacing: Tokens.space-1;
                     alignment: start;
                     HorizontalLayout {
+                        // The row's own padding, both sides, so the headings sit over the values.
                         padding-left: Tokens.space-1;
+                        padding-right: Tokens.space-1;
                         spacing: Tokens.space-2;
                         height: Tokens.space-5;
                         ColumnHead { text: "TARGET"; width: Tokens.col-target; }
@@ -382,42 +397,47 @@ export component ResultsTab inherits ScrollView {
                     if root.selected-deltas.length > 0: HorizontalLayout {
                         spacing: Tokens.space-2;
                         height: Tokens.space-5;
-                        ColumnHead { text: "ATTRIBUTE"; width: 140px; }
-                        ColumnHead { text: "MASTER"; width: 160px; }
-                        ColumnHead { text: "TARGET"; width: 160px; }
+                        ColumnHead { text: "ATTRIBUTE"; width: root.delta-attribute-width; }
+                        ColumnHead { text: "MASTER"; width: root.delta-column-width; }
+                        ColumnHead { text: "TARGET"; width: root.delta-column-width; }
                         ColumnHead { text: ""; }
                     }
                     for d in root.selected-deltas: HorizontalLayout {
                         spacing: Tokens.space-2;
                         Text {
                             text: d.attribute;
-                            width: 140px;
+                            width: root.delta-attribute-width;
                             overflow: elide;
                             font-family: Tokens.family-mono;
                             color: Tokens.heading;
                         }
                         Text {
                             text: d.is_body ? "(see diff below)" : d.master;
-                            width: 160px;
+                            width: root.delta-column-width;
                             overflow: elide;
                             font-family: d.is_body ? Tokens.family-body : Tokens.family-mono;
                             color: d.is_body ? Tokens.muted : Tokens.body;
                         }
                         Text {
                             text: d.is_body ? "" : d.target;
-                            width: 160px;
+                            width: root.delta-column-width;
                             overflow: elide;
                             font-family: Tokens.family-mono;
                             color: Tokens.body;
                         }
                         Text {
                             text: d.severity;
-                            width: 70px;
+                            width: root.delta-severity-width;
                             overflow: elide;
                             color: d.severity == "error" ? Tokens.danger
                                 : d.severity == "warning" ? Tokens.caution : Tokens.muted;
                         }
-                        Text { text: d.note; overflow: elide; color: Tokens.muted; }
+                        Text {
+                            text: d.note;
+                            width: root.delta-column-width;
+                            overflow: elide;
+                            color: Tokens.muted;
+                        }
                     }
                     // Horizontal scrolling: a routine body is one line and may be tens of KB,
                     // which must scroll rather than wrap or size the window.

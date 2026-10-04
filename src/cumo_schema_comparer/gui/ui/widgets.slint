@@ -156,6 +156,9 @@ export component Card inherits Rectangle {
     VerticalLayout {
         padding: Tokens.space-4;
         spacing: Tokens.space-3;
+        // Spare height goes below the content, not between the heading and it: a card stretched
+        // to match its neighbour would otherwise float its rows into the middle.
+        alignment: start;
         if root.title != "": Eyebrow { text: root.title; }
         @children
     }
