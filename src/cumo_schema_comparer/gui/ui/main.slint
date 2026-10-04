@@ -251,21 +251,19 @@ export component MainWindow inherits Window {
                 padding-bottom: Tokens.space-4;
                 spacing: Tokens.space-1;
 
-                // The Cubic mark, white on the rail. A layout supplies the gutter because an `x` on
-                // a layout child is ignored; the width follows the drawing's 194:208.
+                // The Cubic lockup, mark and wordmark, already white on a transparent ground: it was
+                // cut from the brand's navy slide background, so it needs no recolouring here. A
+                // layout supplies the gutter because an `x` on a layout child is ignored; the
+                // height follows the picture's 410:80.
                 HorizontalLayout {
                     padding-left: Tokens.space-4;
                     padding-right: Tokens.space-4;
                     alignment: start;
                     Image {
-                        source: @image-url("cubic-mark.svg");
+                        source: @image-url("cubic-lockup.png");
                         image-fit: contain;
-                        // The file draws in `currentColor`, which a renderer reads as black: navy
-                        // on navy. Colorize repaints it in the rail's ink and leaves the file as
-                        // it came.
-                        colorize: Tokens.inverse;
-                        height: 40px;
-                        width: self.height * 194 / 208;
+                        width: Tokens.rail-width - 2 * Tokens.space-4;
+                        height: self.width * 80 / 410;
                     }
                 }
                 RailLabel { x: Tokens.space-4; text: "SCHEMA DIFF"; }
