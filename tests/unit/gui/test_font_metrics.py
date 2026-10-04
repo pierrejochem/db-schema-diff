@@ -81,7 +81,10 @@ def test_without_the_bundled_faces_every_family_collapses_to_one(without_fonts):
 def test_installing_the_fonts_changes_what_is_rendered(with_fonts, without_fonts):
     assert with_fonts["body"] != without_fonts["body"]
     assert with_fonts["display"] != without_fonts["display"]
-    assert with_fonts["mono"] != without_fonts["mono"]
+    # Not asserted for the monospace face: the fallback is whatever the machine's default is, and a
+    # system monospace face can advance exactly as far as IBM Plex Mono does (GitHub's runners
+    # measure 189 both ways). That it renders as a face of its own is what the next two tests
+    # prove, against the bundled proportional faces rather than against a machine-dependent one.
 
 
 def test_the_three_families_render_as_three_different_faces(with_fonts):
