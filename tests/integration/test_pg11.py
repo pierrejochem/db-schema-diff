@@ -7,10 +7,10 @@ an older server. This is where that is checked against a real 11 rather than aga
 is supposed to do it.
 
 Its own container, like ``test_cross_version.py``, and its own ``integration-pg11`` CI job rather
-than an entry in the postgres matrix, for two reasons: ``base.sql`` declares generated columns that a view and a function in that same
-file read, so it cannot be applied to an 11; and the shared harness drops its database with
-``WITH (FORCE)``, which arrived in 13. `pg11.sql` is this module's fixture and `apply_sql` is all
-it borrows.
+than an entry in the postgres matrix, for two reasons: ``base.sql`` declares generated columns that
+a view and a function in that same file read, so it cannot be applied to an 11; and the shared
+harness drops its database with ``WITH (FORCE)``, which arrived in 13. `pg11.sql` is this module's
+fixture and `apply_sql` is all it borrows.
 
 Two assertions carry the module. Every kind is captured — a query that names a column the server
 lacks fails when it is *planned*, so rows have to come back, not merely a connection. And the same
