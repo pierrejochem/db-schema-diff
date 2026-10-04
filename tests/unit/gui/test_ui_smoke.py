@@ -11,6 +11,7 @@ import contextlib
 import pathlib
 import re
 import shutil
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -1309,7 +1310,7 @@ def test_the_rail_carries_no_file_details():
     something about.
     """
     shell = (UI / "main.slint").read_text()
-    rail = shell[shell.index('text: "cumo";') : shell.index("content := Rectangle")]
+    rail = shell[shell.index('@image-url("cubic-mark.svg")') : shell.index("content := Rectangle")]
     assert "Open…" not in rail
     assert "config-path" not in rail
     assert "unsaved changes" in rail
@@ -1532,3 +1533,23 @@ def test_a_card_keeps_its_content_at_the_top_when_stretched():
     widgets = (UI / "widgets.slint").read_text()
     card = widgets[widgets.index("component Card") :].split("\n}\n")[0]
     assert "alignment: start;" in card
+
+
+def test_the_rail_carries_the_cubic_mark_not_a_text_stand_in():
+    shell = (UI / "main.slint").read_text()
+    assert '@image-url("cubic-mark.svg")' in shell
+    assert 'text: "cumo"' not in shell
+    logo = UI / "cubic-mark.svg"
+    root = ET.parse(logo).getroot()
+    # The file draws in currentColor, which renders black; on a navy rail that is invisible unless
+    # the image is colorized in the rail's ink.
+    rail = shell[shell.index('@image-url("cubic-mark.svg")') :].split("}")[0]
+    assert "colorize: Tokens.inverse;" in rail
+    width, height = (float(v) for v in root.get("viewBox").split()[2:])
+    assert abs(width / height - 194 / 208) < 0.01
+
+
+def test_a_diff_line_starts_at_the_left_even_when_it_is_short():
+    source = (UI / "results_tab.slint").read_text()
+    at = source.index("text: line.text;")
+    assert "HorizontalLayout {" in source[source.rindex("Rectangle {", 0, at) : at]

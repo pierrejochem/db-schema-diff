@@ -251,14 +251,22 @@ export component MainWindow inherits Window {
                 padding-bottom: Tokens.space-4;
                 spacing: Tokens.space-1;
 
-                Text {
-                    x: Tokens.space-4;
-                    text: "cumo";
-                    font-family: Tokens.family-display;
-                    font-size: Tokens.text-title;
-                    font-weight: Tokens.weight-bold;
-                    letter-spacing: Tokens.tracking-tight;
-                    color: Tokens.inverse;
+                // The Cubic mark, white on the rail. A layout supplies the gutter because an `x` on
+                // a layout child is ignored; the width follows the drawing's 194:208.
+                HorizontalLayout {
+                    padding-left: Tokens.space-4;
+                    padding-right: Tokens.space-4;
+                    alignment: start;
+                    Image {
+                        source: @image-url("cubic-mark.svg");
+                        image-fit: contain;
+                        // The file draws in `currentColor`, which a renderer reads as black: navy
+                        // on navy. Colorize repaints it in the rail's ink and leaves the file as
+                        // it came.
+                        colorize: Tokens.inverse;
+                        height: 40px;
+                        width: self.height * 194 / 208;
+                    }
                 }
                 RailLabel { x: Tokens.space-4; text: "SCHEMA DIFF"; }
                 Rectangle { height: Tokens.space-5; }
