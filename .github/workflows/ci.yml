@@ -100,7 +100,28 @@ jobs:
       - name: Integration tests
         env:
           DB_SCHEMA_DIFF_TEST_IMAGE: postgres:${{ matrix.postgres }}
-        run: pytest -m integration
+        # test_pg11.py starts its own 11 container and is the integration-pg11 job below; run here
+        # it would repeat the same work once per matrix entry.
+        run: pytest -m integration --ignore=tests/integration/test_pg11.py
+
+  # PostgreSQL 11, the oldest release the tool inspects. A job of its own rather than a matrix
+  # entry: the shared fixture cannot be applied to an 11 (generated columns, and WITH (FORCE) when
+  # dropping a database both arrived later), so test_pg11.py brings its own container and fixture.
+  integration-pg11:
+    name: integration-pg11
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - run: pip install -e '.[dev]'
+
+      - run: pytest -m integration tests/integration/test_pg11.py
 
   dogfood:
     name: dogfood

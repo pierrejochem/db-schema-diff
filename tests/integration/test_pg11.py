@@ -6,8 +6,8 @@ a floor nothing tests is a guess. Two columns the catalog queries want arrived i
 an older server. This is where that is checked against a real 11 rather than against the gate that
 is supposed to do it.
 
-Its own container, like ``test_cross_version.py``, rather than an entry in the CI postgres matrix,
-for two reasons: ``base.sql`` declares generated columns that a view and a function in that same
+Its own container, like ``test_cross_version.py``, and its own ``integration-pg11`` CI job rather
+than an entry in the postgres matrix, for two reasons: ``base.sql`` declares generated columns that a view and a function in that same
 file read, so it cannot be applied to an 11; and the shared harness drops its database with
 ``WITH (FORCE)``, which arrived in 13. `pg11.sql` is this module's fixture and `apply_sql` is all
 it borrows.
