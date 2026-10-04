@@ -1,12 +1,12 @@
 <img src="media/logo.svg" alt="DB Schema Diff" width="390">
 
-# db-schema-comparer
+# db-schema-diff
 
 Inventory one **master** PostgreSQL database and compare it against **1..n other
 environments** of the same service to prove they are in sync — structurally and by Liquibase
 changelog state.
 
-Built for the CUMO platform, where ~18 independent Spring Boot services each own a database
+Built for a platform where ~18 independent Spring Boot services each own a database
 on a shared PostgreSQL server and each apply their own Liquibase changelogs across
 `rmv-dev` / `rmv-test` / `rmv-qa` / prod. Nothing else answers *"is qa's schema actually the
 same as prod's?"* until something fails at runtime.
@@ -72,10 +72,10 @@ For a machine with no Python at all, Nuitka compiles either entry point into a s
 
 ```sh
 make exe        # the desktop application
-make exe-cli    # build/cumo-schema-diff — the command-line tool, one file
+make exe-cli    # build/db-schema-diff — the command-line tool, one file
 ```
 
-On macOS `make exe` produces `build/cumo-schema-diff-gui.app`, a real bundle: that is the only way
+On macOS `make exe` produces `build/db-schema-diff-gui.app`, a real bundle: that is the only way
 to get `NSHighResolutionCapable`, without which a Slint window renders non-retina, and it is what
 you drag to `/Applications`. The bundle is built `--standalone` rather than `--onefile` because with
 `--onefile` Nuitka 4.2 writes `Info.plist` beside the bundle instead of inside `Contents/` and names
@@ -136,7 +136,7 @@ and no local port number ever reaches a config file. The local port is chosen by
 captures cannot collide. TLS still verifies against the real hostname: the connection sets
 `hostaddr` and leaves `host` alone, so `sslmode=verify-full` keeps working through the tunnel.
 
-Install the extra to use it — `pip install 'db-schema-comparer[ssh]'`. A config that names an
+Install the extra to use it — `pip install 'db-schema-diff[ssh]'`. A config that names an
 `ssh:` block without it exits 2 saying so, rather than raising an ImportError.
 
 **Host keys are trusted on first use.** An unknown gateway is pinned to `known_hosts` on first
@@ -155,23 +155,23 @@ Start from `config.example.yaml`:
 
 ```sh
 cp config.example.yaml config/invoicing.yaml
-cumo-schema-diff compare -c config/invoicing.yaml
+db-schema-diff compare -c config/invoicing.yaml
 ```
 
 `--config` takes a directory too, which runs every service's comparison in one go:
 
 ```sh
-cumo-schema-diff compare -c config/
+db-schema-diff compare -c config/
 ```
 
 ### Machine-readable output
 
 ```sh
 # All three reports into one directory, the convenient form for CI.
-cumo-schema-diff compare -c config/invoicing.yaml --out-dir build/
+db-schema-diff compare -c config/invoicing.yaml --out-dir build/
 
 # Or name them individually.
-cumo-schema-diff compare -c config/invoicing.yaml \
+db-schema-diff compare -c config/invoicing.yaml \
     --json report.json --junit junit.xml --html report.html
 ```
 
@@ -192,26 +192,26 @@ Production and QA never have to be reachable from the same place at the same tim
 
 ```sh
 # In the job that can reach production:
-cumo-schema-diff inventory -c config/invoicing.yaml --source prod -o prod.json
+db-schema-diff inventory -c config/invoicing.yaml --source prod -o prod.json
 
 # In the job that can reach QA:
-cumo-schema-diff inventory -c config/invoicing.yaml --source qa -o qa.json
+db-schema-diff inventory -c config/invoicing.yaml --source qa -o qa.json
 
 # Anywhere, with no credentials in the environment at all:
-cumo-schema-diff diff-inventories prod.json qa.json --junit junit.xml
+db-schema-diff diff-inventories prod.json qa.json --junit junit.xml
 ```
 
 `render` re-renders a saved JSON report in another format, and reproduces its exit code, so a
 later pipeline stage can gate on an earlier stage's comparison without repeating it:
 
 ```sh
-cumo-schema-diff render --from report.json --junit junit.xml
+db-schema-diff render --from report.json --junit junit.xml
 ```
 
 ### Liquibase changelog
 
 Read automatically, with no configuration. The table is **located** rather than assumed, because it
-is not reliably in `public` — `cumo-invoicing` sets `spring.liquibase.liquibase-schema=cumo-invoicing`
+is not reliably in `public` — `acme-invoicing` sets `spring.liquibase.liquibase-schema=acme-invoicing`
 and keeps it in a quoted, hyphenated schema of its own.
 
 ```
@@ -234,7 +234,7 @@ Two differences that look alarming and are not:
 - **A Liquibase upgrade rewrites every checksum.** The algorithm-version prefix (`8:`, `9:`) is
   compared separately, so an upgrade is one warning rather than one error per changeset.
 - **`EXECUTED` vs `MARK_RAN`** means a precondition evaluated differently, usually because the row
-  data differs. `cumo-invoicing` does this deliberately with `onFail="MARK_RAN"`, so it is a warning.
+  data differs. `acme-invoicing` does this deliberately with `onFail="MARK_RAN"`, so it is a warning.
 
 | Flag | Effect |
 |------|--------|
@@ -248,7 +248,7 @@ guessing would make the answer depend on catalog ordering. Name it in the config
 targets:
   - label: qa
     dsn_env: QA_INVOICING_DSN
-    liquibase: { schema: cumo-invoicing, table: DATABASECHANGELOG }
+    liquibase: { schema: acme-invoicing, table: DATABASECHANGELOG }
 ```
 
 ### Where the reports go
@@ -275,7 +275,7 @@ Some differences are expected rather than wrong. The bundled ruleset already cov
 state, Liquibase's own tables and conventionally-named scratch objects; add your own on top:
 
 ```sh
-cumo-schema-diff compare -c config/invoicing.yaml --ignores ignores.yaml
+db-schema-diff compare -c config/invoicing.yaml --ignores ignores.yaml
 ```
 
 Start from `ignores.example.yaml`. A rule can be scoped by object kind, name glob, target label,
@@ -287,8 +287,8 @@ skipped case in JUnit, tagged with the rule that suppressed it, and the console 
 set aside:
 
 ```sh
-cumo-schema-diff compare -c config/invoicing.yaml --show-ignored      # list them
-cumo-schema-diff compare -c config/invoicing.yaml --no-default-ignores # start from nothing
+db-schema-diff compare -c config/invoicing.yaml --show-ignored      # list them
+db-schema-diff compare -c config/invoicing.yaml --no-default-ignores # start from nothing
 ```
 
 Prefer `action: warn` over `ignore` while something is still being worked on: the finding stays
@@ -340,7 +340,7 @@ Two distinctions are worth knowing, because they are what keep a ruleset safe:
 
 ```sh
 pip install --pre '.[gui]'     # needs Python 3.12+; --pre because the Slint binding is a beta
-cumo-schema-diff-gui
+db-schema-diff-gui
 ```
 
 Five views, chosen from the rail on the left: **Config** (every parameter of the config file, with
@@ -366,7 +366,7 @@ fields empty. The two mechanisms do the same job, and configured together the to
 the gateway and then look for your forwarded port *on the gateway*, which is not where it is.
 
 The variable the credential is filed under is generated from the source's label — `qa` becomes
-`CUMO_QA_DSN` — and written to the config file, so the command-line tool, which resolves `dsn_env`
+`DB_QA_DSN` — and written to the config file, so the command-line tool, which resolves `dsn_env`
 and nothing else, can run the same configuration once that variable is exported. Renaming a source
 renames the variable and moves the stored password with it.
 
@@ -427,7 +427,7 @@ already connected is abandoned rather than interrupted — PostgreSQL work in fl
 
 ### Where it keeps configurations
 
-On start-up it creates `~/.cumo_db_schema_comparer` if it is missing, reads `config.yaml` from it if
+On start-up it creates `~/.db_schema_comparer` if it is missing, reads `config.yaml` from it if
 that file is there, and **Save** writes it back. One file, always the same path.
 
 **There is still no Open button**, and a path on the command line is refused with a message rather
@@ -447,7 +447,7 @@ the window rewrites the file from the configuration rather than patching it, so 
 hand-edited file drops its comments. It says so when it loads a file that has any, while they are
 still there to copy somewhere else.
 
-`CUMO_SCHEMA_DIFF_HOME` points the folder somewhere else. The test suite sets it, because a test
+`DB_SCHEMA_DIFF_HOME` points the folder somewhere else. The test suite sets it, because a test
 that reads or writes the home directory of whoever runs it has already failed.
 
 The application follows the Cubic design system. Sections are cards with an uppercase eyebrow
@@ -502,7 +502,7 @@ Exit **3 takes precedence over 1**: a partial comparison is never reported as a 
 
 ## A worked example: the RMV stack
 
-`cumo-local-qa-env/RMV` runs one PostgreSQL holding a database per service. This walks through
+`local-qa-env/RMV` runs one PostgreSQL holding a database per service. This walks through
 pointing the comparer at it and reading what comes back.
 
 Bring the stack up, then create a config per service database. Start with `invoicing`, because it is
@@ -526,7 +526,7 @@ exclude_schemas: [quartz]
 Credentials come only from the environment:
 
 ```sh
-export PROD_INVOICING_DSN='postgresql://cumo:...@db-prod.internal:5432/invoicing'
+export PROD_INVOICING_DSN='postgresql://app:...@db-prod.internal:5432/invoicing'
 export LOCAL_INVOICING_DSN='postgresql://postgres:...@localhost:5432/invoicing'
 ```
 
@@ -534,38 +534,38 @@ export LOCAL_INVOICING_DSN='postgresql://postgres:...@localhost:5432/invoicing'
 database is reachable:
 
 ```sh
-cumo-schema-diff validate-config -c config/invoicing.yaml --check-env
+db-schema-diff validate-config -c config/invoicing.yaml --check-env
 ```
 
 **Then probe.** This answers the questions that otherwise turn into a confusing comparison — which
 server version, which schemas, and where the changelog actually lives:
 
 ```
-$ cumo-schema-diff probe -c config/invoicing.yaml
+$ db-schema-diff probe -c config/invoicing.yaml
 prod: PostgreSQL 15.19
-  database  invoicing as cumo
+  database  invoicing as app
   encoding  UTF8  collation de_DE.utf8
-  schemas   cumo-invoicing, public
-  liquibase cumo-invoicing.DATABASECHANGELOG: 214 changeset(s), last tag R7.6.2
+  schemas   acme-invoicing, public
+  liquibase acme-invoicing.DATABASECHANGELOG: 214 changeset(s), last tag R7.6.2
 ```
 
 If `probe` reports `liquibase AMBIGUOUS`, name the right table in the config:
 
 ```yaml
-    liquibase: { schema: cumo-invoicing, table: DATABASECHANGELOG }
+    liquibase: { schema: acme-invoicing, table: DATABASECHANGELOG }
 ```
 
 **Now compare.** The first run against environments that have drifted for years will find a lot,
 all of it true and none of it actionable today:
 
 ```sh
-cumo-schema-diff compare -c config/invoicing.yaml --json baseline.json
+db-schema-diff compare -c config/invoicing.yaml --json baseline.json
 ```
 
 Review that report, and once it reflects the backlog you have decided to live with, keep it:
 
 ```sh
-cumo-schema-diff compare -c config/invoicing.yaml --baseline baseline.json --out-dir build/
+db-schema-diff compare -c config/invoicing.yaml --baseline baseline.json --out-dir build/
 ```
 
 From here the run fails only on findings the baseline does not contain, so the backlog stays visible
@@ -578,7 +578,7 @@ worth regenerating smaller.
 **Point `--config` at the directory** to do every service at once, each into its own subdirectory:
 
 ```sh
-cumo-schema-diff compare -c config/ --out-dir build/
+db-schema-diff compare -c config/ --out-dir build/
 ```
 
 A baseline is scoped to the report it came from, so `--baseline` belongs with a single config. Run
@@ -637,11 +637,11 @@ The integration suite runs against a throwaway container. To run it against anot
 or against an existing one:
 
 ```sh
-CUMO_SCHEMA_DIFF_TEST_IMAGE=postgres:17 make test-integration
-CUMO_SCHEMA_DIFF_TEST_DSN='postgresql://...' make test-integration
+DB_SCHEMA_DIFF_TEST_IMAGE=postgres:17 make test-integration
+DB_SCHEMA_DIFF_TEST_DSN='postgresql://...' make test-integration
 ```
 
-> **`CUMO_SCHEMA_DIFF_TEST_DSN` is destructive.** The suite runs
+> **`DB_SCHEMA_DIFF_TEST_DSN` is destructive.** The suite runs
 > `DROP DATABASE IF EXISTS … WITH (FORCE)` and recreates `master_db` and `target_db` on whatever
 > server that DSN points at, once per session, forcing any other connection to them off. Point it
 > only at a server you own, and never at one that hosts anything called `master_db` or `target_db`

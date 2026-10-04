@@ -72,7 +72,7 @@ def test_genuinely_different_types_stay_different(left, right):
         ("integer", "int4"),
         ("text[]", "text[]"),
         ("public.status_enum", "public.status_enum"),
-        ('"cumo-invoicing".status_enum', '"cumo-invoicing".status_enum'),
+        ('"acme-invoicing".status_enum', '"acme-invoicing".status_enum'),
     ],
 )
 def test_canonical_form_is_the_short_one(raw, expected):
@@ -81,8 +81,8 @@ def test_canonical_form_is_the_short_one(raw, expected):
 
 def test_user_type_names_are_never_case_folded():
     # A quoted identifier is case-sensitive, and this platform really does use
-    # "cumo-invoicing" as a schema name.
-    assert canonical_type('"cumo-invoicing".MyType') == '"cumo-invoicing".MyType'
+    # "acme-invoicing" as a schema name.
+    assert canonical_type('"acme-invoicing".MyType') == '"acme-invoicing".MyType'
 
 
 def test_serial_is_not_a_type():

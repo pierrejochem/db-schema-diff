@@ -42,7 +42,7 @@ def source(
         label=label,
         host=f"db-{label}",
         database=database,
-        user="cumo",
+        user="app",
         server_version_num=version,
         server_version=f"{major}.{minor}",
         encoding="UTF8",
@@ -158,7 +158,7 @@ def changeset(
 
 def changelog(
     *rows: ChangeSetRow,
-    schema: str = "cumo-invoicing",
+    schema: str = "acme-invoicing",
     table_name: str = "DATABASECHANGELOG",
     lock_held: bool | None = False,
 ) -> ChangelogState:

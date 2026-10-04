@@ -135,14 +135,14 @@ class TestSchemaMap:
                 {
                     "label": "qa",
                     "dsn_env": "QA_DSN",
-                    "schema_map": {"cumo-invoicing": "invoicing_qa"},
+                    "schema_map": {"acme-invoicing": "invoicing_qa"},
                 }
             ]
         )
         master = CaptureResult(
             label="prod",
             inventory=inventory(
-                table("cumo-invoicing", "invoice", cols=[col("id", "int4")]), label="prod"
+                table("acme-invoicing", "invoice", cols=[col("id", "int4")]), label="prod"
             ),
         )
         target = CaptureResult(

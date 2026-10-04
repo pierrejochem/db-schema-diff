@@ -90,14 +90,14 @@ class TestKeywordCase:
 class TestSchemaRemapping:
     def test_a_bare_schema_qualifier_is_rewritten(self):
         assert remap_schema_qualifiers(
-            "invoicing_qa.gen_id()", {"invoicing_qa": "cumo-invoicing"}
-        ) == ('"cumo-invoicing".gen_id()')
+            "invoicing_qa.gen_id()", {"invoicing_qa": "acme-invoicing"}
+        ) == ('"acme-invoicing".gen_id()')
 
     def test_a_quoted_schema_qualifier_is_rewritten(self):
         result = remap_schema_qualifiers(
-            '"invoicing_qa".gen_id()', {"invoicing_qa": "cumo-invoicing"}
+            '"invoicing_qa".gen_id()', {"invoicing_qa": "acme-invoicing"}
         )
-        assert result == '"cumo-invoicing".gen_id()'
+        assert result == '"acme-invoicing".gen_id()'
 
     def test_a_name_needing_no_quotes_is_left_unquoted(self):
         assert (

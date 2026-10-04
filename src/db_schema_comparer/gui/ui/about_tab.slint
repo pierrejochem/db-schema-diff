@@ -85,7 +85,7 @@ export component AboutTab inherits ScrollView {
                     Text {
                         text: root.tunnelling-available
                             ? "available"
-                            : "not installed — pip install 'db-schema-comparer[ssh]'";
+                            : "not installed — pip install 'db-schema-diff[ssh]'";
                         font-family: Tokens.family-mono;
                         font-size: Tokens.text-small;
                         color: root.tunnelling-available ? Tokens.success : Tokens.muted;

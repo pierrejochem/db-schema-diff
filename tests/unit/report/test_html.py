@@ -197,7 +197,7 @@ class TestContent:
         assert 'class="count skipped"' in html
 
     def test_findings_carry_their_path_and_severity(self, html):
-        assert 'data-path="cumo-invoicing.invoice.number"' in html
+        assert 'data-path="acme-invoicing.invoice.number"' in html
         assert 'data-severity="error"' in html
 
     def test_a_delta_shows_both_values_and_its_reason(self, html):
@@ -224,7 +224,7 @@ class TestWorksWithoutJavaScript:
     def test_findings_are_rendered_into_the_dom(self, html):
         # Not generated from the payload, so nothing depends on the script running.
         body = html.split('<script type="application/json"')[0]
-        assert "cumo-invoicing.invoice.number" in body
+        assert "acme-invoicing.invoice.number" in body
 
 
 class TestPresentation:

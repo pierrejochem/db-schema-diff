@@ -39,7 +39,7 @@ def cli(tmp_path, databases):
     config.write_text(CONFIG)
 
     def invoke(*args: str, **env_overrides: str) -> subprocess.CompletedProcess[str]:
-        executable = Path(sys.executable).parent / "cumo-schema-diff"
+        executable = Path(sys.executable).parent / "db-schema-diff"
         env = {
             **os.environ,
             "PV_PROD_DSN": databases.master_dsn,
@@ -110,7 +110,7 @@ class TestProbe:
         assert result.returncode == ExitCode.OK, result.stdout + result.stderr
         assert "prod: PostgreSQL" in result.stdout
         assert "qa: PostgreSQL" in result.stdout
-        assert "cumo-invoicing" in result.stdout
+        assert "acme-invoicing" in result.stdout
         assert "schemas" in result.stdout
 
     def test_probe_does_not_capture_an_inventory(self, cli):
@@ -121,7 +121,7 @@ class TestProbe:
         cli.databases.setup("base")
         result = cli("probe", "-c", str(cli.config))
         assert result.returncode == ExitCode.OK
-        assert "cumo-invoicing" in result.stdout
+        assert "acme-invoicing" in result.stdout
 
     def test_it_says_where_the_changelog_lives(self, cli):
         """The question that otherwise turns into a confusing comparison.
@@ -131,7 +131,7 @@ class TestProbe:
         """
         cli.databases.setup("base")
         result = cli("probe", "-c", str(cli.config))
-        assert "cumo-invoicing.DATABASECHANGELOG: 3 changeset(s)" in result.stdout
+        assert "acme-invoicing.DATABASECHANGELOG: 3 changeset(s)" in result.stdout
         assert "last tag R7.6.2" in result.stdout
 
     def test_it_reports_the_collation(self, cli):
@@ -190,7 +190,7 @@ class TestBaseline:
 
         result = cli("compare", "-c", str(cli.config), "--baseline", str(baseline))
         assert result.returncode == ExitCode.DRIFT
-        assert "cumo-invoicing.invoice.number" in result.stdout
+        assert "acme-invoicing.invoice.number" in result.stdout
         # The accepted one is no longer listed among the findings.
         assert "1 accepted, 1 new" in result.stderr
 

@@ -46,11 +46,11 @@ def test_a_successful_check_reports_the_server_and_schemas():
     introspector.server_info.return_value = {
         "server_version": "15.19 (Debian)",
         "database": "invoicing",
-        "user": "cumo",
+        "user": "app",
         "datcollate": "de_DE.utf8",
         "encoding": "UTF8",
     }
-    introspector.schemas.return_value = ["cumo-invoicing", "public"]
+    introspector.schemas.return_value = ["acme-invoicing", "public"]
     introspector.locate_changelog.return_value = []
 
     with (
@@ -63,9 +63,9 @@ def test_a_successful_check_reports_the_server_and_schemas():
     assert status.ok is True
     assert status.server_version == "15.19 (Debian)"
     assert status.database == "invoicing"
-    assert status.user == "cumo"
+    assert status.user == "app"
     assert status.collation == "de_DE.utf8"
-    assert status.schemas == ("cumo-invoicing", "public")
+    assert status.schemas == ("acme-invoicing", "public")
     assert status.changelog is None
     assert status.encoding == "UTF8"
 
@@ -74,16 +74,16 @@ def test_a_located_changelog_is_reported_with_its_count_and_tag():
     from db_schema_comparer.model.changelog import ChangelogLocation, ChangelogState
     from tests.support.builders import changeset
 
-    location = ChangelogLocation(schema="cumo-invoicing", table="DATABASECHANGELOG")
+    location = ChangelogLocation(schema="acme-invoicing", table="DATABASECHANGELOG")
     introspector = mock.MagicMock()
     introspector.server_info.return_value = {
         "server_version": "15.19",
         "database": "invoicing",
-        "user": "cumo",
+        "user": "app",
         "datcollate": "C",
         "encoding": "UTF8",
     }
-    introspector.schemas.return_value = ["cumo-invoicing"]
+    introspector.schemas.return_value = ["acme-invoicing"]
     introspector.locate_changelog.return_value = [location]
     introspector.changelog_state.return_value = ChangelogState(
         location=location,
@@ -98,7 +98,7 @@ def test_a_located_changelog_is_reported_with_its_count_and_tag():
     ):
         status = check_connection(SOURCE, DSN)
 
-    assert status.changelog == "cumo-invoicing.DATABASECHANGELOG"
+    assert status.changelog == "acme-invoicing.DATABASECHANGELOG"
     assert status.changelog_count == 1
     assert status.changelog_tag == "R7.6.2"
     assert status.changelog_locked is False
@@ -112,14 +112,14 @@ def test_several_changelog_candidates_are_reported_as_ambiguous():
     introspector.server_info.return_value = {
         "server_version": "15.19",
         "database": "invoicing",
-        "user": "cumo",
+        "user": "app",
         "datcollate": "C",
         "encoding": "UTF8",
     }
-    introspector.schemas.return_value = ["public", "cumo-invoicing"]
+    introspector.schemas.return_value = ["public", "acme-invoicing"]
     introspector.locate_changelog.return_value = [
         ChangelogLocation(schema="public", table="DATABASECHANGELOG"),
-        ChangelogLocation(schema="cumo-invoicing", table="DATABASECHANGELOG"),
+        ChangelogLocation(schema="acme-invoicing", table="DATABASECHANGELOG"),
     ]
 
     with (
@@ -132,7 +132,7 @@ def test_several_changelog_candidates_are_reported_as_ambiguous():
     assert status.changelog is None
     assert status.changelog_candidates == (
         "public.DATABASECHANGELOG",
-        "cumo-invoicing.DATABASECHANGELOG",
+        "acme-invoicing.DATABASECHANGELOG",
     )
 
 
@@ -142,17 +142,17 @@ def test_a_configured_changelog_location_is_used_instead_of_searching():
     source = SourceRef(
         label="qa",
         dsn_env="QA_DSN",
-        liquibase={"schema": "cumo-invoicing", "table": "DATABASECHANGELOG"},
+        liquibase={"schema": "acme-invoicing", "table": "DATABASECHANGELOG"},
     )
     introspector = mock.MagicMock()
     introspector.server_info.return_value = {
         "server_version": "15.19",
         "database": "invoicing",
-        "user": "cumo",
+        "user": "app",
         "datcollate": "C",
         "encoding": "UTF8",
     }
-    introspector.schemas.return_value = ["cumo-invoicing"]
+    introspector.schemas.return_value = ["acme-invoicing"]
     introspector.changelog_state.return_value = ChangelogState(location=None)
 
     with (

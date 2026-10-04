@@ -1816,7 +1816,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         application.path_dialogs_available = dialogs.available
         if arguments:
             print(
-                "cumo-schema-diff-gui takes no arguments. It reads and writes one "
+                "db-schema-diff-gui takes no arguments. It reads and writes one "
                 f"configuration, {home.default_path()}.",
                 file=sys.stderr,
             )
@@ -1826,7 +1826,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:
         # Only the type: the text of an unexpected failure is under nobody's redaction.
         print(
-            f"cumo-schema-diff-gui could not run ({type(exc).__name__}).",
+            f"db-schema-diff-gui could not run ({type(exc).__name__}).",
             file=sys.stderr,
         )
         log.warning("the application failed to run (%s)", type(exc).__name__)

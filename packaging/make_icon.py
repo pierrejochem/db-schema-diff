@@ -14,7 +14,7 @@ Run it when the brand changes:
 
     python3 packaging/make_icon.py
 
-It rewrites packaging/cumo-schema-diff-gui.icns, which `make exe` passes to --macos-app-icon.
+It rewrites packaging/db-schema-diff-gui.icns, which `make exe` passes to --macos-app-icon.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from pathlib import Path
 from logo import GRID, render, write_png
 
 HERE = Path(__file__).resolve().parent
-ICNS = HERE / "cumo-schema-diff-gui.icns"
+ICNS = HERE / "db-schema-diff-gui.icns"
 
 #: Absolute, because these ship with macOS at fixed locations and a bare name would be
 #: resolved through PATH.
@@ -39,7 +39,7 @@ def main() -> int:
         print("iconutil and sips are macOS tools; nothing to do here.", file=sys.stderr)
         return 0
 
-    iconset = HERE / "cumo-schema-diff-gui.iconset"
+    iconset = HERE / "db-schema-diff-gui.iconset"
     iconset.mkdir(exist_ok=True)
     master = iconset / "icon_512x512@2x.png"
     write_png(master, GRID, render(GRID))

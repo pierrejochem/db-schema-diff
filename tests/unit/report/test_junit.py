@@ -45,8 +45,8 @@ class TestStructure:
     def test_each_finding_becomes_a_case_named_by_its_path(self):
         qa = suite(parse(), "/qa")
         names = [c.get("name") for c in qa.findall("testcase")]
-        assert "cumo-invoicing.invoice.number" in names
-        assert "cumo-invoicing.DunningLevel" in names
+        assert "acme-invoicing.invoice.number" in names
+        assert "acme-invoicing.DunningLevel" in names
 
     def test_the_classname_carries_the_target_and_kind(self):
         qa = suite(parse(), "/qa")
@@ -59,8 +59,8 @@ class TestFailureGating:
         qa = suite(parse(), "/qa")
         failed = {c.get("name") for c in qa.findall("testcase") if c.find("failure") is not None}
         # fail_on=error, so the two errors fail and the warnings and info do not.
-        assert "cumo-invoicing.DunningLevel" in failed
-        assert "cumo-invoicing.invoice.number" in failed
+        assert "acme-invoicing.DunningLevel" in failed
+        assert "acme-invoicing.invoice.number" in failed
         assert "public.tmp_debug" not in failed
         assert "public.audit_entry" not in failed
 
@@ -77,14 +77,14 @@ class TestFailureGating:
     def test_the_failure_carries_the_severity_as_its_type(self):
         qa = suite(parse(), "/qa")
         case = next(
-            c for c in qa.findall("testcase") if c.get("name") == "cumo-invoicing.invoice.number"
+            c for c in qa.findall("testcase") if c.get("name") == "acme-invoicing.invoice.number"
         )
         assert case.find("failure").get("type") == "error"
 
     def test_the_failure_body_names_the_attribute_and_both_values(self):
         qa = suite(parse(), "/qa")
         case = next(
-            c for c in qa.findall("testcase") if c.get("name") == "cumo-invoicing.invoice.number"
+            c for c in qa.findall("testcase") if c.get("name") == "acme-invoicing.invoice.number"
         )
         body = case.find("failure").text or ""
         assert "column.data_type" in body
@@ -152,7 +152,7 @@ class TestHostileCharacters:
     def test_the_surrounding_text_survives_the_stripping(self):
         qa = suite(parse(full_report(fail_on="warning")), "/qa")
         case = next(
-            c for c in qa.findall("testcase") if c.get("name") == "cumo-invoicing.invoice.status"
+            c for c in qa.findall("testcase") if c.get("name") == "acme-invoicing.invoice.status"
         )
         body = case.find("failure").text or ""
         assert HOSTILE_TEXT.replace("\x01", "") in body

@@ -27,7 +27,7 @@ class LiquibaseRef(BaseModel):
     """Explicit location of a ``DATABASECHANGELOG`` table.
 
     Only needed to disambiguate: the table is normally located by scanning the catalog,
-    because it is not reliably in ``public`` (``cumo-invoicing`` keeps it in a hyphenated
+    because it is not reliably in ``public`` (``acme-invoicing`` keeps it in a hyphenated
     schema of its own).
     """
 
@@ -137,7 +137,7 @@ class SourceRef(BaseModel):
     schema_map: dict[str, str] = Field(default_factory=dict)
     """Master-schema-name to this-source-schema-name renames.
 
-    Needed because services such as ``cumo-bpf`` deploy with a per-environment
+    Needed because services such as ``acme-bpf`` deploy with a per-environment
     ``--defaultSchemaName``, so the same table lives under a different schema name per
     environment.
     """
@@ -307,7 +307,7 @@ class Options(BaseModel):
 class ComparerConfig(BaseModel):
     """One master database and the targets it is compared against.
 
-    Scoped to a single database on purpose: the CUMO server hosts ~18 of them, one per
+    Scoped to a single database on purpose: the Acme server hosts ~18 of them, one per
     service, so the unit of comparison is a (server, database) pair and each gets its own
     config file.
     """

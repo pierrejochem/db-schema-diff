@@ -203,7 +203,7 @@ pre.payload { display: none; }
   against {{ report.targets | length }} target{{ '' if report.targets | length == 1 else 's' }}</p>
   <dl>
     <dt>Generated</dt><dd>{{ report.generated_at or 'unknown' }}</dd>
-    <dt>Tool</dt><dd>cumo-schema-diff {{ report.tool_version or '(unversioned)' }}</dd>
+    <dt>Tool</dt><dd>db-schema-diff {{ report.tool_version or '(unversioned)' }}</dd>
     <dt>Gate</dt><dd>--fail-on {{ report.fail_on }}</dd>
   </dl>
 </div>
@@ -248,7 +248,7 @@ pre.payload { display: none; }
 <h2>Findings</h2>
 
 <div class="controls">
-  <input type="search" id="filter" placeholder="Filter by name, e.g. invoice or cumo-invoicing.*"
+  <input type="search" id="filter" placeholder="Filter by name, e.g. invoice or acme-invoicing.*"
          aria-label="Filter findings by name">
   <label><input type="checkbox" class="sev" value="error" checked> error</label>
   <label><input type="checkbox" class="sev" value="warning" checked> warning</label>

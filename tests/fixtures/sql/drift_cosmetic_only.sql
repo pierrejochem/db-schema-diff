@@ -9,8 +9,8 @@
 -- A comparer that string-compares defaults reports drift on this file. This one must report
 -- nothing.
 ALTER TABLE public.mandant        ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP;
-ALTER TABLE "cumo-invoicing".invoice ALTER COLUMN issued_at SET DEFAULT now();
+ALTER TABLE "acme-invoicing".invoice ALTER COLUMN issued_at SET DEFAULT now();
 -- Redundant parentheses and an explicit cast to the column's own type: both are noise the
 -- server prints back, and neither changes the value.
-ALTER TABLE "cumo-invoicing".invoice ALTER COLUMN net_amount SET DEFAULT (0)::numeric;
-ALTER TABLE "cumo-invoicing".invoice ALTER COLUMN status     SET DEFAULT 'DRAFT';
+ALTER TABLE "acme-invoicing".invoice ALTER COLUMN net_amount SET DEFAULT (0)::numeric;
+ALTER TABLE "acme-invoicing".invoice ALTER COLUMN status     SET DEFAULT 'DRAFT';

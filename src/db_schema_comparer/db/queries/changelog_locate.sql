@@ -1,7 +1,7 @@
 -- Every Liquibase bookkeeping table in the database.
 --
--- Located rather than assumed, for a verified reason: cumo-invoicing sets
--- spring.liquibase.liquibase-schema=cumo-invoicing, so its DATABASECHANGELOG lives in a
+-- Located rather than assumed, for a verified reason: acme-invoicing sets
+-- spring.liquibase.liquibase-schema=acme-invoicing, so its DATABASECHANGELOG lives in a
 -- quoted, hyphenated schema and not in public.
 --
 -- relname is matched case-insensitively because Liquibase writes the name uppercase on some

@@ -59,7 +59,7 @@ def main() -> int:
 
     from testcontainers.community.postgres import PostgresContainer
 
-    image = os.environ.get("CUMO_SCHEMA_DIFF_TEST_IMAGE", "postgres:15")
+    image = os.environ.get("DB_SCHEMA_DIFF_TEST_IMAGE", "postgres:15")
     container = PostgresContainer(image, driver=None)
     container.start()
     try:
@@ -91,7 +91,7 @@ def _compare(master_dsn: str, target_dsn: str) -> int:
     config = BUILD / "dogfood.yaml"
     config.write_text(CONFIG)
 
-    executable = Path(sys.executable).parent / "cumo-schema-diff"
+    executable = Path(sys.executable).parent / "db-schema-diff"
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [
             str(executable),

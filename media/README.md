@@ -12,7 +12,7 @@ the drift the tool exists to find.
 | `logo-mark-mono.svg` | The mark in one ink, rows knocked out of the ground. Single-colour print, stencils, a stamp. Recolour it by changing the single `fill`. |
 | `logo-mark-<n>.png` | The mark where an SVG is not accepted: a Windows or Linux launcher entry, a favicon, a store listing, a Slack or Confluence avatar. |
 
-The macOS application icon is not here — it is `packaging/cumo-schema-diff-gui.icns`, built from the
+The macOS application icon is not here — it is `packaging/db-schema-diff-gui.icns`, built from the
 same geometry, because that is where `make exe` looks for it.
 
 ## Changing the brand

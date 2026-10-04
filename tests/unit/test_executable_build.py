@@ -20,8 +20,8 @@ PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 #: Entry script -> the console script it must agree with, by its pyproject name.
 ENTRY_SCRIPTS = {
-    "main.py": "cumo-schema-diff-gui",
-    "main_cli.py": "cumo-schema-diff",
+    "main.py": "db-schema-diff-gui",
+    "main_cli.py": "db-schema-diff",
 }
 
 
@@ -246,7 +246,7 @@ class TestMacosAppBundle:
         so it can be corrected when the brand is.
         """
         assert "--macos-app-icon=" in self.section()
-        icon = ROOT / "packaging" / "cumo-schema-diff-gui.icns"
+        icon = ROOT / "packaging" / "db-schema-diff-gui.icns"
         assert icon.is_file(), "the icon the build points at does not exist"
         assert icon.stat().st_size > 10_000, "an icns this small is not a full icon set"
         assert (ROOT / "packaging" / "make_icon.py").is_file(), "the icon has no generator"

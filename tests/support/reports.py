@@ -34,12 +34,12 @@ def drifted_target() -> TargetDiff:
         target_source=source("qa"),
         findings=(
             ObjectFinding(
-                key=table_key("cumo-invoicing", "DunningLevel"),
+                key=table_key("acme-invoicing", "DunningLevel"),
                 status=ObjectStatus.MISSING_IN_TARGET,
                 severity=Severity.ERROR,
             ),
             ObjectFinding(
-                key=column_key("cumo-invoicing", "invoice", "number"),
+                key=column_key("acme-invoicing", "invoice", "number"),
                 status=ObjectStatus.DIFFERS,
                 severity=Severity.ERROR,
                 deltas=(
@@ -53,7 +53,7 @@ def drifted_target() -> TargetDiff:
                 ),
             ),
             ObjectFinding(
-                key=column_key("cumo-invoicing", "invoice", "status"),
+                key=column_key("acme-invoicing", "invoice", "status"),
                 status=ObjectStatus.DIFFERS,
                 severity=Severity.WARNING,
                 deltas=(

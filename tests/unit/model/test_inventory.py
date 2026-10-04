@@ -12,7 +12,7 @@ from tests.support.builders import changelog, changeset, col, inventory, table
 def sample():
     return inventory(
         table(
-            "cumo-invoicing",
+            "acme-invoicing",
             "invoice",
             cols=[col("id", "int4", nullable=False), col("amount", "numeric(10,2)")],
         ),
@@ -34,7 +34,7 @@ class TestRoundTrip:
         assert restored.changelog is not None
         assert restored.changelog.count == 1
         assert restored.changelog.last_tag == "R7.6.2"
-        assert restored.changelog.location.schema == "cumo-invoicing"
+        assert restored.changelog.location.schema == "acme-invoicing"
 
     def test_fingerprint_survives_the_round_trip(self):
         original = sample()
@@ -87,7 +87,7 @@ class TestQueries:
     def test_by_kind_selects_one_kind(self):
         inv = sample()
         assert set(inv.by_kind(ObjectKind.TABLE)) == {
-            table_key("cumo-invoicing", "invoice"),
+            table_key("acme-invoicing", "invoice"),
             table_key("public", "mandant"),
         }
         assert len(inv.by_kind(ObjectKind.COLUMN)) == 3
@@ -110,8 +110,8 @@ class TestQueries:
 
 class TestRemapSchemas:
     def test_remapping_moves_objects_and_rewrites_their_keys(self):
-        inv = inventory(table("cumo-invoicing", "invoice", cols=[col("id", "int4")]))
-        remapped = inv.remap_schemas({"cumo-invoicing": "invoicing_qa"})
+        inv = inventory(table("acme-invoicing", "invoice", cols=[col("id", "int4")]))
+        remapped = inv.remap_schemas({"acme-invoicing": "invoicing_qa"})
         assert set(remapped.schemas) == {"invoicing_qa"}
         key = column_key("invoicing_qa", "invoice", "id")
         assert key in remapped.objects
@@ -119,8 +119,8 @@ class TestRemapSchemas:
         assert remapped.objects[key].key == key
 
     def test_remapping_leaves_unmapped_schemas_alone(self):
-        inv = inventory(table("public", "mandant"), table("cumo-invoicing", "invoice"))
-        remapped = inv.remap_schemas({"cumo-invoicing": "invoicing_qa"})
+        inv = inventory(table("public", "mandant"), table("acme-invoicing", "invoice"))
+        remapped = inv.remap_schemas({"acme-invoicing": "invoicing_qa"})
         assert table_key("public", "mandant") in remapped.objects
 
     def test_an_empty_mapping_is_a_no_op(self):
@@ -149,8 +149,8 @@ class TestKeys:
             ObjectKey(ObjectKind.TABLE, "", "t")
 
     def test_hyphenated_and_uppercase_names_are_preserved(self):
-        key = ObjectKey(ObjectKind.TABLE, "cumo-invoicing", "DATABASECHANGELOG")
-        assert key.qualified == "cumo-invoicing.DATABASECHANGELOG"
+        key = ObjectKey(ObjectKind.TABLE, "acme-invoicing", "DATABASECHANGELOG")
+        assert key.qualified == "acme-invoicing.DATABASECHANGELOG"
 
 
 class TestEmptinessIgnoresDefaultExtensions:

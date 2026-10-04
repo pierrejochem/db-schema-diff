@@ -66,7 +66,7 @@ class TestCatalogTraps:
         databases.setup("base")
         master = inventory_of(databases.master_dsn, "prod")
         column = next(
-            obj for key, obj in master.objects.items() if key.path == "cumo-invoicing.invoice.id"
+            obj for key, obj in master.objects.items() if key.path == "acme-invoicing.invoice.id"
         )
         # The default canonicalises to a sentinel; the real name is recorded for display only.
         assert column.is_serial
@@ -91,7 +91,7 @@ class TestCatalogTraps:
         by_path = {key.path: obj for key, obj in master.objects.items()}
         assert by_path["public.mandant.name"].data_type == "varchar(80)"
         assert by_path["public.mandant.created_at"].data_type == "timestamp"
-        assert by_path["cumo-invoicing.invoice.issued_at"].data_type == "timestamptz"
+        assert by_path["acme-invoicing.invoice.issued_at"].data_type == "timestamptz"
         # The server's own spelling is kept for display.
         assert by_path["public.mandant.name"].raw.get("data_type") == "character varying(80)"
 
@@ -99,8 +99,8 @@ class TestCatalogTraps:
         databases.setup("base")
         master = inventory_of(databases.master_dsn, "prod")
         paths = {key.path for key in master.objects}
-        assert "cumo-invoicing.DunningLevel" in paths
-        assert "cumo-invoicing.DunningLevel.Name" in paths
+        assert "acme-invoicing.DunningLevel" in paths
+        assert "acme-invoicing.DunningLevel.Name" in paths
         assert "public.QRTZ_LOCKS" in paths
 
     def test_a_generated_column_is_captured_as_generated_not_as_a_default(self, databases):
@@ -109,7 +109,7 @@ class TestCatalogTraps:
         column = next(
             obj
             for key, obj in master.objects.items()
-            if key.path == "cumo-invoicing.invoice.gross_amount"
+            if key.path == "acme-invoicing.invoice.gross_amount"
         )
         assert column.generated is not None
         assert column.default is None
@@ -118,8 +118,8 @@ class TestCatalogTraps:
         databases.setup("base")
         master = inventory_of(databases.master_dsn, "prod")
         by_path = {key.path: obj for key, obj in master.objects.items()}
-        assert by_path["cumo-invoicing.invoice_line.id"].autoincrement == "identity:d"
-        assert by_path["cumo-invoicing.invoice.id"].autoincrement == "serial"
+        assert by_path["acme-invoicing.invoice_line.id"].autoincrement == "identity:d"
+        assert by_path["acme-invoicing.invoice.id"].autoincrement == "serial"
 
 
 def _explain(findings) -> str:
@@ -164,7 +164,7 @@ class TestOrdinalsAreIndependentOfIndexes:
         return {
             key.subname: obj.ordinal
             for key, obj in inventory.objects.items()
-            if key.kind is ObjectKind.COLUMN and key.qualified == "cumo-invoicing.invoice"
+            if key.kind is ObjectKind.COLUMN and key.qualified == "acme-invoicing.invoice"
         }
 
     def test_ordinals_are_dense_and_start_at_one(self, databases):
@@ -185,7 +185,7 @@ class TestOrdinalsAreIndependentOfIndexes:
         databases.setup("base")
         inventory = inventory_of(databases.master_dsn, "prod")
         column = next(
-            obj for key, obj in inventory.objects.items() if key.path == "cumo-invoicing.invoice.id"
+            obj for key, obj in inventory.objects.items() if key.path == "acme-invoicing.invoice.id"
         )
         assert column.is_serial
         assert column.sequence_name == "invoice_id_seq"

@@ -4,7 +4,7 @@ A comparison config is a small non-secret YAML naming environment variables, and
 desktop application had nowhere to put one: it took a path on the command line and saved back to it,
 so a config created in the GUI had to be given a location before it could be saved at all.
 
-``~/.cumo_db_schema_comparer`` is that place. It is created on start-up and it is where a
+``~/.db_schema_comparer`` is that place. It is created on start-up and it is where a
 configuration built in the application is saved.
 
 There is one file, :data:`CONFIG_NAME`, and the application reads it back when it starts. It still
@@ -12,7 +12,7 @@ has no Open button and still takes no path on the command line: nothing here lis
 file, because there is nothing to choose between. This module says where that one file is; reading
 it is ``app.Application._reopen``.
 
-``CUMO_SCHEMA_DIFF_HOME`` overrides the location. Tests set it, because a test that writes into the
+``DB_SCHEMA_DIFF_HOME`` overrides the location. Tests set it, because a test that writes into the
 person running it's home directory is a test that has already failed.
 """
 
@@ -25,11 +25,11 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 #: The directory name under the user's home.
-DIRECTORY_NAME = ".cumo_db_schema_comparer"
+DIRECTORY_NAME = ".db_schema_comparer"
 
 #: Points the whole of this module somewhere else. Set by tests, and usable by anyone keeping their
 #: configurations outside their home directory.
-HOME_VARIABLE = "CUMO_SCHEMA_DIFF_HOME"
+HOME_VARIABLE = "DB_SCHEMA_DIFF_HOME"
 
 
 def directory() -> Path:

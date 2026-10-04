@@ -214,7 +214,7 @@ class Introspector:
         """Find every Liquibase ``DATABASECHANGELOG`` table in the database.
 
         Scans **all** schemas, including any the user excluded from the DDL comparison: the
-        table is not reliably in ``public`` — ``cumo-invoicing`` keeps it in a hyphenated schema
+        table is not reliably in ``public`` — ``acme-invoicing`` keeps it in a hyphenated schema
         of its own — and excluding its schema from the structural diff should not hide the
         migration history.
         """

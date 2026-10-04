@@ -83,7 +83,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 15 matches cumo-local-qa-env. 13 and 17 bracket it, so a catalog change at either
+        # 15 matches local-qa-env. 13 and 17 bracket it, so a catalog change at either
         # end shows up here rather than on somebody's environment.
         postgres: ['13', '15', '17']
     steps:
@@ -99,7 +99,7 @@ jobs:
 
       - name: Integration tests
         env:
-          CUMO_SCHEMA_DIFF_TEST_IMAGE: postgres:${{ matrix.postgres }}
+          DB_SCHEMA_DIFF_TEST_IMAGE: postgres:${{ matrix.postgres }}
         run: pytest -m integration
 
   dogfood:
@@ -189,8 +189,8 @@ jobs:
         run: |
           python -m venv /tmp/wheel-venv
           /tmp/wheel-venv/bin/pip install dist/*.whl
-          /tmp/wheel-venv/bin/cumo-schema-diff --version
-          /tmp/wheel-venv/bin/cumo-schema-diff compare --help > /dev/null
+          /tmp/wheel-venv/bin/db-schema-diff --version
+          /tmp/wheel-venv/bin/db-schema-diff compare --help > /dev/null
           /tmp/wheel-venv/bin/python - <<'PY'
           import importlib, pkgutil
           import db_schema_comparer

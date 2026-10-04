@@ -1,7 +1,7 @@
 """Liquibase changelog comparison against a real PostgreSQL.
 
-The fixture's changelog deliberately lives in the quoted, hyphenated ``"cumo-invoicing"`` schema,
-mirroring what ``spring.liquibase.liquibase-schema=cumo-invoicing`` actually produces. So every test
+The fixture's changelog deliberately lives in the quoted, hyphenated ``"acme-invoicing"`` schema,
+mirroring what ``spring.liquibase.liquibase-schema=acme-invoicing`` actually produces. So every test
 here also exercises locating the table rather than assuming ``public``, and quoting a hyphenated
 identifier on the way in.
 """
@@ -37,8 +37,8 @@ class TestLocating:
         inventory = inventory_of(databases.master_dsn, "prod")
         assert inventory.changelog is not None
         assert inventory.changelog.location is not None
-        # Verified against the real cumo-invoicing setup: not public.
-        assert inventory.changelog.location.schema == "cumo-invoicing"
+        # Verified against the real acme-invoicing setup: not public.
+        assert inventory.changelog.location.schema == "acme-invoicing"
         assert inventory.changelog.location.table == "DATABASECHANGELOG"
 
     def test_the_rows_are_read_in_deployment_order(self, databases):
@@ -166,7 +166,7 @@ class TestFilename:
     def test_a_different_path_does_not_read_as_a_missing_changeset(self, databases):
         """The case that makes FILENAME unusable as identity.
 
-        cumo-invoicing's master.xml mixes relative and non-relative includes, so the same changeset
+        acme-invoicing's master.xml mixes relative and non-relative includes, so the same changeset
         records a different filename in different deployments.
         """
         result = changelog_of(databases, "drift_changelog_filename")
@@ -222,13 +222,13 @@ class TestAbsence:
         source = SourceRef(
             label="qa",
             dsn_env="X",
-            liquibase={"schema": "cumo-invoicing", "table": "DATABASECHANGELOG"},
+            liquibase={"schema": "acme-invoicing", "table": "DATABASECHANGELOG"},
         )
         with open_connection(Dsn(databases.target_dsn, env_name="X"), label="qa") as connection:
             inventory = build_inventory(connection, source)
         assert inventory.changelog is not None
         assert inventory.changelog.location is not None
-        assert inventory.changelog.location.schema == "cumo-invoicing"
+        assert inventory.changelog.location.schema == "acme-invoicing"
         assert inventory.changelog.count == 3
 
 

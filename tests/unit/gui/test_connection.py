@@ -33,7 +33,7 @@ def source(**overrides) -> SourceRef:
         "host": "db-qa.internal",
         "port": 6432,
         "database": "invoicing",
-        "user": "cumo",
+        "user": "app",
     }
     parts.update(overrides)
     return SourceRef(**parts)
@@ -43,7 +43,7 @@ class TestBuilding:
     def test_the_parts_come_back_out_as_they_went_in(self):
         built = connection.build(source(), "hunter2", env_name="QA_DSN")
         assert conninfo_to_dict(built.value) == {
-            "user": "cumo",
+            "user": "app",
             "password": "hunter2",
             "host": "db-qa.internal",
             "port": "6432",
@@ -75,10 +75,10 @@ class TestBuilding:
 
     def test_a_user_and_database_with_punctuation_survive_too(self):
         built = connection.build(
-            source(user="cumo@corp", database="in/voicing"), "pw", env_name="QA_DSN"
+            source(user="app@corp", database="in/voicing"), "pw", env_name="QA_DSN"
         )
         parsed = conninfo_to_dict(built.value)
-        assert parsed["user"] == "cumo@corp"
+        assert parsed["user"] == "app@corp"
         assert parsed["dbname"] == "in/voicing"
 
     def test_the_default_port_is_written_out_rather_than_left_to_libpq(self):
@@ -103,15 +103,15 @@ class TestBuilding:
             assert rendered == "<Dsn from $QA_DSN>"
 
     def test_it_is_filed_under_the_name_it_was_given(self):
-        built = connection.build(source(), "pw", env_name="CUMO_QA_DSN")
-        assert built.env_name == "CUMO_QA_DSN"
+        built = connection.build(source(), "pw", env_name="DB_QA_DSN")
+        assert built.env_name == "DB_QA_DSN"
 
     def test_an_empty_password_leaves_the_credentials_without_a_separator(self):
         """Not ``user:@host``: an empty password is different from no password, and libpq would
         read the first as a password that is the empty string."""
         built = connection.build(source(), "", env_name="QA_DSN")
         assert "password" not in conninfo_to_dict(built.value)
-        assert built.value.startswith("postgresql://cumo@")
+        assert built.value.startswith("postgresql://app@")
 
 
 class TestWhatIsStillMissing:
@@ -143,15 +143,15 @@ class TestTheGeneratedVariableName:
     @pytest.mark.parametrize(
         ("label", "expected"),
         [
-            ("qa", "CUMO_QA_DSN"),
-            ("prod", "CUMO_PROD_DSN"),
-            ("rmv-qa", "CUMO_RMV_QA_DSN"),
-            ("staging 2", "CUMO_STAGING_2_DSN"),
-            ("a.b.c", "CUMO_A_B_C_DSN"),
-            ("--odd--", "CUMO_ODD_DSN"),
-            ("", "CUMO_SOURCE_DSN"),
-            ("!!!", "CUMO_SOURCE_DSN"),
-            ("ümlaut", "CUMO_MLAUT_DSN"),
+            ("qa", "DB_QA_DSN"),
+            ("prod", "DB_PROD_DSN"),
+            ("rmv-qa", "DB_RMV_QA_DSN"),
+            ("staging 2", "DB_STAGING_2_DSN"),
+            ("a.b.c", "DB_A_B_C_DSN"),
+            ("--odd--", "DB_ODD_DSN"),
+            ("", "DB_SOURCE_DSN"),
+            ("!!!", "DB_SOURCE_DSN"),
+            ("ümlaut", "DB_MLAUT_DSN"),
         ],
     )
     def test_a_label_becomes_an_environment_variable_name(self, label, expected):

@@ -16,7 +16,7 @@ from tests.integration.test_no_drift import inventory_of
 
 pytestmark = pytest.mark.integration
 
-TABLE = "cumo-invoicing.column_flavours"
+TABLE = "acme-invoicing.column_flavours"
 
 
 @pytest.fixture(scope="module")
@@ -79,8 +79,8 @@ class TestTypes:
 
     def test_a_user_type_keeps_its_qualifier_and_its_quoting(self, flavours):
         # With search_path='' the server qualifies user types, and the hyphen forces quoting.
-        assert flavours["stage"].data_type == '"cumo-invoicing".dunning_stage'
-        assert flavours["vetted_amount"].data_type == '"cumo-invoicing".positive_amount'
+        assert flavours["stage"].data_type == '"acme-invoicing".dunning_stage'
+        assert flavours["vetted_amount"].data_type == '"acme-invoicing".positive_amount'
 
     def test_the_servers_own_spelling_is_kept_for_display(self, flavours):
         assert flavours["ts_plain"].raw.get("data_type") == "timestamp without time zone"
@@ -118,11 +118,11 @@ class TestDefaults:
         assert flavours["d_now"].default == flavours["d_current"].default
 
     def test_a_qualified_function_default_keeps_its_qualifier(self, flavours):
-        assert flavours["d_qualified"].default == '"cumo-invoicing".next_reference()'
+        assert flavours["d_qualified"].default == '"acme-invoicing".next_reference()'
 
     def test_a_cast_to_a_user_type_is_kept(self, flavours):
         # The cast names the enum, which is information, not noise.
-        assert flavours["d_enum"].default == "'NONE'::\"cumo-invoicing\".dunning_stage"
+        assert flavours["d_enum"].default == "'NONE'::\"acme-invoicing\".dunning_stage"
 
     def test_an_array_constructor_default_binds_to_its_bracket(self, flavours):
         assert flavours["d_array_items"].default == "array['a'::text, 'b'::text]"

@@ -272,11 +272,11 @@ def test_a_source_row_round_trips_every_field(window):
         host="db-prod",
         port="5432",
         database="invoicing",
-        user="cumo",
+        user="app",
         sslmode="require",
         has_password=True,
         missing="",
-        schemas="cumo-invoicing, public",
+        schemas="acme-invoicing, public",
         schema_map="a=b",
         liquibase_schema="lb",
         liquibase_table="DATABASECHANGELOG",
@@ -552,7 +552,7 @@ def make_finding(**overrides):
     row = {
         "target": "qa",
         "kind": "column",
-        "path": "cumo-invoicing.invoice.number",
+        "path": "acme-invoicing.invoice.number",
         "status": "differs",
         "severity": "error",
         "detail": "column.data_type: varchar(40) -> text",
@@ -1541,7 +1541,7 @@ def test_a_card_keeps_its_content_at_the_top_when_stretched():
 def test_the_rail_carries_the_media_lockup_not_a_text_stand_in():
     shell = (UI / "main.slint").read_text()
     assert '@image-url("logo-inverse.png")' in shell
-    assert 'text: "cumo"' not in shell
+    assert 'text: "DB"' not in shell
     data = (UI / "logo-inverse.png").read_bytes()
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
     width, height = struct.unpack(">II", data[16:24])

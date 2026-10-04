@@ -360,15 +360,15 @@ class TestCollationSkew:
 class TestSchemaMap:
     def test_a_renamed_schema_is_compared_as_the_same_schema(self):
         master = inventory(
-            table("cumo-invoicing", "invoice", cols=[col("id", "int4")]), label="prod"
+            table("acme-invoicing", "invoice", cols=[col("id", "int4")]), label="prod"
         )
         target = inventory(table("invoicing_qa", "invoice", cols=[col("id", "int4")]), label="qa")
-        result = diff_inventories(master, target, schema_map={"invoicing_qa": "cumo-invoicing"})
+        result = diff_inventories(master, target, schema_map={"invoicing_qa": "acme-invoicing"})
         assert result.findings == ()
 
     def test_without_the_map_everything_looks_missing_and_extra(self):
         master = inventory(
-            table("cumo-invoicing", "invoice", cols=[col("id", "int4")]), label="prod"
+            table("acme-invoicing", "invoice", cols=[col("id", "int4")]), label="prod"
         )
         target = inventory(table("invoicing_qa", "invoice", cols=[col("id", "int4")]), label="qa")
         result = diff_inventories(master, target)

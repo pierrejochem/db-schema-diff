@@ -25,17 +25,17 @@ FULL = textwrap.dedent(
       database: invoicing
       dsn_env: PROD_INVOICING_DSN
       schemas:
-        - cumo-invoicing
+        - acme-invoicing
         - public
     targets:
       - label: qa
         dsn_env: QA_INVOICING_DSN
         schema_map:
-          cumo-invoicing: invoicing_qa
+          acme-invoicing: invoicing_qa
       - label: local
         dsn_env: LOCAL_DSN
         liquibase:
-          schema: cumo-invoicing
+          schema: acme-invoicing
           table: DATABASECHANGELOG
     exclude_schemas:
       - quartz
@@ -83,7 +83,7 @@ class TestRoundTrip:
         assert "name: payment" in text
 
     def test_a_hyphenated_identifier_survives_the_round_trip(self, document, tmp_path):
-        """Review Focus 5: `cumo-invoicing` is a real schema name in this platform.
+        """Review Focus 5: `acme-invoicing` is a real schema name in this platform.
 
         It passes through a Slint string and back into YAML, where it must stay correctly quoted or
         unquoted such that reloading produces the same value.
@@ -91,9 +91,9 @@ class TestRoundTrip:
         out = tmp_path / "again.yaml"
         document.save(out)
         reloaded = read(out)
-        assert reloaded.config.master.schemas == ("cumo-invoicing", "public")
-        assert reloaded.config.targets[0].schema_map == {"cumo-invoicing": "invoicing_qa"}
-        assert reloaded.config.targets[1].liquibase.schema_name == "cumo-invoicing"
+        assert reloaded.config.master.schemas == ("acme-invoicing", "public")
+        assert reloaded.config.targets[0].schema_map == {"acme-invoicing": "invoicing_qa"}
+        assert reloaded.config.targets[1].liquibase.schema_name == "acme-invoicing"
 
     def test_a_non_ascii_identifier_survives_the_round_trip(self, tmp_path):
         document = ConfigDocument.blank("faktura")
@@ -222,7 +222,7 @@ class TestFurtherEditing:
         assert again.master.schemas == ("a-b", "c")
         assert [t.label for t in again.targets] == ["qa", "local", "dev"]
         # Generated from the label rather than typed: nobody is asked to invent a variable name.
-        assert again.targets[2].dsn_env == "CUMO_DEV_DSN"
+        assert again.targets[2].dsn_env == "DB_DEV_DSN"
 
     def test_two_labels_that_differ_only_in_punctuation_get_separate_variables(self, document):
         """Punctuation collapses to underscores, so these two generate the same name.
@@ -234,7 +234,7 @@ class TestFurtherEditing:
         document.add_target("db.qa")
         document.add_target("db-qa")
         names = [t.dsn_env for t in document.config.targets[-2:]]
-        assert names == ["CUMO_DB_QA_DSN", "CUMO_DB_QA_2_DSN"]
+        assert names == ["DB_DB_QA_DSN", "DB_DB_QA_2_DSN"]
 
     def test_a_rename_onto_a_colliding_name_is_separated_too(self, document):
         document.add_target("db.qa")
@@ -248,7 +248,7 @@ class TestFurtherEditing:
         document.add_target("dev")
         document.update_source("dev", "label", "dev-x")
         document.update_source("dev-x", "label", "dev")
-        assert document.config.targets[-1].dsn_env == "CUMO_DEV_DSN"
+        assert document.config.targets[-1].dsn_env == "DB_DEV_DSN"
 
     def test_a_comma_separated_string_becomes_schema_names(self, document):
         document.update_source("prod", "schemas", "a, b-c ,")
@@ -266,7 +266,7 @@ class TestFurtherEditing:
         assert document.path == out
 
     def test_sequences_are_indented_under_their_key(self, document):
-        assert "  schemas:\n    - cumo-invoicing\n" in document.to_yaml()
+        assert "  schemas:\n    - acme-invoicing\n" in document.to_yaml()
 
     def test_a_sources_connection_is_written_in_the_order_it_is_asked_for(self, document):
         """A saved file has to stay hand-editable, and that includes reading sensibly.
@@ -278,7 +278,7 @@ class TestFurtherEditing:
         for field, value in (
             ("host", "db-prod"),
             ("port", 5432),
-            ("user", "cumo"),
+            ("user", "app"),
             ("sslmode", "require"),
         ):
             document.update_source("prod", field, value)

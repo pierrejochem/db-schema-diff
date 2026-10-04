@@ -16,11 +16,11 @@ from db_schema_comparer.model.objects import Constraint, Index, IndexKey, RawVal
 from tests.support.builders import inventory
 
 
-def constraint_key(table: str, name: str, schema: str = "cumo-invoicing") -> ObjectKey:
+def constraint_key(table: str, name: str, schema: str = "acme-invoicing") -> ObjectKey:
     return ObjectKey(ObjectKind.CONSTRAINT, schema, table, name)
 
 
-def index_key(name: str, schema: str = "cumo-invoicing") -> ObjectKey:
+def index_key(name: str, schema: str = "acme-invoicing") -> ObjectKey:
     return ObjectKey(ObjectKind.INDEX, schema, name)
 
 
@@ -49,7 +49,7 @@ class TestForeignKeyProperties:
             "key": constraint_key("invoice_line", "invoice_line_invoice_id_fkey"),
             "contype": "f",
             "columns": ("invoice_id",),
-            "references_schema": "cumo-invoicing",
+            "references_schema": "acme-invoicing",
             "references_name": "invoice",
             "references_columns": ("id",),
         }
@@ -57,7 +57,7 @@ class TestForeignKeyProperties:
 
     def test_references_is_qualified_and_names_the_columns(self):
         # Qualified so a target that moved a table between schemas is reported, not accepted.
-        assert self._fk().references == "cumo-invoicing.invoice(id)"
+        assert self._fk().references == "acme-invoicing.invoice(id)"
 
     def test_references_is_none_for_a_non_foreign_key(self):
         assert Constraint(key=constraint_key("t", "c"), contype="c").references is None
@@ -158,7 +158,7 @@ class TestRoundTrip:
             key=key,
             contype="f",
             columns=("invoice_id",),
-            references_schema="cumo-invoicing",
+            references_schema="acme-invoicing",
             references_name="invoice",
             references_columns=("id",),
             on_delete="c",
@@ -197,7 +197,7 @@ class TestRoutineProperties:
     def _routine(self, **overrides):
         from db_schema_comparer.model.objects import Routine
 
-        key = ObjectKey(ObjectKind.ROUTINE, "cumo-invoicing", "f(integer)")
+        key = ObjectKey(ObjectKind.ROUTINE, "acme-invoicing", "f(integer)")
         return Routine(key=key, **overrides)
 
     @pytest.mark.parametrize(
@@ -271,7 +271,7 @@ class TestViewAndSequenceRoundTrip:
         from db_schema_comparer.model.objects import View
         from tests.support.builders import inventory
 
-        key = ObjectKey(ObjectKind.VIEW, "cumo-invoicing", "invoice_summary")
+        key = ObjectKey(ObjectKind.VIEW, "acme-invoicing", "invoice_summary")
         original = View(
             key=key,
             columns=("id integer", "number character varying(40)"),
@@ -285,7 +285,7 @@ class TestViewAndSequenceRoundTrip:
         from db_schema_comparer.model.objects import Sequence
         from tests.support.builders import inventory
 
-        key = ObjectKey(ObjectKind.SEQUENCE, "cumo-invoicing", "reference_seq")
+        key = ObjectKey(ObjectKind.SEQUENCE, "acme-invoicing", "reference_seq")
         original = Sequence(key=key, data_type="int8", start_value=1000, increment=10, cycles=True)
         restored = Inventory.from_json(inventory({key: original}).to_json())
         assert restored.objects[key] == original

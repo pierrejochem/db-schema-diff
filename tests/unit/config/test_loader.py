@@ -28,15 +28,15 @@ master:
   host: db-prod
   database: invoicing
   dsn_env: PROD_DSN
-  schemas: ["cumo-invoicing", "public"]
+  schemas: ["acme-invoicing", "public"]
 targets:
   - label: qa
     host: db-qa
     dsn_env: QA_DSN
-    schema_map: { "cumo-invoicing": "invoicing_qa" }
+    schema_map: { "acme-invoicing": "invoicing_qa" }
   - label: local
     dsn_env: LOCAL_DSN
-    liquibase: { schema: "cumo-invoicing", table: DATABASECHANGELOG }
+    liquibase: { schema: "acme-invoicing", table: DATABASECHANGELOG }
 exclude_schemas: ["quartz"]
 options:
   fail_on: warning
@@ -65,11 +65,11 @@ def test_minimal_config_loads_with_documented_defaults(tmp_path):
 
 def test_full_config_round_trips_every_field(tmp_path):
     cfg = load_config([write(tmp_path, FULL)])[0]
-    assert cfg.master.schemas == ("cumo-invoicing", "public")
+    assert cfg.master.schemas == ("acme-invoicing", "public")
     qa, local = cfg.targets
-    assert qa.schema_map == {"cumo-invoicing": "invoicing_qa"}
+    assert qa.schema_map == {"acme-invoicing": "invoicing_qa"}
     assert local.liquibase is not None
-    assert local.liquibase.schema_name == "cumo-invoicing"
+    assert local.liquibase.schema_name == "acme-invoicing"
     assert local.liquibase.table == "DATABASECHANGELOG"
     assert cfg.exclude_schemas == ("quartz",)
     assert cfg.options.fail_on == "warning"
@@ -77,9 +77,9 @@ def test_full_config_round_trips_every_field(tmp_path):
 
 
 def test_hyphenated_schema_names_survive_verbatim(tmp_path):
-    # cumo-invoicing really does use a quoted, hyphenated schema. Never normalise a name.
+    # acme-invoicing really does use a quoted, hyphenated schema. Never normalise a name.
     cfg = load_config([write(tmp_path, FULL)])[0]
-    assert "cumo-invoicing" in cfg.master.schemas
+    assert "acme-invoicing" in cfg.master.schemas
 
 
 def test_a_typo_in_a_key_is_an_error_not_a_silent_default(tmp_path):

@@ -310,7 +310,7 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
 
         message = str(raised.value)
         assert "'qa'" in message
-        assert "db-schema-comparer[ssh]" in message
+        assert "db-schema-diff[ssh]" in message
 
     def test_available_answers_rather_than_raising(self):
         assert tunnel.available() is True

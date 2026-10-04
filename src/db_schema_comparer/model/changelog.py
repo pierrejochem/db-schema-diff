@@ -5,11 +5,11 @@ schemas differ, and which environment is behind.
 
 Two facts about this platform shape the model:
 
-* The table is **not** in ``public``. ``cumo-invoicing`` sets
-  ``spring.liquibase.liquibase-schema=cumo-invoicing``, so it lives in a quoted, hyphenated
+* The table is **not** in ``public``. ``acme-invoicing`` sets
+  ``spring.liquibase.liquibase-schema=acme-invoicing``, so it lives in a quoted, hyphenated
   schema of its own. The table is located by scanning the catalog, never assumed.
 * A changeset's identity is ``(id, author)`` and deliberately **excludes** ``filename``.
-  ``cumo-invoicing``'s ``master.xml`` mixes relative and non-relative includes, and some
+  ``acme-invoicing``'s ``master.xml`` mixes relative and non-relative includes, and some
   changelogs declare their own ``logicalFilePath``, so the same changeset legitimately
   records a different filename in different deployments.
 """

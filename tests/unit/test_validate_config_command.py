@@ -28,7 +28,7 @@ CONFIG = textwrap.dedent(
         dsn_env: VC_QA_DSN
       - label: dev
         dsn_env: VC_DEV_DSN
-        schema_map: { "cumo-invoicing": invoicing_dev }
+        schema_map: { "acme-invoicing": invoicing_dev }
     """
 ).lstrip()
 
@@ -62,7 +62,7 @@ def run(*args, env=None) -> Run:
     import os
     from unittest import mock
 
-    argv = ["cumo-schema-diff", "validate-config", *args]
+    argv = ["db-schema-diff", "validate-config", *args]
     stdout, stderr = io.StringIO(), io.StringIO()
     environment = {k: v for k, v in os.environ.items() if not k.startswith("VC_")}
     environment.update(env or {})

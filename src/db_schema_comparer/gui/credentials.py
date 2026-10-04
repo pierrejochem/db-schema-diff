@@ -32,7 +32,7 @@ from ..errors import MissingCredentialsError
 log = logging.getLogger(__name__)
 
 #: Keychain service name. Entries are (KEYCHAIN_SERVICE, <dsn_env name>).
-KEYCHAIN_SERVICE = "cumo-schema-diff"
+KEYCHAIN_SERVICE = "db-schema-diff"
 
 
 def _why(operation: str, exc: BaseException) -> str:

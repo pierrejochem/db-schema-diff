@@ -4,12 +4,12 @@ Why testcontainers rather than a compose file: the container is ephemeral, its p
 automatically so parallel runs do not collide, and there is no second file to keep in step with
 this one. It behaves identically on a developer's Mac and on GitHub's ubuntu-latest.
 
-Why two databases inside **one** container: that is the real topology. The CUMO server hosts ~18
+Why two databases inside **one** container: that is the real topology. The Acme server hosts ~18
 databases, one per service, so "master" and "target" are two databases on one server far more
 often than two servers. It is also faster.
 
 Everything here skips cleanly when Docker is absent, so ``pytest`` with no arguments never needs
-it. ``CUMO_SCHEMA_DIFF_TEST_DSN`` points the same tests at an existing server instead.
+it. ``DB_SCHEMA_DIFF_TEST_DSN`` points the same tests at an existing server instead.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ from psycopg.rows import dict_row
 FIXTURE_SQL = Path(__file__).parent.parent / "fixtures" / "sql"
 MASTER_DB = "master_db"
 TARGET_DB = "target_db"
-POSTGRES_IMAGE = os.environ.get("CUMO_SCHEMA_DIFF_TEST_IMAGE", "postgres:15")
-"""Mirrors cumo-local-qa-env/RMV, which runs postgres:15."""
+POSTGRES_IMAGE = os.environ.get("DB_SCHEMA_DIFF_TEST_IMAGE", "postgres:15")
+"""Mirrors local-qa-env/RMV, which runs postgres:15."""
 
 
 def docker_available() -> bool:
@@ -61,15 +61,15 @@ def docker_available() -> bool:
 def base_dsn() -> Iterator[str]:
     """A libpq URI for a server we may create databases on.
 
-    Either an external server named by ``CUMO_SCHEMA_DIFF_TEST_DSN`` or a throwaway container.
+    Either an external server named by ``DB_SCHEMA_DIFF_TEST_DSN`` or a throwaway container.
     """
-    external = os.environ.get("CUMO_SCHEMA_DIFF_TEST_DSN")
+    external = os.environ.get("DB_SCHEMA_DIFF_TEST_DSN")
     if external:
         yield external
         return
 
     if not docker_available():
-        pytest.skip("needs Docker, or CUMO_SCHEMA_DIFF_TEST_DSN pointing at a PostgreSQL server")
+        pytest.skip("needs Docker, or DB_SCHEMA_DIFF_TEST_DSN pointing at a PostgreSQL server")
 
     postgres = pytest.importorskip(
         "testcontainers.community.postgres", reason="testcontainers is required"
@@ -125,7 +125,7 @@ def reset(dsn: str) -> None:
     Faster than DROP DATABASE, and it keeps the fixture usable while connections are open.
     """
     with psycopg.connect(dsn, autocommit=True) as connection, connection.cursor() as cursor:
-        cursor.execute('DROP SCHEMA IF EXISTS "cumo-invoicing" CASCADE')
+        cursor.execute('DROP SCHEMA IF EXISTS "acme-invoicing" CASCADE')
         cursor.execute("DROP SCHEMA public CASCADE")
         cursor.execute("CREATE SCHEMA public AUTHORIZATION CURRENT_USER")
 

@@ -62,8 +62,8 @@ class TestLiterals:
 
 class TestIdentifiers:
     def test_a_quoted_identifier_is_one_token_and_keeps_its_case(self):
-        tokens = tokenize('"cumo-invoicing"."MyTable"')
-        assert [t.text for t in tokens] == ['"cumo-invoicing"', ".", '"MyTable"']
+        tokens = tokenize('"acme-invoicing"."MyTable"')
+        assert [t.text for t in tokens] == ['"acme-invoicing"', ".", '"MyTable"']
         assert tokens[0].type is TokenType.IDENTIFIER
 
     def test_a_doubled_double_quote_is_an_escape(self):
@@ -126,9 +126,9 @@ class TestRealCatalogOutput:
         assert any(t.text == "'A'" and t.type is TokenType.STRING for t in tokens)
 
     def test_a_serial_default(self):
-        tokens = tokenize("nextval('\"cumo-invoicing\".invoice_id_seq'::regclass)")
+        tokens = tokenize("nextval('\"acme-invoicing\".invoice_id_seq'::regclass)")
         literal = next(t for t in tokens if t.type is TokenType.STRING)
-        assert literal.text == "'\"cumo-invoicing\".invoice_id_seq'"
+        assert literal.text == "'\"acme-invoicing\".invoice_id_seq'"
 
     def test_an_index_expression(self):
         assert texts("lower((email)::text)") == ["lower", "(", "(", "email", ")", "::", "text", ")"]

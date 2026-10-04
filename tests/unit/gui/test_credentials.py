@@ -16,8 +16,8 @@ from db_schema_comparer.gui.credentials import (
     CredentialStore,
 )
 
-SECRET = "postgresql://cumo:hunter2@db-prod:5432/invoicing"
-OTHER = "postgresql://cumo:other@db-qa:5432/invoicing"
+SECRET = "postgresql://app:hunter2@db-prod:5432/invoicing"
+OTHER = "postgresql://app:other@db-qa:5432/invoicing"
 
 
 class FakeKeyring:

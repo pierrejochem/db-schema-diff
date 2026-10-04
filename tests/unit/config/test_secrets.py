@@ -10,7 +10,7 @@ from db_schema_comparer.errors import MissingCredentialsError
 from db_schema_comparer.logging_setup import RedactingFilter
 
 SECRET = "sup3rs3cret"
-URI = f"postgresql://cumo:{SECRET}@db-prod.example:5432/invoicing?sslmode=require"
+URI = f"postgresql://app:{SECRET}@db-prod.example:5432/invoicing?sslmode=require"
 
 
 @pytest.fixture
@@ -42,14 +42,14 @@ def test_safe_summary_keeps_the_useful_parts_and_drops_the_password(dsn):
     assert summary["host"] == "db-prod.example"
     assert summary["port"] == "5432"
     assert summary["dbname"] == "invoicing"
-    assert summary["user"] == "cumo"
+    assert summary["user"] == "app"
     assert "password" not in summary
     assert SECRET not in str(summary)
 
 
 def test_safe_summary_handles_a_keyword_conninfo_string(monkeypatch):
     monkeypatch.setenv(
-        "KW_DSN", f"host=db-qa port=5433 dbname=invoicing user=cumo password={SECRET}"
+        "KW_DSN", f"host=db-qa port=5433 dbname=invoicing user=app password={SECRET}"
     )
     summary = resolve_dsn("KW_DSN", role="target 'qa'").safe_summary()
     assert summary["host"] == "db-qa"
@@ -257,12 +257,12 @@ class TestFailClosed:
                 assert piece not in text
 
     def test_a_well_formed_dsn_keeps_the_full_summary(self):
-        dsn = Dsn("postgresql://cumo:pw@db-prod:5433/inv?sslmode=require", env_name="X")
+        dsn = Dsn("postgresql://app:pw@db-prod:5433/inv?sslmode=require", env_name="X")
         assert dsn.safe_summary() == {
             "host": "db-prod",
             "port": "5433",
             "dbname": "inv",
-            "user": "cumo",
+            "user": "app",
             "sslmode": "require",
             "source": "$X",
         }

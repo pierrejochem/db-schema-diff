@@ -23,7 +23,7 @@ class TestSerial:
 
     def test_a_qualified_owned_sequence_also_becomes_the_sentinel(self):
         result = canonical_default(
-            "nextval('\"cumo-invoicing\".invoice_id_seq'::regclass)",
+            "nextval('\"acme-invoicing\".invoice_id_seq'::regclass)",
             column_type="int4",
             owned_sequence="invoice_id_seq",
         )
@@ -59,7 +59,7 @@ class TestOwnedSequenceName:
         [
             ("nextval('invoice_id_seq'::regclass)", "invoice_id_seq"),
             ("nextval('public.invoice_id_seq'::regclass)", "invoice_id_seq"),
-            ('nextval(\'"cumo-invoicing"."Inv_id_seq"\'::regclass)', "Inv_id_seq"),
+            ('nextval(\'"acme-invoicing"."Inv_id_seq"\'::regclass)', "Inv_id_seq"),
             ("NEXTVAL('invoice_id_seq'::regclass)", "invoice_id_seq"),
             ("nextval('invoice_id_seq')", "invoice_id_seq"),
         ],

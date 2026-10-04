@@ -60,8 +60,8 @@ class TestInSync:
     def test_the_location_is_reported_for_both_sides(self):
         result = diff_changelog(history("a"), history("a"))
         # Proves the changelog was located rather than assumed, and where.
-        assert result.master_location == "cumo-invoicing.DATABASECHANGELOG"
-        assert result.target_location == "cumo-invoicing.DATABASECHANGELOG"
+        assert result.master_location == "acme-invoicing.DATABASECHANGELOG"
+        assert result.target_location == "acme-invoicing.DATABASECHANGELOG"
 
 
 class TestBehindAndAhead:
@@ -100,7 +100,7 @@ class TestIdentity:
         assert result.status is ChangelogStatus.DIVERGED
 
     def test_filename_is_not_part_of_identity(self):
-        """cumo-invoicing's master.xml mixes relative and non-relative includes.
+        """acme-invoicing's master.xml mixes relative and non-relative includes.
 
         Some of its changelogs declare their own logicalFilePath, so the same changeset legitimately
         records a different filename in different deployments. Including it in the identity would
@@ -181,7 +181,7 @@ class TestExecType:
     def test_executed_versus_mark_ran_is_a_warning(self):
         """MARK_RAN is in active use in this platform.
 
-        cumo-invoicing's update_20260423.xml gates a changeset on onFail="MARK_RAN" against row
+        acme-invoicing's update_20260423.xml gates a changeset on onFail="MARK_RAN" against row
         data, so the same changeset legitimately runs in one environment and is marked-ran in
         another. Worth reading; not a failed deployment.
         """
@@ -326,7 +326,7 @@ class TestAbsence:
             location=None,
             candidates=(
                 ChangelogLocation("public", "DATABASECHANGELOG"),
-                ChangelogLocation("cumo-invoicing", "DATABASECHANGELOG"),
+                ChangelogLocation("acme-invoicing", "DATABASECHANGELOG"),
             ),
         )
         result = diff_changelog(ambiguous, history("a"))

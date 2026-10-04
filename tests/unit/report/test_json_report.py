@@ -68,7 +68,7 @@ class TestRoundTrip:
         from db_schema_comparer.diff.severity import Severity
         from db_schema_comparer.model.keys import column_key
 
-        key = column_key("cumo-invoicing", "odd.name", "col")
+        key = column_key("acme-invoicing", "odd.name", "col")
         report = ComparisonReport(
             name="x",
             master_label="prod",

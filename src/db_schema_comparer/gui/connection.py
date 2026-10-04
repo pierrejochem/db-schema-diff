@@ -92,7 +92,7 @@ def variable_name(label: str) -> str:
     keychain both find the credential.
     """
     # ASCII only, not ``isalnum``: ``"ü".isalnum()`` is true, and a label written in German —
-    # which these are — would then generate ``CUMO_ÜMLAUT_DSN``, which is not an environment
+    # which these are — would then generate ``DB_ÜMLAUT_DSN``, which is not an environment
     # variable name. The configuration would refuse to save, naming a field nobody typed.
     cleaned = "".join(c if c in _NAME_CHARS else "_" for c in label).strip("_").upper()
-    return f"CUMO_{cleaned or 'SOURCE'}_DSN"
+    return f"DB_{cleaned or 'SOURCE'}_DSN"

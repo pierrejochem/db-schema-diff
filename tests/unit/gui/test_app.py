@@ -295,7 +295,7 @@ class TestLoading:
         assert missing == "host, database, user, password"
 
     def test_what_is_still_needed_shrinks_as_the_parts_are_typed(self, app):
-        for field, value in (("host", "db-qa"), ("database", "invoicing"), ("user", "cumo")):
+        for field, value in (("host", "db-qa"), ("database", "invoicing"), ("user", "app")):
             app.window.source_changed("qa", field, value)
         # The environment holds QA_DSN, so the password is already accounted for.
         assert by_label(app)["qa"]["missing"] == ""
@@ -401,23 +401,23 @@ class TestEditing:
         assert app.window.exclude_schemas_text == "quartz, "
 
     def test_schema_map_is_parsed_into_pairs(self, app):
-        app.window.source_changed("qa", "schema_map", "cumo-invoicing=inv_qa")
-        assert app.config.config.targets[0].schema_map == {"cumo-invoicing": "inv_qa"}
-        assert rows(app.window.sources)[1]["schema_map"] == "cumo-invoicing=inv_qa"
+        app.window.source_changed("qa", "schema_map", "acme-invoicing=inv_qa")
+        assert app.config.config.targets[0].schema_map == {"acme-invoicing": "inv_qa"}
+        assert rows(app.window.sources)[1]["schema_map"] == "acme-invoicing=inv_qa"
 
     def test_a_malformed_schema_map_becomes_a_status_message(self, app):
-        app.window.source_changed("qa", "schema_map", "cumo-invoicing")
+        app.window.source_changed("qa", "schema_map", "acme-invoicing")
         assert app.window.status_is_error is True
         assert app.config.config.targets[0].schema_map == {}
 
     def test_the_liquibase_location_is_two_fields_over_one_model(self, app):
-        app.window.source_changed("qa", "liquibase_schema", "cumo-invoicing")
+        app.window.source_changed("qa", "liquibase_schema", "acme-invoicing")
         app.window.source_changed("qa", "liquibase_table", "DBCHANGELOG")
         liquibase = app.config.config.targets[0].liquibase
-        assert (liquibase.schema_name, liquibase.table) == ("cumo-invoicing", "DBCHANGELOG")
+        assert (liquibase.schema_name, liquibase.table) == ("acme-invoicing", "DBCHANGELOG")
         row = rows(app.window.sources)[1]
         assert (row["liquibase_schema"], row["liquibase_table"]) == (
-            "cumo-invoicing",
+            "acme-invoicing",
             "DBCHANGELOG",
         )
 
@@ -427,7 +427,7 @@ class TestEditing:
         assert app.config.config.targets[0].liquibase is None
 
     def test_clearing_both_liquibase_fields_clears_the_reference(self, app):
-        app.window.source_changed("qa", "liquibase_schema", "cumo-invoicing")
+        app.window.source_changed("qa", "liquibase_schema", "acme-invoicing")
         app.window.source_changed("qa", "liquibase_schema", "")
         assert app.config.config.targets[0].liquibase is None
 
@@ -485,7 +485,7 @@ class TestPasswords:
     """
 
     def test_storing_a_password_marks_the_source_without_showing_it(self, app):
-        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        fill(app, "qa", host="db-qa", database="invoicing", user="app")
         app.window.store_password("qa", SECRET)
         assert app.window.status_is_error is False
         assert by_label(app)["qa"]["has_password"] is True
@@ -500,19 +500,19 @@ class TestPasswords:
         """
         keychain = FakeKeychain()
         app = application(tmp_path, environ={}, keychain=keychain)
-        fill(app, "qa", host="db-qa", port="6432", database="invoicing", user="cumo")
+        fill(app, "qa", host="db-qa", port="6432", database="invoicing", user="app")
         app.window.source_changed("qa", "sslmode", "verify-full")
         app.window.store_password("qa", "P@ss word/1")
 
         ((name, stored),) = keychain.entries.items()
         assert name == "QA_DSN", "the variable already named in the configuration is the one used"
         assert stored == (
-            "postgresql://cumo:P%40ss%20word%2F1@db-qa:6432/invoicing?sslmode=verify-full"
+            "postgresql://app:P%40ss%20word%2F1@db-qa:6432/invoicing?sslmode=verify-full"
         )
 
     def test_forgetting_a_password_leaves_the_source_needing_one(self, tmp_path):
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
-        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        fill(app, "qa", host="db-qa", database="invoicing", user="app")
         app.window.store_password("qa", SECRET)
         assert by_label(app)["qa"]["has_password"] is True
         app.window.forget_password("qa")
@@ -521,7 +521,7 @@ class TestPasswords:
 
     def test_forgetting_a_password_falls_back_to_the_environment(self, app):
         """A DSN in the environment still works, so forgetting the stored one is not fatal."""
-        fill(app, "prod", host="db-prod", database="invoicing", user="cumo")
+        fill(app, "prod", host="db-prod", database="invoicing", user="app")
         app.window.store_password("prod", SECRET)
         app.window.forget_password("prod")
         assert by_label(app)["prod"]["has_password"] is True
@@ -548,13 +548,13 @@ class TestPasswords:
         """
         keychain = FakeKeychain()
         app = application(tmp_path, environ={}, keychain=keychain)
-        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        fill(app, "qa", host="db-qa", database="invoicing", user="app")
         app.window.store_password("qa", SECRET)
         stored = keychain.entries["QA_DSN"]
 
         app.window.source_changed("qa", "label", "staging")
 
-        assert keychain.entries == {"CUMO_STAGING_DSN": stored}
+        assert keychain.entries == {"DB_STAGING_DSN": stored}
         assert by_label(app)["staging"]["has_password"] is True
 
     def test_an_unavailable_keychain_is_explained_rather_than_hidden(self, tmp_path):
@@ -590,7 +590,7 @@ class TestPasswords:
     def test_storing_a_password_is_seen_by_the_next_refresh(self, tmp_path):
         """The keychain is cached per variable, so both handlers have to invalidate it."""
         app = application(tmp_path, environ={"PROD_DSN": PROD_DSN})
-        fill(app, "qa", host="db-qa", database="invoicing", user="cumo")
+        fill(app, "qa", host="db-qa", database="invoicing", user="app")
         assert by_label(app)["qa"]["has_password"] is False
         app.window.store_password("qa", SECRET)
         assert by_label(app)["qa"]["has_password"] is True
@@ -634,8 +634,8 @@ class TestPasswords:
 
     def test_sanitising_leaves_the_non_secret_context_alone(self):
         """Over-redaction would make an unreachable host unexplainable."""
-        kept = app_module._sanitise("qa: cannot connect (host=db-qa, port=5432, user=cumo)")
-        assert kept == "qa: cannot connect (host=db-qa, port=5432, user=cumo)"
+        kept = app_module._sanitise("qa: cannot connect (host=db-qa, port=5432, user=app)")
+        assert kept == "qa: cannot connect (host=db-qa, port=5432, user=app)"
         assert app_module._sanitise("refused postgresql://u:p@h/db") == "refused ***"
         assert app_module._sanitise("sslkey='a b' host=db") == "*** host=db"
 
@@ -1059,7 +1059,7 @@ class TestChecking:
             ok=True,
             server_version="15.19 (Debian)",
             database="invoicing",
-            user="cumo",
+            user="app",
             schemas=("public",),
         )
         with mock.patch(CHECK, return_value=status):
@@ -2139,14 +2139,14 @@ class TestTheRunDialog:
     async def test_it_says_what_is_being_compared(self, app):
         app.window.source_changed("prod", "host", "db-prod.internal")
         app.window.source_changed("prod", "database", "invoicing")
-        app.window.source_changed("qa", "schemas", "cumo-invoicing, public")
+        app.window.source_changed("qa", "schemas", "acme-invoicing, public")
         with mock.patch(CAPTURE, ok_capture):
             app.window.drive_start_run()
             await app.wait_for_idle()
 
         shown = " ".join(self.inputs(app))
         assert "db-prod.internal/invoicing" in shown
-        assert "cumo-invoicing, public" in shown
+        assert "acme-invoicing, public" in shown
         assert "fail on error" in shown
 
     @pytest.mark.asyncio
@@ -2161,7 +2161,7 @@ class TestTheRunDialog:
         """Every line comes from the configuration, which is non-secret by construction. Nothing
         here assembles a connection string to describe a source."""
         app.window.source_changed("prod", "host", "db-prod.internal")
-        app.window.source_changed("prod", "user", "cumo")
+        app.window.source_changed("prod", "user", "app")
         app.window.drive_start_run()
         shown = " ".join(self.inputs(app)) + " ".join(str(r) for r in self.steps(app))
         assert SECRET not in shown
@@ -2191,7 +2191,7 @@ class TestTheRunDialog:
         """
 
         def reporting(source, dsn, *, observer=None, **kwargs):
-            observer("schemas", 2, "cumo-invoicing, public")
+            observer("schemas", 2, "acme-invoicing, public")
             observer("tables", 4, "")
             return ok_capture(source)
 
@@ -2199,7 +2199,7 @@ class TestTheRunDialog:
             await run_to_completion(app)
 
         schemas = self.labelled(app)["schemas"]
-        assert str(schemas["detail"]) == "cumo-invoicing, public"
+        assert str(schemas["detail"]) == "acme-invoicing, public"
         assert str(schemas["state"]) == "ok"
 
     @pytest.mark.asyncio
@@ -2522,7 +2522,7 @@ class TestTheStoredCredentialFollowsTheFields:
 
     def test_changing_the_host_changes_what_a_run_connects_to(self, tmp_path):
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
-        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        self.connected(app, host="db-prod.internal", database="invoicing", user="app")
         assert "db-prod.internal" in self.stored(app)
 
         app.window.source_changed("prod", "host", "localhost")
@@ -2541,14 +2541,14 @@ class TestTheStoredCredentialFollowsTheFields:
     )
     def test_every_part_of_the_connection_is_followed(self, tmp_path, field, value, expected):
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
-        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        self.connected(app, host="db-prod.internal", database="invoicing", user="app")
         app.window.source_changed("prod", field, value)
         assert expected in self.stored(app)
 
     def test_the_password_survives_the_rebuild(self, tmp_path):
         """It cannot be retyped — nobody can read it back — so losing it here would be fatal."""
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
-        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        self.connected(app, host="db-prod.internal", database="invoicing", user="app")
         app.window.source_changed("prod", "host", "localhost")
         assert "hunter2" in self.stored(app)
         assert app.window.sources[0]["has_password"] is True
@@ -2558,7 +2558,7 @@ class TestTheStoredCredentialFollowsTheFields:
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
         app.window.source_changed("prod", "host", "db-prod")
         app.window.source_changed("prod", "database", "invoicing")
-        app.window.source_changed("prod", "user", "cumo")
+        app.window.source_changed("prod", "user", "app")
         app.window.store_password("prod", "p@ss:w/rd #1")
         app.window.source_changed("prod", "host", "localhost")
 
@@ -2583,7 +2583,7 @@ class TestTheStoredCredentialFollowsTheFields:
 
     def test_editing_an_unrelated_field_does_not_touch_the_credential(self, tmp_path):
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
-        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        self.connected(app, host="db-prod.internal", database="invoicing", user="app")
         before = self.stored(app)
         app.window.source_changed("prod", "schemas", "public")
         assert self.stored(app) == before
@@ -2591,7 +2591,7 @@ class TestTheStoredCredentialFollowsTheFields:
     def test_a_rename_keeps_the_connection_it_had(self, tmp_path):
         """The variable moves with the label; the connection it describes does not change."""
         app = application(tmp_path, environ={}, keychain=FakeKeychain())
-        self.connected(app, host="db-prod.internal", database="invoicing", user="cumo")
+        self.connected(app, host="db-prod.internal", database="invoicing", user="app")
         before = self.stored(app)
         app.window.source_changed("prod", "label", "production")
         assert self.stored(app, "production") == before
@@ -2734,7 +2734,7 @@ class TestReopeningTheSavedConfiguration:
         assert "postgresql://" not in app.window.status_message
 
     def test_a_directory_where_the_file_should_be_is_not_a_crash(self):
-        """``~/.cumo_db_schema_comparer/config.yaml`` as a directory is somebody's bad `mkdir`."""
+        """``~/.db_schema_comparer/config.yaml`` as a directory is somebody's bad `mkdir`."""
         from db_schema_comparer.gui import home
 
         home.default_path().mkdir(parents=True)

@@ -30,8 +30,8 @@ class TestColumnType:
     def test_a_widened_column_is_one_error_and_nothing_else(self, databases):
         databases.setup("base", drift="drift_column_type")
         result = compare(databases)
-        assert summary(result) == {("cumo-invoicing.invoice_line.position", "differs", "error")}
-        assert attributes_of(result, "cumo-invoicing.invoice_line.position") == {"column.data_type"}
+        assert summary(result) == {("acme-invoicing.invoice_line.position", "differs", "error")}
+        assert attributes_of(result, "acme-invoicing.invoice_line.position") == {"column.data_type"}
 
 
 class TestMissingTable:
@@ -41,10 +41,10 @@ class TestMissingTable:
         # Dropping the table takes its primary key with it. Reporting each object is right: a
         # reader should not have to infer that a missing table implies a missing key.
         assert summary(result) == {
-            ("cumo-invoicing.DunningLevel", "missing_in_target", "error"),
-            ("cumo-invoicing.DunningLevel.id", "missing_in_target", "error"),
-            ("cumo-invoicing.DunningLevel.Name", "missing_in_target", "error"),
-            ("cumo-invoicing.DunningLevel.DunningLevel_pkey", "missing_in_target", "error"),
+            ("acme-invoicing.DunningLevel", "missing_in_target", "error"),
+            ("acme-invoicing.DunningLevel.id", "missing_in_target", "error"),
+            ("acme-invoicing.DunningLevel.Name", "missing_in_target", "error"),
+            ("acme-invoicing.DunningLevel.DunningLevel_pkey", "missing_in_target", "error"),
         }
 
 
@@ -52,8 +52,8 @@ class TestNullability:
     def test_a_dropped_not_null_is_an_error(self, databases):
         databases.setup("base", drift="drift_nullable")
         result = compare(databases)
-        assert summary(result) == {("cumo-invoicing.invoice.number", "differs", "error")}
-        assert attributes_of(result, "cumo-invoicing.invoice.number") == {"column.is_nullable"}
+        assert summary(result) == {("acme-invoicing.invoice.number", "differs", "error")}
+        assert attributes_of(result, "acme-invoicing.invoice.number") == {"column.is_nullable"}
 
 
 class TestDefault:
@@ -61,8 +61,8 @@ class TestDefault:
         # A different default does not break existing rows or queries.
         databases.setup("base", drift="drift_default_changed")
         result = compare(databases)
-        assert summary(result) == {("cumo-invoicing.invoice.status", "differs", "warning")}
-        assert attributes_of(result, "cumo-invoicing.invoice.status") == {"column.default"}
+        assert summary(result) == {("acme-invoicing.invoice.status", "differs", "warning")}
+        assert attributes_of(result, "acme-invoicing.invoice.status") == {"column.default"}
 
 
 class TestExtraObjects:
@@ -114,7 +114,7 @@ class TestMultipleDrifts:
         apply_sql(databases.target_dsn, "drift_extra_table")
         result = compare(databases)
         assert summary(result) == {
-            ("cumo-invoicing.invoice.number", "differs", "error"),
+            ("acme-invoicing.invoice.number", "differs", "error"),
             ("public.tmp_debug", "extra_in_target", "warning"),
             ("public.tmp_debug.id", "extra_in_target", "warning"),
             ("public.tmp_debug.note", "extra_in_target", "warning"),

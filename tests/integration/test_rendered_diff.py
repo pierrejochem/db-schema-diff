@@ -26,9 +26,9 @@ from tests.integration.test_no_drift import compare
 
 pytestmark = pytest.mark.integration
 
-VIEW = "cumo-invoicing.invoice_summary"
+VIEW = "acme-invoicing.invoice_summary"
 ATTRIBUTE = "view.definition"
-ROUTINE = "cumo-invoicing.invoice_gross"
+ROUTINE = "acme-invoicing.invoice_gross"
 
 #: Every rendered diff line in the HTML, as its CSS class suffix.
 _RENDERED = re.compile(r'<span class="diff-([a-z]+)">')
@@ -110,8 +110,8 @@ class TestARoutineBodyToo:
         assert kinds.count(DiffKind.ADDED) >= 1, kinds
 
 
-COMPUTED = "cumo-invoicing.column_flavours.computed"
-SERIAL = "cumo-invoicing.column_flavours.small_serial"
+COMPUTED = "acme-invoicing.column_flavours.computed"
+SERIAL = "acme-invoicing.column_flavours.small_serial"
 
 
 class TestAGeneratedColumnIsNotADefault:
@@ -169,7 +169,7 @@ class TestAGeneratedColumnIsNotADefault:
         assert column.raw.get("default") is None, "the slot a default would be read from"
 
 
-LONG = "cumo-invoicing.column_flavours.computed_long"
+LONG = "acme-invoicing.column_flavours.computed_long"
 
 
 class TestAGenerationExpressionIsNeverDiffedAsADefault:

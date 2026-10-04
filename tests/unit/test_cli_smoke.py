@@ -67,7 +67,7 @@ class TestExitCodePropagation:
             ctx.exit(1)
 
         monkeypatch.setattr(cli_module, "cli", boom)
-        monkeypatch.setattr("sys.argv", ["cumo-schema-diff"])
+        monkeypatch.setattr("sys.argv", ["db-schema-diff"])
         assert cli_module.main() == 1
 
     def test_the_module_and_the_console_script_agree_on_a_drifting_comparison(self, tmp_path):
@@ -90,7 +90,7 @@ class TestExitCodePropagation:
         assert report.has_drift(Severity.ERROR), "the fixture must drift for this to mean anything"
 
         arguments = ["render", "--from", str(path), "--no-console"]
-        script = Path(sys.executable).parent / "cumo-schema-diff"
+        script = Path(sys.executable).parent / "db-schema-diff"
         if not script.exists():  # pragma: no cover - an editable install always has it
             pytest.skip("the console script is not installed in this environment")
 
@@ -113,7 +113,7 @@ class TestExitCodePropagation:
             click.echo("ok")
 
         monkeypatch.setattr(cli_module, "cli", fine)
-        monkeypatch.setattr("sys.argv", ["cumo-schema-diff"])
+        monkeypatch.setattr("sys.argv", ["db-schema-diff"])
         assert cli_module.main() == 0
 
 

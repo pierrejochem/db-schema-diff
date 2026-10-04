@@ -70,7 +70,7 @@ class TestEveryStepReports:
         assert name == SCHEMA_STEP
         assert count == len(inventory.schemas)
         assert detail == ", ".join(inventory.schemas)
-        assert "cumo-invoicing" in detail, "the fixture's own schema should be in there"
+        assert "acme-invoicing" in detail, "the fixture's own schema should be in there"
 
 
 class TestTheCountsAreReal:

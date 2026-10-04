@@ -43,13 +43,13 @@ from .report.junit import DEFAULT_MAX_CASES, JUnitReporter
 
 CONTEXT_SETTINGS = {
     "help_option_names": ["-h", "--help"],
-    "auto_envvar_prefix": "CUMO_SCHEMA_DIFF",
+    "auto_envvar_prefix": "DB_SCHEMA_DIFF",
     "max_content_width": 100,
 }
 
 
 @click.group(context_settings=CONTEXT_SETTINGS)
-@click.version_option(__version__, "-V", "--version", prog_name="cumo-schema-diff")
+@click.version_option(__version__, "-V", "--version", prog_name="db-schema-diff")
 @click.option("-v", "--verbose", count=True, help="Increase log verbosity. Repeatable.")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress progress output.")
 @click.option("--debug", is_flag=True, help="Show tracebacks for expected failures too.")

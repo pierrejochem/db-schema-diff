@@ -51,7 +51,7 @@ class ObjectKey:
     def sort_key(self) -> tuple[int, str, str, str]:
         """Deterministic ordering: by kind, then schema, then name, then subname.
 
-        Case-sensitive on purpose — PostgreSQL identifiers are, and ``"cumo-invoicing"`` and
+        Case-sensitive on purpose — PostgreSQL identifiers are, and ``"acme-invoicing"`` and
         ``QRTZ_LOCKS`` are both real names in this platform.
         """
         return (kind_sort_key(self.kind), self.schema, self.name, self.subname or "")

@@ -49,7 +49,7 @@ class TestNameMatching:
 
     def test_a_schema_wildcard_matches_any_schema(self):
         rules = ruleset({"id": "r", "names": ["*.tmp_*"]})
-        assert decide(rules, table_key("cumo-invoicing", "tmp_x")).suppressed
+        assert decide(rules, table_key("acme-invoicing", "tmp_x")).suppressed
 
     def test_a_schema_glob_matches_a_whole_schema(self):
         rules = ruleset({"id": "r", "names": ["quartz.*"]})
@@ -262,8 +262,8 @@ class TestBundledDefaults:
 
     def test_liquibase_bookkeeping_is_suppressed(self, rules):
         # Its contents are compared far more usefully by the changelog comparison.
-        assert decide(rules, table_key("cumo-invoicing", "DATABASECHANGELOG")).suppressed
-        assert decide(rules, table_key("cumo-invoicing", "DATABASECHANGELOGLOCK")).suppressed
+        assert decide(rules, table_key("acme-invoicing", "DATABASECHANGELOG")).suppressed
+        assert decide(rules, table_key("acme-invoicing", "DATABASECHANGELOGLOCK")).suppressed
 
     def test_a_scratch_table_is_downgraded_not_hidden(self, rules):
         # Still visible, just not a reason to fail a build.
@@ -281,9 +281,9 @@ class TestBundledDefaults:
         )
 
     def test_real_application_objects_are_untouched(self, rules):
-        assert decide(rules, table_key("cumo-invoicing", "invoice")).action is Action.KEEP
+        assert decide(rules, table_key("acme-invoicing", "invoice")).action is Action.KEEP
         assert (
-            decide(rules, column_key("cumo-invoicing", "invoice", "number")).action is Action.KEEP
+            decide(rules, column_key("acme-invoicing", "invoice", "number")).action is Action.KEEP
         )
 
     def test_every_default_rule_explains_itself(self):

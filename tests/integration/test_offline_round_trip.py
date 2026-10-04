@@ -41,7 +41,7 @@ def run(tmp_path, databases):
     config.write_text(CONFIG)
 
     def invoke(*args: str) -> subprocess.CompletedProcess[str]:
-        executable = Path(sys.executable).parent / "cumo-schema-diff"
+        executable = Path(sys.executable).parent / "db-schema-diff"
         return subprocess.run(  # noqa: S603 - fixed argv, no shell
             [str(executable), *args],
             capture_output=True,
@@ -85,7 +85,7 @@ class TestInventoryCommand:
         run.databases.setup("base")
         bad = run.tmp / "bad.yaml"
         bad.write_text(CONFIG.replace("RT_QA_DSN", "RT_MISSING_DSN"))
-        executable = Path(sys.executable).parent / "cumo-schema-diff"
+        executable = Path(sys.executable).parent / "db-schema-diff"
         result = subprocess.run(  # noqa: S603
             [
                 str(executable),
@@ -160,7 +160,7 @@ class TestOfflineEqualsOnline:
         run.databases.setup("base", drift="drift_nullable")
         master, target = self._capture_both(run)
 
-        executable = Path(sys.executable).parent / "cumo-schema-diff"
+        executable = Path(sys.executable).parent / "db-schema-diff"
         # A deliberately credential-free environment: this is the property that lets production
         # and QA be captured by different jobs with different secrets.
         clean_env = {k: v for k, v in os.environ.items() if not k.endswith("_DSN")} | {
@@ -175,7 +175,7 @@ class TestOfflineEqualsOnline:
             timeout=60,
         )
         assert result.returncode == ExitCode.DRIFT
-        assert "cumo-invoicing.invoice.number" in result.stdout
+        assert "acme-invoicing.invoice.number" in result.stdout
 
 
 class TestRenderCommand:
@@ -186,7 +186,7 @@ class TestRenderCommand:
 
         clean_env_result = run("render", "--from", str(report))
         assert clean_env_result.returncode == ExitCode.DRIFT
-        assert "cumo-invoicing.invoice_line.position" in clean_env_result.stdout
+        assert "acme-invoicing.invoice_line.position" in clean_env_result.stdout
 
     def test_render_produces_byte_identical_junit(self, run):
         run.databases.setup("base", drift="drift_column_type")
@@ -299,7 +299,7 @@ class TestHtmlReport:
         for pattern in ("http://", "https://", "//cdn"):
             assert pattern not in html
         assert html.lstrip().startswith("<!doctype html>")
-        assert "cumo-invoicing.invoice_line.position" in html
+        assert "acme-invoicing.invoice_line.position" in html
 
     def test_out_dir_includes_the_html_report(self, run):
         run.databases.setup("base", drift="drift_column_type")

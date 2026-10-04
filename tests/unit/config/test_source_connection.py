@@ -32,7 +32,7 @@ class TestTheConnectionParts:
 
     def test_they_round_trip(self):
         ref = source(
-            host="db-qa.internal", port=6432, database="invoicing", user="cumo", sslmode="require"
+            host="db-qa.internal", port=6432, database="invoicing", user="app", sslmode="require"
         )
         assert ref.model_dump(exclude_unset=True) == {
             "label": "qa",
@@ -40,7 +40,7 @@ class TestTheConnectionParts:
             "host": "db-qa.internal",
             "port": 6432,
             "database": "invoicing",
-            "user": "cumo",
+            "user": "app",
             "sslmode": "require",
         }
 

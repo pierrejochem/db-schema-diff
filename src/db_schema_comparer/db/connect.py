@@ -41,7 +41,7 @@ from .features import MINIMUM_VERSION_LABEL, MINIMUM_VERSION_NUM, ServerFeatures
 
 log = logging.getLogger(__name__)
 
-APPLICATION_NAME = "db-schema-comparer"
+APPLICATION_NAME = "db-schema-diff"
 
 #: Stand-in when an exception carries no usable text.
 NO_DETAIL = "no detail reported"

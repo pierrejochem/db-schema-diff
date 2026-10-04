@@ -8,7 +8,7 @@ A pure function of two :class:`ChangelogState` values. No IO, no clock.
 Four decisions here are load-bearing, and each was checked against this platform rather than
 assumed:
 
-**Identity is ``(ID, AUTHOR)``, excluding FILENAME.** ``cumo-invoicing``'s ``master.xml`` mixes
+**Identity is ``(ID, AUTHOR)``, excluding FILENAME.** ``acme-invoicing``'s ``master.xml`` mixes
 relative and non-relative includes, and some changelogs declare their own ``logicalFilePath``, so
 the same changeset legitimately records a different filename in different deployments. Including it
 would report every changeset as both missing and extra.
@@ -22,7 +22,7 @@ version skew instead.
 servers — the same changeset is row 7 in one environment and row 12 in another purely because of
 deployment history. Only the *relative* order of changesets present in both is compared.
 
-**``MARK_RAN`` is normal here.** ``cumo-invoicing``'s ``update_20260423.xml`` gates a changeset on
+**``MARK_RAN`` is normal here.** ``acme-invoicing``'s ``update_20260423.xml`` gates a changeset on
 ``onFail="MARK_RAN"`` against row data, so the same changeset legitimately runs in one environment
 and is marked-ran in another. That is a warning worth reading, not a failed deployment.
 """
@@ -539,7 +539,7 @@ def _exectype_severity(left: str, right: str) -> Severity:
     """How much an execution-type difference matters.
 
     ``EXECUTED`` against ``MARK_RAN`` is expected in this platform — a precondition evaluated
-    differently, usually because the *data* differs, which ``cumo-invoicing`` does deliberately.
+    differently, usually because the *data* differs, which ``acme-invoicing`` does deliberately.
     Worth reading, not worth failing a build over.
     """
     if ExecType.FAILED.value in (left, right):

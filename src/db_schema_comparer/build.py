@@ -307,8 +307,8 @@ def redact_inventory(inventory: Inventory) -> Inventory:
 def _changelog(introspector: Introspector, source: SourceRef) -> ChangelogState:
     """Locate and read this database's Liquibase changelog.
 
-    Located rather than assumed: ``cumo-invoicing`` sets
-    ``spring.liquibase.liquibase-schema=cumo-invoicing``, so its table lives in a hyphenated schema
+    Located rather than assumed: ``acme-invoicing`` sets
+    ``spring.liquibase.liquibase-schema=acme-invoicing``, so its table lives in a hyphenated schema
     of its own and is not in ``public`` at all.
 
     Several candidates with no configured override is reported as ambiguous rather than guessed at.

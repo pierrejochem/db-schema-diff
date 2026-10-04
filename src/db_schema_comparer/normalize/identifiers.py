@@ -1,7 +1,7 @@
 """Identifier quoting and schema renaming.
 
 PostgreSQL identifiers are case-sensitive and may contain almost anything. This platform
-proves it: ``"cumo-invoicing"`` is a real schema name and ``QRTZ_LOCKS`` a real table name. So
+proves it: ``"acme-invoicing"`` is a real schema name and ``QRTZ_LOCKS`` a real table name. So
 nothing here ever case-folds a name, and every identifier that reaches SQL is quoted through
 ``psycopg.sql.Identifier`` rather than interpolated.
 """

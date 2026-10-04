@@ -1,6 +1,6 @@
 """An SSH tunnel to a database that is not directly routable.
 
-CUMO's real databases sit behind bastion hosts. Rather than make everyone run ``ssh -L`` by hand and
+Acme's real databases sit behind bastion hosts. Rather than make everyone run ``ssh -L`` by hand and
 then write a DSN pointing at whichever local port they happened to pick, a source can name a gateway
 and this opens the forward for exactly as long as the connection it serves.
 
@@ -59,7 +59,7 @@ def _paramiko() -> Any:
     except ImportError:
         raise ConfigError(
             "a source in this configuration is reached through an SSH tunnel, which needs the "
-            "optional 'ssh' extra: pip install 'db-schema-comparer[ssh]'"
+            "optional 'ssh' extra: pip install 'db-schema-diff[ssh]'"
         ) from None
     return paramiko
 

@@ -33,7 +33,7 @@ ACCEPTED = [
     "http://docs.example.com",
     "my-password=notakeyword",
     "quartz tables",
-    "cumo-invoicing",
+    "acme-invoicing",
 ]
 
 

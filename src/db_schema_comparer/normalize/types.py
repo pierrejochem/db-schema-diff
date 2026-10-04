@@ -92,7 +92,7 @@ def canonical_type(raw: str | None) -> str | None:
 def _canonical_base(base: str) -> str:
     """Alias a built-in base name; leave a user or qualified name untouched."""
     # A qualified or quoted name is a user type. Case and hyphens are significant there:
-    # "cumo-invoicing" is a real schema name in this platform.
+    # "acme-invoicing" is a real schema name in this platform.
     if "." in base or '"' in base:
         return base
     return _ALIASES.get(base.lower(), base.lower())

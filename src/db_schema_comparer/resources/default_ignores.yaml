@@ -17,7 +17,7 @@ options:
 rules:
   - id: quartz-runtime
     reason: >
-      Quartz scheduler state. cumo-bpf deploys its QRTZ_* tables and a `quartz` schema, and their
+      Quartz scheduler state. acme-bpf deploys its QRTZ_* tables and a `quartz` schema, and their
       contents and indexes diverge between environments by design: they record which node holds
       which lock, not what the application's schema looks like.
     kinds: [table, column, index, constraint]

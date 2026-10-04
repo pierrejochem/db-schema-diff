@@ -32,7 +32,7 @@ def invoke(tmp_path: Path, databases, *args: str, command: str = "compare") -> t
     config.write_text(CONFIG)
     out_dir = tmp_path / "out"
     extra = ["--out-dir", str(out_dir), "--fail-on", "never"] if command == "compare" else []
-    executable = Path(sys.executable).parent / "cumo-schema-diff"
+    executable = Path(sys.executable).parent / "db-schema-diff"
     completed = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [str(executable), command, "-c", str(config), *extra, *args],
         capture_output=True,
@@ -92,8 +92,8 @@ def test_the_masked_text_still_reports_as_drift(tmp_path, secret_databases):
         for target in report["targets"]
         for f in target["findings"]
     }
-    assert "column.default" in findings["cumo-invoicing.invoice.sync_target"]
-    assert "routine.body_hash" in findings["cumo-invoicing.invoice_gross(p_invoice_id integer)"]
+    assert "column.default" in findings["acme-invoicing.invoice.sync_target"]
+    assert "routine.body_hash" in findings["acme-invoicing.invoice_gross(p_invoice_id integer)"]
 
 
 def test_no_redact_literals_shows_the_real_text(tmp_path, secret_databases):
@@ -119,7 +119,7 @@ def test_a_routine_body_secret_is_in_body_and_raw_only_without_redaction(secret_
         with open_connection(Dsn(secret_databases.target_dsn, env_name="QA_DSN"), label="qa") as c:
             inv = build_inventory(c, source, redact_literals=redact)
         return next(
-            o for k, o in inv.objects.items() if k.path.startswith("cumo-invoicing.invoice_gross")
+            o for k, o in inv.objects.items() if k.path.startswith("acme-invoicing.invoice_gross")
         )
 
     masked = routine(True)
@@ -148,7 +148,7 @@ def test_a_secret_in_a_view_body_survives_being_shown_as_raw_text(tmp_path, secr
         d
         for target in report["targets"]
         for f in target["findings"]
-        if f["path"] == "cumo-invoicing.open_invoice"
+        if f["path"] == "acme-invoicing.open_invoice"
         for d in f.get("deltas", [])
         if d["attribute"] == "view.definition"
     )
@@ -170,7 +170,7 @@ def test_an_enum_label_is_masked_in_every_output(tmp_path, secret_databases):
         d
         for target in report["targets"]
         for f in target["findings"]
-        if f["path"] == "cumo-invoicing.dunning_stage"
+        if f["path"] == "acme-invoicing.dunning_stage"
         for d in f.get("deltas", [])
         if d["attribute"] == "enum_type.labels"
     )

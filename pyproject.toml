@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "db-schema-comparer"
+name = "db-schema-diff"
 version = "0.1.0"
 description = "Inventory a master PostgreSQL database and compare 1..n other environments for schema drift"
 readme = "README.md"
@@ -66,8 +66,8 @@ exe = [
 ]
 
 [project.scripts]
-cumo-schema-diff = "db_schema_comparer.cli:main"
-cumo-schema-diff-gui = "db_schema_comparer.gui.launcher:main"
+db-schema-diff = "db_schema_comparer.cli:main"
+db-schema-diff-gui = "db_schema_comparer.gui.launcher:main"
 
 [tool.hatch.build.targets.wheel]
 # hatchling ships every file inside the package directory, including the .sql query files, the
@@ -120,7 +120,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-ra -m 'not integration'"
 markers = [
-  "integration: requires Docker (or CUMO_SCHEMA_DIFF_TEST_DSN) to run against a real PostgreSQL",
+  "integration: requires Docker (or DB_SCHEMA_DIFF_TEST_DSN) to run against a real PostgreSQL",
 ]
 
 [tool.coverage.run]

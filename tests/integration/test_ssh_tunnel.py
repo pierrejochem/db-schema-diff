@@ -24,7 +24,7 @@ from .conftest import POSTGRES_IMAGE, docker_available  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
-SSHD_IMAGE = os.environ.get("CUMO_SCHEMA_DIFF_TEST_SSHD_IMAGE", "alpine:3.20")
+SSHD_IMAGE = os.environ.get("DB_SCHEMA_DIFF_TEST_SSHD_IMAGE", "alpine:3.20")
 #: sshd, configured here rather than taken from a prebuilt image: the obvious ready-made ones ship
 #: `AllowTcpForwarding no`, and a gateway that refuses to forward is no use for testing forwarding.
 SSHD_SETUP = (

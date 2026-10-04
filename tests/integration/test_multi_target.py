@@ -74,7 +74,7 @@ def three(tmp_path, server, databases):
                 apply_sql(dev_dsn, dev_drift)
 
         def run(self, *args: str, ignores: Path | None = None) -> subprocess.CompletedProcess[str]:
-            executable = Path(sys.executable).parent / "cumo-schema-diff"
+            executable = Path(sys.executable).parent / "db-schema-diff"
             argv = [str(executable), "compare", "-c", str(config), *args]
             if ignores is not None:
                 argv += ["--ignores", str(ignores)]
@@ -112,7 +112,7 @@ class TestThreeTargetsOneUnreachable:
         three.setup(dev_drift="drift_column_type")
         result = three.run("--allow-unreachable")
         assert result.returncode == ExitCode.DRIFT
-        assert "cumo-invoicing.invoice_line.position" in result.stdout
+        assert "acme-invoicing.invoice_line.position" in result.stdout
 
     def test_every_target_appears_in_the_report(self, three):
         three.setup(dev_drift="drift_column_type")
@@ -135,9 +135,9 @@ class TestThreeTargetsOneUnreachable:
         out = three.tmp / "report.json"
         three.run("--allow-unreachable", "--json", str(out))
         by_label = {t["target"]: t for t in json.loads(out.read_text())["targets"]}
-        assert {f["path"] for f in by_label["qa"]["findings"]} == {"cumo-invoicing.invoice.number"}
+        assert {f["path"] for f in by_label["qa"]["findings"]} == {"acme-invoicing.invoice.number"}
         assert {f["path"] for f in by_label["dev"]["findings"]} == {
-            "cumo-invoicing.invoice_line.position"
+            "acme-invoicing.invoice_line.position"
         }
 
     def test_the_unreachable_target_is_an_error_case_in_junit(self, three):
@@ -231,7 +231,7 @@ class TestProjectIgnores:
             rules:
               - id: known-type-change
                 reason: dev is deliberately ahead
-                names: ["cumo-invoicing.invoice_line.position"]
+                names: ["acme-invoicing.invoice_line.position"]
             """,
         )
         assert three.run("--allow-unreachable", ignores=ignores).returncode == ExitCode.OK
@@ -246,7 +246,7 @@ class TestProjectIgnores:
               - id: dev-only
                 reason: dev is a playground
                 targets: [dev]
-                names: ["cumo-invoicing.*"]
+                names: ["acme-invoicing.*"]
             """,
         )
         result = three.run("--allow-unreachable", ignores=ignores)
@@ -267,14 +267,14 @@ class TestProjectIgnores:
             rules:
               - id: soften
                 reason: tracked separately
-                names: ["cumo-invoicing.invoice_line.*"]
+                names: ["acme-invoicing.invoice_line.*"]
                 action: warn
             """,
         )
         result = three.run("--allow-unreachable", ignores=ignores)
         assert result.returncode == ExitCode.OK
         # Still visible, which is the difference between warn and ignore.
-        assert "cumo-invoicing.invoice_line.position" in result.stdout
+        assert "acme-invoicing.invoice_line.position" in result.stdout
 
     def test_the_same_warn_rule_fails_a_warning_gate(self, three):
         three.setup(dev_drift="drift_column_type")
@@ -284,7 +284,7 @@ class TestProjectIgnores:
             version: 1
             rules:
               - id: soften
-                names: ["cumo-invoicing.invoice_line.*"]
+                names: ["acme-invoicing.invoice_line.*"]
                 action: warn
             """,
         )

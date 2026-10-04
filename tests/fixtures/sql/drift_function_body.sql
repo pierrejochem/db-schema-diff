@@ -1,5 +1,5 @@
 -- The function computes something different.
-CREATE OR REPLACE FUNCTION "cumo-invoicing".invoice_gross(p_invoice_id integer)
+CREATE OR REPLACE FUNCTION "acme-invoicing".invoice_gross(p_invoice_id integer)
 RETURNS numeric
 LANGUAGE plpgsql
 STABLE
@@ -8,7 +8,7 @@ DECLARE
     v_total numeric(14,4);
 BEGIN
     SELECT net_amount INTO v_total
-      FROM "cumo-invoicing".invoice
+      FROM "acme-invoicing".invoice
      WHERE id = p_invoice_id;
     RETURN coalesce(v_total, 0);
 END;

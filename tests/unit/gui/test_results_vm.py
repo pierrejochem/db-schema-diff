@@ -44,7 +44,7 @@ class TestRows:
         assert kinds.index("table") < kinds.index("column")
 
     def test_a_finding_carries_its_delta_detail(self, model):
-        row = next(r for r in model.finding_rows() if r.path == "cumo-invoicing.invoice.number")
+        row = next(r for r in model.finding_rows() if r.path == "acme-invoicing.invoice.number")
         assert "varchar(40)" in row.detail
         assert "text" in row.detail
 
@@ -132,7 +132,7 @@ class TestWritingReports:
 
         # Distinctive values, so the assertions can fail: the labels prove the fixture reached the
         # files, and the DSN in the environment proves nothing is read from there.
-        monkeypatch.setenv("CUMO_SECRET_DSN", "postgresql://svc:hunter2-7731@db.internal/inv")
+        monkeypatch.setenv("DB_SECRET_DSN", "postgresql://svc:hunter2-7731@db.internal/inv")
         target = replace(
             drifted_target(),
             target_label="qa-marker-4471",
@@ -143,7 +143,7 @@ class TestWritingReports:
         for path in ResultsModel(report).write_reports(tmp_path):
             text = path.read_text()
             assert "qa-marker-4471" in text
-            for secret in ("hunter2-7731", "CUMO_SECRET_DSN", "db.internal"):
+            for secret in ("hunter2-7731", "DB_SECRET_DSN", "db.internal"):
                 assert secret not in text
 
 
@@ -398,7 +398,7 @@ class TestRowDetails:
         from tests.support.reports import drifted_target
 
         drifted = drifted_target()
-        paired = replace(drifted.findings[0], paired_with=table_key("cumo-invoicing", "Dunning2"))
+        paired = replace(drifted.findings[0], paired_with=table_key("acme-invoicing", "Dunning2"))
         drifted = replace(drifted, findings=(paired,))
         rows = ResultsModel(_report(drifted)).finding_rows()
         assert "matches Dunning2" in rows[0].detail
@@ -452,9 +452,9 @@ class TestFindingStatus:
     clicking a missing or extra object — the commonest finding there is — read as a no-op.
     """
 
-    MISSING = ("qa", "table", "cumo-invoicing.DunningLevel")
+    MISSING = ("qa", "table", "acme-invoicing.DunningLevel")
     EXTRA = ("qa", "table", "public.tmp_debug")
-    DIFFERS = ("qa", "column", "cumo-invoicing.invoice.number")
+    DIFFERS = ("qa", "column", "acme-invoicing.invoice.number")
 
     def test_a_missing_object_resolves_with_no_deltas(self, model):
         assert model.finding_status(*self.MISSING) == "missing in target"

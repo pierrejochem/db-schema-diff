@@ -1,4 +1,4 @@
-"""Start-up for `cumo-schema-diff-gui`, in an ordinary importable module.
+"""Start-up for `db-schema-diff-gui`, in an ordinary importable module.
 
 This lives here rather than in `__main__.py` because a compiled build cannot import it from there.
 Nuitka names each module's generated C file after the module, so a program whose own entry point is
@@ -28,7 +28,7 @@ def main() -> int:
         required = ".".join(str(part) for part in MINIMUM_PYTHON)
         running = ".".join(str(part) for part in sys.version_info[:2])
         print(
-            f"cumo-schema-diff-gui needs Python {required} or newer; this is {running}.\n"
+            f"db-schema-diff-gui needs Python {required} or newer; this is {running}.\n"
             "The command-line tool still supports 3.11 — only the GUI needs the newer runtime.",
             file=sys.stderr,
         )

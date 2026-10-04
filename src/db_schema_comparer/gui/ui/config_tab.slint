@@ -255,7 +255,7 @@ export component ConfigTab inherits ScrollView {
                             LineEdit {
                                 text: row.user;
                                 max-width: Tokens.field-max;
-                                placeholder-text: "cumo";
+                                placeholder-text: "app";
                                 edited(v) => { root.source-changed(row.label, "user", v); }
                             }
                             Rectangle { }

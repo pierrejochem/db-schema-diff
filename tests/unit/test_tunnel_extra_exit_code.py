@@ -43,7 +43,7 @@ def config(tmp_path):
 
 
 def run(*args, env=None):
-    argv = ["cumo-schema-diff", *args]
+    argv = ["db-schema-diff", *args]
     stdout, stderr = io.StringIO(), io.StringIO()
     environment = {k: v for k, v in os.environ.items() if not k.startswith("TX_")}
     environment.update(env or {})
@@ -74,7 +74,7 @@ DSNS = {
 def test_a_config_needing_the_extra_is_a_config_error(command, config, without_the_extra):
     code, output = run(command, "-c", str(config), env=DSNS)
     assert code == ExitCode.CONFIG_ERROR, output
-    assert "db-schema-comparer[ssh]" in output
+    assert "db-schema-diff[ssh]" in output
     assert "'qa'" in output
 
 

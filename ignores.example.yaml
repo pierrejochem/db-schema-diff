@@ -47,10 +47,10 @@ rules:
 
   - id: legacy-check-constraints
     reason: >
-      Tracked in CUMO-1234. Known to differ until the next release; we want to see it without
+      Tracked in DB-1234. Known to differ until the next release; we want to see it without
       failing the build.
     names:
-      - "cumo-invoicing.invoice.invoice_legacy_*"
+      - "acme-invoicing.invoice.invoice_legacy_*"
     # warn keeps the finding visible and stops it failing an --fail-on error gate. Prefer this over
     # `ignore` while something is still being worked on.
     action: warn

@@ -1,4 +1,4 @@
-# Development entry points. Mirrors cumo-local-qa-env/RMV's Makefile conventions.
+# Development entry points. Mirrors local-qa-env/RMV's Makefile conventions.
 PY := .venv/bin/python
 
 .PHONY: help venv venv-gui test test-integration test-all test-gui test-gui-cov lint fmt typecheck build \
@@ -45,7 +45,7 @@ venv-gui: ## Create .venv-gui for the desktop application. --pre: every slint re
 test: ## Unit tests only. No Docker required.
 	$(PY) -m pytest
 
-test-integration: ## Integration tests. Requires Docker or CUMO_SCHEMA_DIFF_TEST_DSN.
+test-integration: ## Integration tests. Requires Docker or DB_SCHEMA_DIFF_TEST_DSN.
 	$(PY) -m pytest -m integration
 
 test-all: ## Every test.
@@ -111,11 +111,11 @@ UNAME_S := $(shell uname -s)
 # copy onto a machine that has no Python.
 ifeq ($(UNAME_S),Darwin)
 GUI_PACKAGING := --standalone --macos-create-app-bundle --macos-app-name="DB Schema Diff" \
-	--macos-app-icon=packaging/cumo-schema-diff-gui.icns
-GUI_ARTIFACT := build/cumo-schema-diff-gui.app
+	--macos-app-icon=packaging/db-schema-diff-gui.icns
+GUI_ARTIFACT := build/db-schema-diff-gui.app
 else
-GUI_PACKAGING := --onefile --output-filename=cumo-schema-diff-gui
-GUI_ARTIFACT := build/cumo-schema-diff-gui
+GUI_PACKAGING := --onefile --output-filename=db-schema-diff-gui
+GUI_ARTIFACT := build/db-schema-diff-gui
 endif
 
 # -e is not a detail. Installing this project non-editably into a development environment puts a
@@ -133,7 +133,7 @@ endif
 
 exe-cli: ## Build a single-file CLI executable. Runs on the 3.11 environment, like the CLI itself.
 	$(call pipinstall,$(PY),,.[exe])
-	PATH="$(CURDIR)/.venv/bin:$$PATH" $(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=cumo-schema-diff main_cli.py
+	PATH="$(CURDIR)/.venv/bin:$$PATH" $(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=db-schema-diff main_cli.py
 
 clean:
 	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage

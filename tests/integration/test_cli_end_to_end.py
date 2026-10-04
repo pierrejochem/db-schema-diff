@@ -34,7 +34,7 @@ CONFIG = textwrap.dedent(
 
 
 def run(config_path: Path, *args: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    executable = Path(sys.executable).parent / "cumo-schema-diff"
+    executable = Path(sys.executable).parent / "db-schema-diff"
     return subprocess.run(  # noqa: S603 - fixed argv, no shell
         [str(executable), "compare", "-c", str(config_path), *args],
         capture_output=True,
@@ -70,7 +70,7 @@ class TestExitCodes:
         cli.databases.setup("base", drift="drift_column_type")
         result = cli()
         assert result.returncode == ExitCode.DRIFT
-        assert "cumo-invoicing.invoice_line.position" in result.stdout
+        assert "acme-invoicing.invoice_line.position" in result.stdout
 
     def test_a_warning_alone_does_not_fail_the_default_gate(self, cli):
         cli.databases.setup("base", drift="drift_extra_table")
@@ -215,7 +215,7 @@ class TestPartialReachability:
         result = cli_two("--allow-unreachable")
         assert result.returncode == ExitCode.DRIFT
         assert "SKIPPED" in result.stdout
-        assert "cumo-invoicing.invoice_line.position" in result.stdout
+        assert "acme-invoicing.invoice_line.position" in result.stdout
 
     def test_with_the_flag_reachable_targets_in_sync_exit_zero(self, cli_two):
         cli_two.databases.setup("base")
@@ -231,4 +231,4 @@ def test_excluding_a_schema_removes_its_findings(cli):
     apply_sql(cli.databases.target_dsn, "base")
     apply_sql(cli.databases.target_dsn, "drift_column_type")
     assert cli().returncode == ExitCode.DRIFT
-    assert cli("--exclude-schema", "cumo-invoicing").returncode == ExitCode.OK
+    assert cli("--exclude-schema", "acme-invoicing").returncode == ExitCode.OK
