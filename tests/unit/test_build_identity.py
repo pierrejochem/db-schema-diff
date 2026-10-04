@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.build import _canonical_identity_arguments as canonical
+from db_schema_comparer.build import _canonical_identity_arguments as canonical
 
 
 class TestExplicitInIsDropped:

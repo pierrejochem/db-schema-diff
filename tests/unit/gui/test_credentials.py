@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.config.secrets import Dsn
-from cumo_schema_comparer.errors import MissingCredentialsError
-from cumo_schema_comparer.gui.credentials import (
+from db_schema_comparer.config.secrets import Dsn
+from db_schema_comparer.errors import MissingCredentialsError
+from db_schema_comparer.gui.credentials import (
     KEYCHAIN_SERVICE,
     CredentialSource,
     CredentialStore,

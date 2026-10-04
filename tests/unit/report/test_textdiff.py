@@ -5,7 +5,7 @@ present on one side only, and CRLF, which Windows-authored migrations make commo
 workspace.
 """
 
-from cumo_schema_comparer.report.textdiff import DiffKind, unified
+from db_schema_comparer.report.textdiff import DiffKind, unified
 
 BEFORE = "SELECT a,\n       b\n  FROM t\n WHERE x = 1\n GROUP BY a"
 AFTER = "SELECT a,\n       b\n  FROM t\n WHERE x = 2\n GROUP BY a"

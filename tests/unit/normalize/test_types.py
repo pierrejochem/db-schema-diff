@@ -6,7 +6,7 @@ different types can look similar. The distinction between the two is the whole p
 
 import pytest
 
-from cumo_schema_comparer.normalize.types import canonical_type, types_equivalent
+from db_schema_comparer.normalize.types import canonical_type, types_equivalent
 
 EQUIVALENT = [
     # Spelling only. The server prints the long form; nobody writes it.

@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.build import build_inventory
-from cumo_schema_comparer.config.model import SourceRef
-from cumo_schema_comparer.config.secrets import Dsn
-from cumo_schema_comparer.db.connect import open_connection
-from cumo_schema_comparer.diff.engine import diff_inventories
-from cumo_schema_comparer.diff.model import NoteKind
-from cumo_schema_comparer.diff.severity import Severity
+from db_schema_comparer.build import build_inventory
+from db_schema_comparer.config.model import SourceRef
+from db_schema_comparer.config.secrets import Dsn
+from db_schema_comparer.db.connect import open_connection
+from db_schema_comparer.diff.engine import diff_inventories
+from db_schema_comparer.diff.model import NoteKind
+from db_schema_comparer.diff.severity import Severity
 from tests.integration.conftest import apply_sql, docker_available, dsn_for
 
 pytestmark = pytest.mark.integration
@@ -124,7 +124,7 @@ class TestNoStructuralDrift:
         It is part of the routine's key, so without canonicalising it every procedure would show up
         as both missing and extra here.
         """
-        from cumo_schema_comparer.model.kinds import ObjectKind
+        from db_schema_comparer.model.kinds import ObjectKind
 
         master, target = inventories
 
@@ -134,7 +134,7 @@ class TestNoStructuralDrift:
         assert names(master) == names(target)
 
     def test_column_types_match_across_versions(self, inventories):
-        from cumo_schema_comparer.model.kinds import ObjectKind
+        from db_schema_comparer.model.kinds import ObjectKind
 
         master, target = inventories
 
@@ -153,7 +153,7 @@ class TestNoStructuralDrift:
         Reading it there would invent one constraint per column on the 17 side alone, so a
         13-against-17 comparison would report hundreds of phantom extra constraints.
         """
-        from cumo_schema_comparer.model.kinds import ObjectKind
+        from db_schema_comparer.model.kinds import ObjectKind
 
         for inventory in inventories:
             types = {

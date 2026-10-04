@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cumo_schema_comparer.gui import home
+from db_schema_comparer.gui import home
 
 
 class TestWhereItIs:

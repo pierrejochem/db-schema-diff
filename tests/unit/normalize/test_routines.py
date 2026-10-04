@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.normalize.routines import (
+from db_schema_comparer.normalize.routines import (
     bodies_equivalent,
     body_hash,
     canonical_body,

@@ -16,9 +16,9 @@ from __future__ import annotations
 import pytest
 from psycopg.conninfo import conninfo_to_dict
 
-from cumo_schema_comparer.config.model import SourceRef
-from cumo_schema_comparer.config.secrets import Dsn
-from cumo_schema_comparer.gui import connection
+from db_schema_comparer.config.model import SourceRef
+from db_schema_comparer.config.secrets import Dsn
+from db_schema_comparer.gui import connection
 
 #: Every character that means something to a URI parser, in one password. A password like this is
 #: ordinary — a generated one frequently contains several — and each of these would otherwise end
@@ -163,7 +163,7 @@ class TestTheGeneratedVariableName:
     def test_the_result_is_always_a_name_the_config_will_accept(self, label):
         """``config_vm`` refuses a ``dsn_env`` that is not a POSIX variable name, and nobody types
         this one — so a label nobody thought of must not produce a file that cannot be saved."""
-        from cumo_schema_comparer.gui.config_vm import _ENV_NAME
+        from db_schema_comparer.gui.config_vm import _ENV_NAME
 
         assert _ENV_NAME.fullmatch(connection.variable_name(label))
 

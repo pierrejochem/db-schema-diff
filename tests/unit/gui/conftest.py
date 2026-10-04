@@ -38,7 +38,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _own_home(tmp_path_factory, monkeypatch):
     """Point the application's home directory at a temporary one, for every test in this package."""
-    from cumo_schema_comparer.gui import home
+    from db_schema_comparer.gui import home
 
     monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path_factory.mktemp("cumo-home")))
 
@@ -62,8 +62,8 @@ def _model(*findings, ignored=()):
 
 def _model_of(targets):
     """A report with one target per ``{label: (findings, ignored)}`` entry."""
-    from cumo_schema_comparer.diff.model import ComparisonReport, TargetDiff
-    from cumo_schema_comparer.gui.results_vm import ResultsModel
+    from db_schema_comparer.diff.model import ComparisonReport, TargetDiff
+    from db_schema_comparer.gui.results_vm import ResultsModel
     from tests.support.builders import source
 
     built = tuple(
@@ -91,8 +91,8 @@ def _model_of(targets):
 
 
 def differing(key, *deltas):
-    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
-    from cumo_schema_comparer.diff.severity import Severity
+    from db_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from db_schema_comparer.diff.severity import Severity
 
     return ObjectFinding(
         key=key, status=ObjectStatus.DIFFERS, severity=Severity.ERROR, deltas=tuple(deltas)
@@ -100,8 +100,8 @@ def differing(key, *deltas):
 
 
 def delta(attribute, master, target, **extra):
-    from cumo_schema_comparer.diff.model import AttributeDelta
-    from cumo_schema_comparer.diff.severity import Severity
+    from db_schema_comparer.diff.model import AttributeDelta
+    from db_schema_comparer.diff.severity import Severity
 
     return AttributeDelta(
         attribute=attribute,
@@ -113,8 +113,8 @@ def delta(attribute, master, target, **extra):
 
 
 def view_key(name="v_open"):
-    from cumo_schema_comparer.model.keys import ObjectKey
-    from cumo_schema_comparer.model.kinds import ObjectKind
+    from db_schema_comparer.model.keys import ObjectKey
+    from db_schema_comparer.model.kinds import ObjectKind
 
     return ObjectKey(ObjectKind.VIEW, "public", name)
 
@@ -131,9 +131,9 @@ def model_with_a_changed_view():
 
 @pytest.fixture
 def model_with_an_added_column():
-    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
-    from cumo_schema_comparer.diff.severity import Severity
-    from cumo_schema_comparer.model.keys import column_key
+    from db_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from db_schema_comparer.diff.severity import Severity
+    from db_schema_comparer.model.keys import column_key
 
     return _model(
         ObjectFinding(
@@ -147,7 +147,7 @@ def model_with_an_added_column():
 
 @pytest.fixture
 def model_with_a_changed_column_type():
-    from cumo_schema_comparer.model.keys import column_key
+    from db_schema_comparer.model.keys import column_key
 
     return _model(
         differing(column_key("public", "t", "c"), delta("column.data_type", "varchar(40)", "text"))
@@ -164,8 +164,8 @@ def model_with_two_findings():
 
 def absent(key, status):
     """A finding with no deltas: an object that exists on one side only."""
-    from cumo_schema_comparer.diff.model import ObjectFinding, ObjectStatus
-    from cumo_schema_comparer.diff.severity import Severity
+    from db_schema_comparer.diff.model import ObjectFinding, ObjectStatus
+    from db_schema_comparer.diff.severity import Severity
 
     return ObjectFinding(
         key=key,
@@ -177,7 +177,7 @@ def absent(key, status):
 @pytest.fixture
 def model_with_a_missing_and_an_extra_object():
     """The commonest findings there are, and the ones that carry no attribute deltas."""
-    from cumo_schema_comparer.model.keys import column_key, table_key
+    from db_schema_comparer.model.keys import column_key, table_key
 
     return _model(
         absent(view_key("v_gone"), "missing_in_target"),

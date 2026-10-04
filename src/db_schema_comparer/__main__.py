@@ -1,4 +1,4 @@
-"""Support ``python -m cumo_schema_comparer``.
+"""Support ``python -m db_schema_comparer``.
 
 ``main()`` *returns* the exit code (click runs with ``standalone_mode`` off so the exception
 hierarchy can be translated), so the return value is the exit status. Discarding it here made

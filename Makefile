@@ -17,6 +17,7 @@ HAVE_UV := $(shell command -v uv 2>/dev/null)
 
 # $(call mkvenv,<python version>,<dir>,<pip flags>,<extras>). The extras go in through variables:
 # a literal comma inside a make argument would split it.
+COMMA := ,
 EXTRAS_DEV := .[dev]
 EXTRAS_GUI := .[dev,gui]
 
@@ -25,6 +26,14 @@ mkvenv = uv venv --clear --python $(1) $(2) && uv pip install --python $(2)/bin/
 else
 mkvenv = python$(1) -m venv --clear $(2) && $(2)/bin/python -m pip install --upgrade pip && \
 	$(2)/bin/python -m pip install $(3) -e '$(4)'
+endif
+
+# Install into an existing venv. A venv made by uv has no pip, so `python -m pip` is not an option.
+# $(call pipinstall,<python>,<pip flags>,<requirement>)
+ifdef HAVE_UV
+pipinstall = uv pip install -q --python $(1) $(2) -e '$(3)'
+else
+pipinstall = $(1) -m pip install -q $(2) -e '$(3)'
 endif
 
 venv: ## Create .venv and install the project with dev extras
@@ -50,7 +59,7 @@ test-gui-cov: ## GUI tests with the floor the `gui` CI job applies.
 		--cov-report=term-missing --cov-fail-under=90
 
 gui: ## Run the desktop application from the current checkout.
-	$(PY_GUI) -m cumo_schema_comparer.gui
+	$(PY_GUI) -m db_schema_comparer.gui
 
 lint: ## Format check, lint and type check.
 	$(PY) -m ruff format --check .
@@ -81,7 +90,7 @@ build: ## Build the wheel and sdist.
 # --config, so without this the binary refuses its own primary invocation:
 #     Error, the program tried to call itself with '-c' argument: 'config.example.yaml'.
 NUITKA_FLAGS := --output-dir=build --assume-yes-for-downloads \
-	--include-package-data=cumo_schema_comparer --nofollow-import-to=mypy \
+	--include-package-data=db_schema_comparer --nofollow-import-to=mypy \
 	--no-deployment-flag=self-execution
 
 UNAME_S := $(shell uname -s)
@@ -114,8 +123,8 @@ endif
 # the tests exercise the copy, both silently stale. That is exactly how the first working build
 # came out missing a module that had been added minutes earlier.
 exe: ## Build the GUI: a .app bundle on macOS, one file elsewhere. Needs a C toolchain; minutes.
-	$(PY_GUI) -m pip install -q --pre -e '.[gui,exe]'
-	$(PY_GUI) -m nuitka $(NUITKA_FLAGS) $(GUI_PACKAGING) main.py
+	$(call pipinstall,$(PY_GUI),--pre,.[gui$(COMMA)exe])
+	PATH="$(CURDIR)/.venv-gui/bin:$$PATH" $(PY_GUI) -m nuitka $(NUITKA_FLAGS) $(GUI_PACKAGING) main.py
 ifeq ($(UNAME_S),Darwin)
 	rm -rf '$(GUI_ARTIFACT)'
 	mv build/main.app '$(GUI_ARTIFACT)'
@@ -123,8 +132,8 @@ endif
 	@echo "built $(GUI_ARTIFACT)"
 
 exe-cli: ## Build a single-file CLI executable. Runs on the 3.11 environment, like the CLI itself.
-	$(PY) -m pip install -q -e '.[exe]'
-	$(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=cumo-schema-diff main_cli.py
+	$(call pipinstall,$(PY),,.[exe])
+	PATH="$(CURDIR)/.venv/bin:$$PATH" $(PY) -m nuitka $(NUITKA_FLAGS) --onefile --output-filename=cumo-schema-diff main_cli.py
 
 clean:
 	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage

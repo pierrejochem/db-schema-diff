@@ -14,8 +14,8 @@ import re
 
 import pytest
 
-from cumo_schema_comparer.report.html import HtmlReporter, load_template_source
-from cumo_schema_comparer.report.json_report import JsonReporter
+from db_schema_comparer.report.html import HtmlReporter, load_template_source
+from db_schema_comparer.report.json_report import JsonReporter
 from tests.support.reports import HOSTILE_TEXT, clean_report, full_report
 
 
@@ -112,15 +112,15 @@ class TestScriptInjection:
         Column defaults, check expressions and function bodies all reach the payload, and any of
         them could contain that sequence — deliberately or by accident.
         """
-        from cumo_schema_comparer.diff.model import (
+        from db_schema_comparer.diff.model import (
             AttributeDelta,
             ComparisonReport,
             ObjectFinding,
             ObjectStatus,
             TargetDiff,
         )
-        from cumo_schema_comparer.diff.severity import Severity
-        from cumo_schema_comparer.model.keys import column_key
+        from db_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.model.keys import column_key
 
         hostile = "</script><script>alert(1)</script>"
         report = ComparisonReport(
@@ -243,9 +243,9 @@ class TestPresentation:
 
 class TestChangelogSection:
     def test_the_changelog_appears_when_it_is_applicable(self):
-        from cumo_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
-        from cumo_schema_comparer.diff.model import ComparisonReport, TargetDiff
-        from cumo_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
+        from db_schema_comparer.diff.model import ComparisonReport, TargetDiff
+        from db_schema_comparer.diff.severity import Severity
         from tests.support.builders import source
 
         report = ComparisonReport(
@@ -416,10 +416,10 @@ TOKEN_TO_CSS_VARIABLE = {
 
 def design_tokens() -> dict[str, str]:
     """The GUI's colour tokens, read as text — this runs where Slint is not installed."""
-    import cumo_schema_comparer
+    import db_schema_comparer
 
     source = (
-        pathlib.Path(cumo_schema_comparer.__file__).parent / "gui" / "ui" / "tokens.slint"
+        pathlib.Path(db_schema_comparer.__file__).parent / "gui" / "ui" / "tokens.slint"
     ).read_text(encoding="utf-8")
     return dict(re.findall(r"out property <color> (\S+): (#[0-9a-fA-F]+);", source))
 

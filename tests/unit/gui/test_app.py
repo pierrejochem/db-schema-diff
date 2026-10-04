@@ -26,14 +26,14 @@ import pytest
 
 pytest.importorskip("slint", reason="the GUI extra is not installed")
 
-from cumo_schema_comparer.config.loader import load_config_files
-from cumo_schema_comparer.errors import ProbeError
-from cumo_schema_comparer.gui import app as app_module
-from cumo_schema_comparer.gui.app import Application
-from cumo_schema_comparer.gui.config_vm import ConfigDocument
-from cumo_schema_comparer.gui.errors import GuiError
-from cumo_schema_comparer.gui.session import Session
-from cumo_schema_comparer.runner import CaptureResult, ConnectionStatus, TunnelStatus
+from db_schema_comparer.config.loader import load_config_files
+from db_schema_comparer.errors import ProbeError
+from db_schema_comparer.gui import app as app_module
+from db_schema_comparer.gui.app import Application
+from db_schema_comparer.gui.config_vm import ConfigDocument
+from db_schema_comparer.gui.errors import GuiError
+from db_schema_comparer.gui.session import Session
+from db_schema_comparer.runner import CaptureResult, ConnectionStatus, TunnelStatus
 from tests.support.builders import col, inventory, table
 
 CONFIG = textwrap.dedent(
@@ -56,9 +56,9 @@ PROD_DSN = f"postgresql://u:{SECRET}@prod/db"
 #: missing credential — and every assertion about what the window shows is made with a real
 #: credential in play.
 BOTH = {"PROD_DSN": PROD_DSN, "QA_DSN": QA_DSN}
-CAPTURE = "cumo_schema_comparer.gui.session.runner.capture"
-CHECK = "cumo_schema_comparer.gui.session.runner.check_connection"
-BUILD_REPORT = "cumo_schema_comparer.gui.session.runner.build_report"
+CAPTURE = "db_schema_comparer.gui.session.runner.capture"
+CHECK = "db_schema_comparer.gui.session.runner.check_connection"
+BUILD_REPORT = "db_schema_comparer.gui.session.runner.build_report"
 #: For the tests that look at the dialog before the probe has answered. A bare ``Mock`` return
 #: value would reach ``window.tunnel_ok`` once the loop drained and die there — a real status
 #: keeps the failure in the test that asked for one.
@@ -1510,7 +1510,7 @@ class TestDetailPane:
         assert "kind" in app.window.status_message
 
     def test_no_secret_reaches_the_detail_pane(self, app):
-        from cumo_schema_comparer.model.keys import column_key
+        from db_schema_comparer.model.keys import column_key
 
         from .conftest import _model, delta, differing
 
@@ -1553,7 +1553,7 @@ class TestEntryPoint:
         ):
             assert app_module.run([str(path)]) == 0
 
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         assert built, "the window was never built"
         assert built[0].config.path != path, "the path on the command line was opened"
@@ -1568,7 +1568,7 @@ class TestEntryPoint:
         This separation is load-bearing: with the real pickers as the Application's default, every
         test that built one opened a Finder window and blocked until someone dismissed it.
         """
-        from cumo_schema_comparer.gui import dialogs
+        from db_schema_comparer.gui import dialogs
 
         built: list[Application] = []
         original = Application.__init__
@@ -1736,8 +1736,8 @@ class TestTheGatewayStaysReadableInTheWindow:
     """
 
     def gateway(self, **kwargs):
-        from cumo_schema_comparer.config.model import SshRef
-        from cumo_schema_comparer.db.tunnel import describe
+        from db_schema_comparer.config.model import SshRef
+        from db_schema_comparer.db.tunnel import describe
 
         return describe(SshRef(host="bastion.internal", port=2222, **kwargs))
 
@@ -1812,7 +1812,7 @@ class TestTheTunnelTestButton:
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(label="qa", ok=True, detail="gateway bastion.internal:22: reached h")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=answer):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -1830,7 +1830,7 @@ class TestTheTunnelTestButton:
             ok=False,
             detail="gateway bastion.internal:22: authentication was refused.",
         )
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=answer):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -1844,7 +1844,7 @@ class TestTheTunnelTestButton:
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(label="qa", ok=False, detail="refused sslpassword=hunter2")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=answer):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -2048,7 +2048,7 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
 
     @pytest.mark.asyncio
     async def test_the_gateway_is_still_tested_without_a_dsn(self, app, monkeypatch):
-        from cumo_schema_comparer.errors import MissingCredentialsError
+        from db_schema_comparer.errors import MissingCredentialsError
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         monkeypatch.setattr(
@@ -2063,7 +2063,7 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
 
             return TunnelStatus(label="qa", ok=True, detail="gateway bastion.internal:22: reached")
 
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", side_effect=record):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", side_effect=record):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -2074,7 +2074,7 @@ class TestTestingAGatewayDoesNotNeedTheDatabaseCredential:
     async def test_a_named_but_unset_passphrase_says_so_in_its_own_words(self, app, monkeypatch):
         """The library's wording tells people to set it to a libpq connection string, which a key
         passphrase is not. That sends them to the wrong place."""
-        from cumo_schema_comparer.errors import MissingCredentialsError
+        from db_schema_comparer.errors import MissingCredentialsError
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         app.window.source_changed("qa", "ssh_passphrase_env", "QA_SSH_PASSPHRASE")
@@ -2438,7 +2438,7 @@ class TestTheOutputDirectoryIsRemembered:
         assert "output_dir" not in app.config.path.read_text()
 
     def test_it_comes_back_when_the_application_restarts(self, tmp_path):
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         home.default_path().parent.mkdir(parents=True, exist_ok=True)
         home.default_path().write_text(CONFIG + f"output_dir: {tmp_path}\n")
@@ -2475,7 +2475,7 @@ class TestTheOutputDirectoryIsRemembered:
         Asserted by resolving it rather than by comparing the written string: what matters is the
         directory it reaches, not the spelling of the hops to get there.
         """
-        from cumo_schema_comparer.config.loader import resolve_output_dir
+        from db_schema_comparer.config.loader import resolve_output_dir
 
         reports = app.config.path.parent / "reports"
         reports.mkdir()
@@ -2627,7 +2627,7 @@ class TestReopeningTheSavedConfiguration:
 
     def saved(self, text: str = CONFIG) -> object:
         """Put a configuration where the application saves, before it starts."""
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         path = home.default_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -2644,7 +2644,7 @@ class TestReopeningTheSavedConfiguration:
         assert app.window.status_is_error is False
 
     def test_it_is_adopted_so_saving_goes_back_to_the_same_file(self):
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         path = self.saved()
         app = self.started()
@@ -2717,7 +2717,7 @@ class TestReopeningTheSavedConfiguration:
         app = self.started()
         app.window.save_config()
         assert app.window.status_is_error is False
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         assert "version: 1" in home.default_path().read_text()
 
@@ -2735,7 +2735,7 @@ class TestReopeningTheSavedConfiguration:
 
     def test_a_directory_where_the_file_should_be_is_not_a_crash(self):
         """``~/.cumo_db_schema_comparer/config.yaml`` as a directory is somebody's bad `mkdir`."""
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         home.default_path().mkdir(parents=True)
         app = self.started()
@@ -2747,7 +2747,7 @@ class TestTheApplicationsOwnFolder:
     """Where a configuration goes when it has none of its own, and what opens with no argument."""
 
     def home(self):
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         return home
 
@@ -2817,7 +2817,7 @@ class TestWhatOpensOnStartUp:
 
     def test_the_folder_is_created_before_anything_looks_in_it(self, monkeypatch, tmp_path):
         """It is where the configuration goes and where the reopen looks, so it has to exist."""
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         target = tmp_path / "fresh"
         monkeypatch.setenv(home.HOME_VARIABLE, str(target))
@@ -2827,14 +2827,14 @@ class TestWhatOpensOnStartUp:
     def test_another_yaml_in_the_folder_is_not_opened(self, monkeypatch, tmp_path):
         """Only ``config.yaml`` is read. There is no chooser, so a second file is not a candidate
         — picking one by name or by mtime would make the window's contents a guess."""
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path))
         (tmp_path / "invoicing.yaml").write_text("version: 1\nname: x\n")
         assert self.start([]) == []
 
     def test_the_saved_configuration_is_opened(self, monkeypatch, tmp_path):
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         monkeypatch.setenv(home.HOME_VARIABLE, str(tmp_path))
         saved = tmp_path / home.CONFIG_NAME
@@ -2846,7 +2846,7 @@ class TestTheAboutView:
     """What it says has to be true, which means none of it is written into the markup."""
 
     def test_the_version_is_the_installed_one(self, app):
-        from cumo_schema_comparer import __version__
+        from db_schema_comparer import __version__
 
         assert app.window.about_version == __version__
         assert app.window.about_version != ""
@@ -2864,13 +2864,13 @@ class TestTheAboutView:
     def test_it_names_the_file_it_writes(self, app):
         """The whole path: it is the one file read and written, and the only thing to point an
         editor at when a configuration needs hand-editing."""
-        from cumo_schema_comparer.gui import home
+        from db_schema_comparer.gui import home
 
         assert app.window.about_config_path == str(home.default_path())
         assert app.window.about_config_path.endswith("config.yaml")
 
     def test_it_reports_whether_tunnelling_is_installed(self, app):
-        from cumo_schema_comparer.runner import tunnelling_supported
+        from db_schema_comparer.runner import tunnelling_supported
 
         assert app.window.about_tunnelling is tunnelling_supported()
 
@@ -2891,7 +2891,7 @@ class TestTheTunnelDialog:
         like a window that has stopped."""
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
 
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
 
         assert app.window.tunnel_dialog_open() is True
@@ -2901,7 +2901,7 @@ class TestTheTunnelDialog:
 
     def test_it_lays_out_every_step_up_front(self, app):
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
 
         labels = [s["label"] for s in self.steps(app)]
@@ -2911,7 +2911,7 @@ class TestTheTunnelDialog:
     def test_it_names_the_gateway_it_is_testing(self, app):
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         app.window.source_changed("qa", "ssh_user", "deploy")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
 
         assert "bastion.internal" in app.window.tunnel_gateway
@@ -2929,7 +2929,7 @@ class TestTheTunnelDialog:
             observer("database", "skipped", "no database address known")
             return TunnelStatus(label="qa", ok=True, detail="reached and authenticated")
 
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", side_effect=report):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", side_effect=report):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -2947,7 +2947,7 @@ class TestTheTunnelDialog:
             observer("gateway", "failed", "authentication was refused")
             return TunnelStatus(label="qa", ok=False, detail="authentication was refused")
 
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", side_effect=report):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", side_effect=report):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -2961,7 +2961,7 @@ class TestTheTunnelDialog:
 
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
         answer = TunnelStatus(label="qa", ok=True, detail="reached")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=answer):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=answer):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 
@@ -2973,7 +2973,7 @@ class TestTheTunnelDialog:
     async def test_it_cannot_be_closed_while_it_is_still_testing(self, app):
         """The Close button is disabled until the answer is in; the state behind it says so."""
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
-        with mock.patch("cumo_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", return_value=UNFINISHED):
             app.window.drive_test_tunnel("qa")
             assert app.window.tunnel_busy is True
             await app.wait_for_idle()
@@ -2983,9 +2983,7 @@ class TestTheTunnelDialog:
     async def test_an_unexpected_failure_still_releases_the_dialog(self, app):
         """Otherwise the Close button stays disabled and the window is stuck behind a scrim."""
         app.window.source_changed("qa", "ssh_host", "bastion.internal")
-        with mock.patch(
-            "cumo_schema_comparer.runner.check_tunnel", side_effect=RuntimeError("boom")
-        ):
+        with mock.patch("db_schema_comparer.runner.check_tunnel", side_effect=RuntimeError("boom")):
             app.window.drive_test_tunnel("qa")
             await app.wait_for_idle()
 

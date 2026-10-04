@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import inspect
 
-from cumo_schema_comparer import build
-from cumo_schema_comparer.build import (
+from db_schema_comparer import build
+from db_schema_comparer.build import (
     _CAPTURE_STEPS,
     _STEP_SUBKINDS,
     CAPTURE_ROWS,
@@ -21,7 +21,7 @@ from cumo_schema_comparer.build import (
     SCHEMA_STEP,
     STEP_KINDS,
 )
-from cumo_schema_comparer.model.kinds import ObjectKind
+from db_schema_comparer.model.kinds import ObjectKind
 
 
 class TestTheDeclaredStepsMatchTheTable:
@@ -70,7 +70,7 @@ class TestTheRowsACaptureReports:
 
     def test_every_kind_a_multi_kind_step_yields_has_a_row(self):
         """Otherwise a kind is inside a total and nameable nowhere."""
-        from cumo_schema_comparer.build import _CAPTURE_STEPS as steps
+        from db_schema_comparer.build import _CAPTURE_STEPS as steps
 
         multi = {name for name in STEP_KINDS}
         assert multi <= {name for name, _, _ in steps}

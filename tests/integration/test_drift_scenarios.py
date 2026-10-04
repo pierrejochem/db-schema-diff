@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.diff.model import ObjectStatus
-from cumo_schema_comparer.diff.severity import Severity
+from db_schema_comparer.diff.model import ObjectStatus
+from db_schema_comparer.diff.severity import Severity
 from tests.integration.test_no_drift import compare
 
 pytestmark = pytest.mark.integration
@@ -121,7 +121,7 @@ class TestMultipleDrifts:
         }
 
     def test_an_empty_target_does_not_enumerate_every_object(self, databases):
-        from cumo_schema_comparer.diff.model import NoteKind
+        from db_schema_comparer.diff.model import NoteKind
         from tests.integration.conftest import apply_sql, reset
 
         apply_sql(databases.master_dsn, "base")
@@ -170,8 +170,8 @@ class TestCosmeticOnly:
 
     def test_show_cosmetic_makes_the_normalization_visible(self, databases):
         databases.setup("base", drift="drift_cosmetic_only")
-        from cumo_schema_comparer.diff.engine import diff_inventories
-        from cumo_schema_comparer.diff.model import DiffOptions
+        from db_schema_comparer.diff.engine import diff_inventories
+        from db_schema_comparer.diff.model import DiffOptions
         from tests.integration.test_no_drift import inventory_of
 
         result = diff_inventories(

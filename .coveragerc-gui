@@ -1,9 +1,9 @@
 # Coverage for the optional GUI extra, used by the `gui` CI job and `make test-gui-cov`.
 #
 # A separate file rather than a [tool.coverage.run] setting because the default configuration
-# omits cumo_schema_comparer.gui: on the CLI's 3.11 floor slint cannot be installed, so the GUI
+# omits db_schema_comparer.gui: on the CLI's 3.11 floor slint cannot be installed, so the GUI
 # tests skip there and would drag the whole gate down. The GUI is measured here instead, on an
 # interpreter that can import slint, and gated on its own number.
 [run]
-source = cumo_schema_comparer.gui
+source = db_schema_comparer.gui
 branch = True

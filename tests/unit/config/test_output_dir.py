@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from cumo_schema_comparer.config.loader import resolve_output_dir
-from cumo_schema_comparer.config.model import ComparerConfig
+from db_schema_comparer.config.loader import resolve_output_dir
+from db_schema_comparer.config.model import ComparerConfig
 
 BASE = {
     "version": 1,

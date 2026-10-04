@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from cumo_schema_comparer.diff.model import (
+from db_schema_comparer.diff.model import (
     AttributeDelta,
     ComparisonReport,
     Note,
@@ -17,9 +17,9 @@ from cumo_schema_comparer.diff.model import (
     ObjectStatus,
     TargetDiff,
 )
-from cumo_schema_comparer.diff.severity import FAIL_ON_THRESHOLDS, Severity, gate
-from cumo_schema_comparer.model.keys import column_key, table_key
-from cumo_schema_comparer.model.kinds import ObjectKind
+from db_schema_comparer.diff.severity import FAIL_ON_THRESHOLDS, Severity, gate
+from db_schema_comparer.model.keys import column_key, table_key
+from db_schema_comparer.model.kinds import ObjectKind
 from tests.support.builders import source
 
 

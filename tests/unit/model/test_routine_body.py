@@ -6,11 +6,11 @@ changed. Before this, a changed function reported `body_hash: 3af1… -> 9bc2…
 
 from datetime import datetime
 
-from cumo_schema_comparer.model.inventory import SCHEMA_VERSION, Inventory, SourceInfo
-from cumo_schema_comparer.model.keys import ObjectKey
-from cumo_schema_comparer.model.kinds import ObjectKind
-from cumo_schema_comparer.model.objects import Routine
-from cumo_schema_comparer.normalize.routines import body_hash
+from db_schema_comparer.model.inventory import SCHEMA_VERSION, Inventory, SourceInfo
+from db_schema_comparer.model.keys import ObjectKey
+from db_schema_comparer.model.kinds import ObjectKind
+from db_schema_comparer.model.objects import Routine
+from db_schema_comparer.normalize.routines import body_hash
 
 BODY = "BEGIN\n  RETURN a + b;\nEND"
 

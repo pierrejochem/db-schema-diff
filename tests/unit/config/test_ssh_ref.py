@@ -9,9 +9,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cumo_schema_comparer.config.model import ComparerConfig, SourceRef, SshRef
-from cumo_schema_comparer.config.secrets import Secret
-from cumo_schema_comparer.errors import MissingCredentialsError
+from db_schema_comparer.config.model import ComparerConfig, SourceRef, SshRef
+from db_schema_comparer.config.secrets import Secret
+from db_schema_comparer.errors import MissingCredentialsError
 
 
 class TestSshRef:

@@ -59,7 +59,7 @@ def _paramiko() -> Any:
     except ImportError:
         raise ConfigError(
             "a source in this configuration is reached through an SSH tunnel, which needs the "
-            "optional 'ssh' extra: pip install 'cumo-db-schema-comparer[ssh]'"
+            "optional 'ssh' extra: pip install 'db-schema-comparer[ssh]'"
         ) from None
     return paramiko
 

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from cumo_schema_comparer.gui.results_vm import ResultsModel
+from db_schema_comparer.gui.results_vm import ResultsModel
 from tests.support.reports import clean_report, full_report
 
 
@@ -74,9 +74,9 @@ class TestFiltering:
 
 class TestChangelog:
     def test_the_changelog_lines_lead_with_the_headline(self, model):
-        from cumo_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
-        from cumo_schema_comparer.diff.model import ComparisonReport, TargetDiff
-        from cumo_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
+        from db_schema_comparer.diff.model import ComparisonReport, TargetDiff
+        from db_schema_comparer.diff.severity import Severity
         from tests.support.builders import source
 
         report = ComparisonReport(
@@ -151,7 +151,7 @@ class TestWritingReports:
 
 
 def _report(*targets, probe_failed=False, notes=(), fail_on="error"):
-    from cumo_schema_comparer.diff.model import ComparisonReport
+    from db_schema_comparer.diff.model import ComparisonReport
 
     return ComparisonReport(
         name="invoicing",
@@ -166,7 +166,7 @@ def _report(*targets, probe_failed=False, notes=(), fail_on="error"):
 def _html_text(report) -> str:
     import io
 
-    from cumo_schema_comparer.report.html import HtmlReporter
+    from db_schema_comparer.report.html import HtmlReporter
 
     out = io.StringIO()
     HtmlReporter().render(report, out)
@@ -176,7 +176,7 @@ def _html_text(report) -> str:
 def _console_text(report) -> str:
     import io
 
-    from cumo_schema_comparer.report.console import ConsoleReporter
+    from db_schema_comparer.report.console import ConsoleReporter
 
     out = io.StringIO()
     ConsoleReporter().render(report, out)
@@ -215,8 +215,8 @@ class TestVerdictPrecedence:
         assert "No differences" not in sentence
 
     def test_a_warning_note_alone_is_not_clean(self):
-        from cumo_schema_comparer.diff.model import Note, NoteKind
-        from cumo_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.diff.model import Note, NoteKind
+        from db_schema_comparer.diff.severity import Severity
         from tests.support.reports import in_sync_target
 
         note = Note(NoteKind.TARGET_EMPTY, "target is empty", Severity.WARNING)
@@ -227,8 +227,8 @@ class TestVerdictPrecedence:
     def test_a_liquibase_problem_alone_is_not_clean(self):
         from dataclasses import replace
 
-        from cumo_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
-        from cumo_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.diff.changelog import ChangelogDiff, ChangelogStatus
+        from db_schema_comparer.diff.severity import Severity
         from tests.support.reports import in_sync_target
 
         target = replace(
@@ -245,8 +245,8 @@ class TestVerdictPrecedence:
 
     @pytest.mark.parametrize("which", ["full", "skipped_only", "drift", "warning_note"])
     def test_the_sentence_is_the_one_the_html_report_shows(self, which):
-        from cumo_schema_comparer.diff.model import Note, NoteKind
-        from cumo_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.diff.model import Note, NoteKind
+        from db_schema_comparer.diff.severity import Severity
         from tests.support.reports import drifted_target, in_sync_target, skipped_target
 
         report = {
@@ -280,8 +280,8 @@ class TestTargetSummary:
         assert "skipped" in summary
 
     def test_a_target_with_only_a_warning_note_is_not_in_sync(self):
-        from cumo_schema_comparer.diff.model import Note, NoteKind, TargetDiff
-        from cumo_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.diff.model import Note, NoteKind, TargetDiff
+        from db_schema_comparer.diff.severity import Severity
         from tests.support.builders import source
 
         target = TargetDiff(
@@ -301,7 +301,7 @@ class TestTargetSummary:
 
 class TestWriteFailures:
     def test_a_failed_write_names_the_file_and_leaves_nothing_behind(self, model, tmp_path):
-        from cumo_schema_comparer.gui.errors import GuiError
+        from db_schema_comparer.gui.errors import GuiError
 
         blocker = tmp_path / "file"
         blocker.write_text("x")
@@ -317,7 +317,7 @@ class TestWriteFailures:
         assert model.html_path(tmp_path) == tmp_path / "report.html"
 
     def _failing_html(self, monkeypatch, exc):
-        from cumo_schema_comparer.report.html import HtmlReporter
+        from db_schema_comparer.report.html import HtmlReporter
 
         def boom(self, report, out):
             out.write("half a report")
@@ -326,7 +326,7 @@ class TestWriteFailures:
         monkeypatch.setattr(HtmlReporter, "render", boom)
 
     def test_a_late_failure_keeps_the_previous_set_intact(self, model, tmp_path, monkeypatch):
-        from cumo_schema_comparer.gui.errors import GuiError
+        from db_schema_comparer.gui.errors import GuiError
 
         for name in ("report.json", "junit.xml", "report.html"):
             (tmp_path / name).write_text("OLD")
@@ -340,7 +340,7 @@ class TestWriteFailures:
         assert not list(tmp_path.glob("*.partial"))
 
     def test_a_non_os_failure_leaks_no_text_and_no_partial(self, model, tmp_path, monkeypatch):
-        from cumo_schema_comparer.gui.errors import GuiError
+        from db_schema_comparer.gui.errors import GuiError
 
         self._failing_html(monkeypatch, ValueError("secret-dsn-xyz"))
         with pytest.raises(GuiError) as caught:
@@ -352,7 +352,7 @@ class TestWriteFailures:
     def test_a_lone_surrogate_becomes_a_gui_error(self, tmp_path):
         from dataclasses import replace
 
-        from cumo_schema_comparer.gui.errors import GuiError
+        from db_schema_comparer.gui.errors import GuiError
 
         report = full_report()
         drifted = report.targets[0]
@@ -394,7 +394,7 @@ class TestRowDetails:
     def test_a_renamed_object_says_what_it_matches(self):
         from dataclasses import replace
 
-        from cumo_schema_comparer.model.keys import table_key
+        from db_schema_comparer.model.keys import table_key
         from tests.support.reports import drifted_target
 
         drifted = drifted_target()
@@ -414,7 +414,7 @@ class TestSeverityNames:
 
 class TestChangelogLinesCompleteness:
     def test_a_filename_difference_is_shown_at_its_severity(self):
-        from cumo_schema_comparer.diff.changelog import diff_changelog
+        from db_schema_comparer.diff.changelog import diff_changelog
         from tests.support.builders import changelog, changeset
 
         diff = diff_changelog(
@@ -432,7 +432,7 @@ class TestChangelogLinesCompleteness:
     def test_a_failure_names_its_side(self):
         from dataclasses import replace
 
-        from cumo_schema_comparer.diff.changelog import diff_changelog
+        from db_schema_comparer.diff.changelog import diff_changelog
         from tests.support.builders import changelog, changeset
         from tests.support.reports import in_sync_target
 

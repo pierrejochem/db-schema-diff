@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import io
 
-from cumo_schema_comparer.diff.model import ComparisonReport
-from cumo_schema_comparer.report.base import Reporter, render_to_path
-from cumo_schema_comparer.report.console import ConsoleReporter
+from db_schema_comparer.diff.model import ComparisonReport
+from db_schema_comparer.report.base import Reporter, render_to_path
+from db_schema_comparer.report.console import ConsoleReporter
 
 
 class Fake:

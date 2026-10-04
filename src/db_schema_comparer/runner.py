@@ -185,7 +185,7 @@ def require_tunnel_support(config: ComparerConfig) -> None:
     raise ConfigError(
         f"{', '.join(repr(label) for label in tunnelled)} "
         f"{'is' if len(tunnelled) == 1 else 'are'} reached through an SSH tunnel, which needs the "
-        "optional 'ssh' extra: pip install 'cumo-db-schema-comparer[ssh]'"
+        "optional 'ssh' extra: pip install 'db-schema-comparer[ssh]'"
     )
 
 

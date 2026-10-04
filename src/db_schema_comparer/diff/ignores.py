@@ -176,7 +176,7 @@ def load_default_ignores() -> IgnoreConfig:
     an installed wheel.
     """
     text = (
-        resources.files("cumo_schema_comparer.resources")
+        resources.files("db_schema_comparer.resources")
         .joinpath(DEFAULT_IGNORES_RESOURCE)
         .read_text(encoding="utf-8")
     )

@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from cumo_schema_comparer import __version__
-from cumo_schema_comparer.cli import cli
-from cumo_schema_comparer.diff.model import ComparisonReport
-from cumo_schema_comparer.diff.severity import Severity
-from cumo_schema_comparer.errors import ComparerError, ConfigError, ProbeError
-from cumo_schema_comparer.exit_codes import ExitCode
-from cumo_schema_comparer.report.base import render_to_path
-from cumo_schema_comparer.report.json_report import JsonReporter
+from db_schema_comparer import __version__
+from db_schema_comparer.cli import cli
+from db_schema_comparer.diff.model import ComparisonReport
+from db_schema_comparer.diff.severity import Severity
+from db_schema_comparer.errors import ComparerError, ConfigError, ProbeError
+from db_schema_comparer.exit_codes import ExitCode
+from db_schema_comparer.report.base import render_to_path
+from db_schema_comparer.report.json_report import JsonReporter
 from tests.support.reports import drifted_target
 
 
@@ -59,7 +59,7 @@ class TestExitCodePropagation:
     def test_main_returns_the_code_a_command_asked_for(self, monkeypatch):
         import click
 
-        from cumo_schema_comparer import cli as cli_module
+        from db_schema_comparer import cli as cli_module
 
         @click.command()
         @click.pass_context
@@ -73,7 +73,7 @@ class TestExitCodePropagation:
     def test_the_module_and_the_console_script_agree_on_a_drifting_comparison(self, tmp_path):
         """Both entry points, run for real, because the exit code *is* the contract.
 
-        ``python -m cumo_schema_comparer`` discarded main()'s return value and exited 0 on drift
+        ``python -m db_schema_comparer`` discarded main()'s return value and exited 0 on drift
         while the console script exited 1. Nothing in-process could see it: it is the ``if
         __name__`` block itself that is wrong, so it only shows in a subprocess.
         """
@@ -99,14 +99,14 @@ class TestExitCodePropagation:
                 [*argv, *arguments], capture_output=True, text=True, timeout=120, check=False
             ).returncode
 
-        module = exit_code(sys.executable, "-m", "cumo_schema_comparer")
+        module = exit_code(sys.executable, "-m", "db_schema_comparer")
         console = exit_code(str(script))
         assert (module, console) == (ExitCode.DRIFT, ExitCode.DRIFT)
 
     def test_main_returns_zero_when_a_command_succeeds(self, monkeypatch):
         import click
 
-        from cumo_schema_comparer import cli as cli_module
+        from db_schema_comparer import cli as cli_module
 
         @click.command()
         def fine():
@@ -121,14 +121,14 @@ class TestConsoleSummary:
     """The summary line is what a reader checks first, so it must not mislead."""
 
     def _report(self):
-        from cumo_schema_comparer.diff.model import (
+        from db_schema_comparer.diff.model import (
             ComparisonReport,
             ObjectFinding,
             ObjectStatus,
             TargetDiff,
         )
-        from cumo_schema_comparer.diff.severity import Severity
-        from cumo_schema_comparer.model.keys import table_key
+        from db_schema_comparer.diff.severity import Severity
+        from db_schema_comparer.model.keys import table_key
         from tests.support.builders import source
 
         findings = (
@@ -159,7 +159,7 @@ class TestConsoleSummary:
     def _render(self):
         import io
 
-        from cumo_schema_comparer.report.console import ConsoleReporter
+        from db_schema_comparer.report.console import ConsoleReporter
 
         out = io.StringIO()
         ConsoleReporter().render(self._report(), out)

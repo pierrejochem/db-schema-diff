@@ -10,9 +10,9 @@ import io
 from contextlib import redirect_stderr
 from unittest import mock
 
-from cumo_schema_comparer.gui import MINIMUM_PYTHON
-from cumo_schema_comparer.gui import launcher as entry
-from cumo_schema_comparer.gui.errors import GuiError
+from db_schema_comparer.gui import MINIMUM_PYTHON
+from db_schema_comparer.gui import launcher as entry
+from db_schema_comparer.gui.errors import GuiError
 
 
 def test_the_floor_is_python_312():
@@ -38,14 +38,14 @@ def test_a_gui_error_carries_an_optional_field_path():
 
 
 def test_the_dunder_main_shim_only_forwards():
-    """`python -m cumo_schema_comparer.gui` must keep working, and must hold no logic of its own.
+    """`python -m db_schema_comparer.gui` must keep working, and must hold no logic of its own.
 
     Logic in both places would drift, and the compiled binary only ever runs the launcher.
     """
     import ast
     from pathlib import Path
 
-    from cumo_schema_comparer.gui import launcher
+    from db_schema_comparer.gui import launcher
 
     source = Path(launcher.__file__).with_name("__main__.py").read_text(encoding="utf-8")
     tree = ast.parse(source)

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cumo_schema_comparer.gui import fonts
+from db_schema_comparer.gui import fonts
 
 TOKENS = Path(fonts.__file__).with_name("ui") / "tokens.slint"
 

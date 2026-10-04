@@ -10,7 +10,7 @@ this module imports no GUI toolkit: everything `gui/launcher` touches lives insi
 
 from __future__ import annotations
 
-from cumo_schema_comparer.gui.launcher import main
+from db_schema_comparer.gui.launcher import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

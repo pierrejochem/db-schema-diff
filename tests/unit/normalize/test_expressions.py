@@ -2,7 +2,7 @@
 
 import pytest
 
-from cumo_schema_comparer.normalize.expressions import (
+from db_schema_comparer.normalize.expressions import (
     canonical_expr,
     exprs_equivalent,
     remap_schema_qualifiers,

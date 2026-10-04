@@ -1,7 +1,7 @@
 """The builder keeps the canonical body it already computes for the hash."""
 
-from cumo_schema_comparer.build import _routines
-from cumo_schema_comparer.normalize.routines import body_hash, canonical_body
+from db_schema_comparer.build import _routines
+from db_schema_comparer.normalize.routines import body_hash, canonical_body
 
 SRC = "BEGIN\n  RETURN a  +  b;\nEND"
 

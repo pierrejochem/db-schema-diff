@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from cumo_schema_comparer.config.model import SSL_MODES, SourceRef
+from db_schema_comparer.config.model import SSL_MODES, SourceRef
 
 
 def source(**overrides) -> SourceRef:

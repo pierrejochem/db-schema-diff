@@ -2,8 +2,8 @@
 
 import pytest
 
-from cumo_schema_comparer.model.objects import SERIAL_SENTINEL
-from cumo_schema_comparer.normalize.defaults import canonical_default, owned_sequence_name
+from db_schema_comparer.model.objects import SERIAL_SENTINEL
+from db_schema_comparer.normalize.defaults import canonical_default, owned_sequence_name
 
 
 class TestSerial:

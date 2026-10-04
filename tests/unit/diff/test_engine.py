@@ -6,10 +6,10 @@ differ in exactly one way, plus an assertion about what should be reported and a
 
 import pytest
 
-from cumo_schema_comparer.diff.engine import diff_inventories
-from cumo_schema_comparer.diff.model import DiffOptions, NoteKind, ObjectStatus
-from cumo_schema_comparer.diff.severity import Severity
-from cumo_schema_comparer.model.objects import SERIAL_SENTINEL
+from db_schema_comparer.diff.engine import diff_inventories
+from db_schema_comparer.diff.model import DiffOptions, NoteKind, ObjectStatus
+from db_schema_comparer.diff.severity import Severity
+from db_schema_comparer.model.objects import SERIAL_SENTINEL
 from tests.support.builders import col, inventory, table
 
 
@@ -117,9 +117,9 @@ class TestNothingCompared:
     def test_an_extension_on_both_sides_is_still_nothing_compared(self):
         """``plpgsql`` exists in every database, so counting it would make an empty schema look
         inspected and the guard would never fire."""
-        from cumo_schema_comparer.model.keys import ObjectKey
-        from cumo_schema_comparer.model.kinds import ObjectKind
-        from cumo_schema_comparer.model.objects import Extension
+        from db_schema_comparer.model.keys import ObjectKey
+        from db_schema_comparer.model.kinds import ObjectKind
+        from db_schema_comparer.model.objects import Extension
 
         key = ObjectKey(ObjectKind.EXTENSION, "public", "plpgsql")
         only_extension = {key: Extension(key=key, version="1.0")}
@@ -419,8 +419,8 @@ class TestIgnoreRulesInTheEngine:
     """How suppression interacts with the diff, which is where it can go quietly wrong."""
 
     def _rules(self, *rules):
-        from cumo_schema_comparer.config.model import IgnoreConfig
-        from cumo_schema_comparer.diff.ignores import IgnoreRuleSet
+        from db_schema_comparer.config.model import IgnoreConfig
+        from db_schema_comparer.diff.ignores import IgnoreRuleSet
 
         return IgnoreRuleSet(IgnoreConfig.model_validate({"version": 1, "rules": list(rules)}))
 
@@ -515,9 +515,9 @@ class TestIgnoreRulesInTheEngine:
         to ``differs`` has to be able to match it. Applying rules first would let a
         ``statuses: [extra_in_target]`` rule eat half the pair and leave a bogus missing finding.
         """
-        from cumo_schema_comparer.model.keys import ObjectKey
-        from cumo_schema_comparer.model.kinds import ObjectKind
-        from cumo_schema_comparer.model.objects import Index
+        from db_schema_comparer.model.keys import ObjectKey
+        from db_schema_comparer.model.kinds import ObjectKind
+        from db_schema_comparer.model.objects import Index
 
         master_key = ObjectKey(ObjectKind.INDEX, "public", "t_c_idx")
         target_key = ObjectKey(ObjectKind.INDEX, "public", "idx_t_c")

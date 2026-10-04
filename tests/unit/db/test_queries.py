@@ -10,8 +10,8 @@ from importlib import resources
 
 import pytest
 
-from cumo_schema_comparer.db.features import ServerFeatures
-from cumo_schema_comparer.db.introspect import load_query
+from db_schema_comparer.db.features import ServerFeatures
+from db_schema_comparer.db.introspect import load_query
 
 QUERY_NAMES = [
     "server",
@@ -43,7 +43,7 @@ def sql_body(name):
 
 
 def query_files():
-    root = resources.files("cumo_schema_comparer.db").joinpath("queries")
+    root = resources.files("db_schema_comparer.db").joinpath("queries")
     return sorted(p.name for p in root.iterdir() if p.name.endswith(".sql"))
 
 

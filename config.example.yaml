@@ -29,7 +29,7 @@ targets:
     dsn_env: QA_INVOICING_DSN
     # Reached through a bastion. The DSN above names the database as the *gateway* sees it, so the
     # same DSN works with or without the tunnel and no local port number lands in this file.
-    # Needs the optional extra: pip install 'cumo-db-schema-comparer[ssh]'
+    # Needs the optional extra: pip install 'db-schema-comparer[ssh]'
     ssh:
       host: bastion-qa.internal
       # port: 22

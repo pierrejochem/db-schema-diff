@@ -8,7 +8,7 @@ relies on it never confusing text inside a literal for SQL.
 
 import pytest
 
-from cumo_schema_comparer.normalize.tokenizer import TokenType, tokenize
+from db_schema_comparer.normalize.tokenizer import TokenType, tokenize
 
 
 def kinds(sql):

@@ -6,8 +6,8 @@ much as the parsing.
 
 import pytest
 
-from cumo_schema_comparer.config.loader import load_config
-from cumo_schema_comparer.errors import ConfigError, MissingCredentialsError
+from db_schema_comparer.config.loader import load_config
+from db_schema_comparer.errors import ConfigError, MissingCredentialsError
 
 MINIMAL = """
 version: 1
@@ -194,7 +194,7 @@ class TestIgnoresResolution:
 
     def test_an_ignores_file_resolves_relative_to_its_config(self, tmp_path):
         # So a config directory can be checked out anywhere without rewriting paths inside it.
-        from cumo_schema_comparer.config.loader import load_config_files, resolve_ignores
+        from db_schema_comparer.config.loader import load_config_files, resolve_ignores
 
         (tmp_path / "ignores.yaml").write_text(
             "version: 1\nrules:\n  - id: mine\n    names: ['public.x']\n"
@@ -206,7 +206,7 @@ class TestIgnoresResolution:
         assert [r.id for r in resolved.rules] == ["mine"]
 
     def test_an_inline_block_is_used_directly(self, tmp_path):
-        from cumo_schema_comparer.config.loader import resolve_ignores
+        from db_schema_comparer.config.loader import resolve_ignores
 
         text = (
             MINIMAL + "ignores:\n  version: 1\n  rules:\n    - id: inline\n      names: ['a.b']\n"
@@ -218,7 +218,7 @@ class TestIgnoresResolution:
 
     def test_declaring_both_is_an_error(self, tmp_path):
         # Two sources for the same rules leaves it unclear which is in force.
-        from cumo_schema_comparer.config.loader import resolve_ignores
+        from db_schema_comparer.config.loader import resolve_ignores
 
         text = (
             MINIMAL
@@ -230,13 +230,13 @@ class TestIgnoresResolution:
             resolve_ignores(config, None)
 
     def test_no_ignores_declared_returns_none(self, tmp_path):
-        from cumo_schema_comparer.config.loader import resolve_ignores
+        from db_schema_comparer.config.loader import resolve_ignores
 
         config = load_config([write(tmp_path, MINIMAL)])[0]
         assert resolve_ignores(config, None) is None
 
     def test_a_missing_ignores_file_is_a_config_error(self, tmp_path):
-        from cumo_schema_comparer.config.loader import load_config_files, resolve_ignores
+        from db_schema_comparer.config.loader import load_config_files, resolve_ignores
 
         config_path = write(tmp_path, MINIMAL + "ignores_file: absent.yaml\n")
         path, config = load_config_files([config_path])[0]
@@ -244,7 +244,7 @@ class TestIgnoresResolution:
             resolve_ignores(config, path)
 
     def test_load_config_files_reports_the_source_path(self, tmp_path):
-        from cumo_schema_comparer.config.loader import load_config_files
+        from db_schema_comparer.config.loader import load_config_files
 
         config_path = write(tmp_path, MINIMAL)
         [(path, config)] = load_config_files([config_path])
@@ -258,7 +258,7 @@ def test_the_shipped_example_ruleset_is_valid():
 
     import yaml
 
-    from cumo_schema_comparer.config.model import IgnoreConfig
+    from db_schema_comparer.config.model import IgnoreConfig
 
     example = Path(__file__).parents[3] / "ignores.example.yaml"
     config = IgnoreConfig.model_validate(yaml.safe_load(example.read_text()))
@@ -272,7 +272,7 @@ def test_the_shipped_example_config_is_valid():
 
     import yaml
 
-    from cumo_schema_comparer.config.model import ComparerConfig
+    from db_schema_comparer.config.model import ComparerConfig
 
     example = Path(__file__).parents[3] / "config.example.yaml"
     config = ComparerConfig.model_validate(yaml.safe_load(example.read_text()))

@@ -3,8 +3,8 @@
 import io
 import re
 
-from cumo_schema_comparer.report.console import ConsoleReporter
-from cumo_schema_comparer.report.html import HtmlReporter
+from db_schema_comparer.report.console import ConsoleReporter
+from db_schema_comparer.report.html import HtmlReporter
 
 
 def render(report):
@@ -32,7 +32,7 @@ def test_the_cap_is_sixty_lines():
     existed, changing it from 60 to 5 passed 1482 tests in .venv and 629 in .venv-gui — only the
     Docker-gated rendered-diff tests noticed. Same gap class as the unpinned defaults.
     """
-    from cumo_schema_comparer.report.html import MAX_DIFF_LINES
+    from db_schema_comparer.report.html import MAX_DIFF_LINES
 
     assert MAX_DIFF_LINES == 60
 

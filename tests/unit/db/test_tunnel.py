@@ -12,11 +12,11 @@ from typing import Any
 
 import pytest
 
-from cumo_schema_comparer.config.model import SshRef
-from cumo_schema_comparer.config.secrets import Dsn, Secret
-from cumo_schema_comparer.db import tunnel
-from cumo_schema_comparer.db.connect import ConnectionOptions, _build_conninfo, _tunnel_target
-from cumo_schema_comparer.errors import ConfigError, ConnectionFailed
+from db_schema_comparer.config.model import SshRef
+from db_schema_comparer.config.secrets import Dsn, Secret
+from db_schema_comparer.db import tunnel
+from db_schema_comparer.db.connect import ConnectionOptions, _build_conninfo, _tunnel_target
+from db_schema_comparer.errors import ConfigError, ConnectionFailed
 
 paramiko = pytest.importorskip("paramiko", reason="the ssh extra is not installed")
 
@@ -275,7 +275,7 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
     """
 
     def config(self, *, tunnelled: bool):
-        from cumo_schema_comparer.config.model import ComparerConfig, SourceRef
+        from db_schema_comparer.config.model import ComparerConfig, SourceRef
 
         return ComparerConfig(
             version=1,
@@ -291,18 +291,18 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
         )
 
     def test_it_passes_when_nothing_is_tunnelled(self, monkeypatch):
-        from cumo_schema_comparer import runner
+        from db_schema_comparer import runner
 
         monkeypatch.setattr(tunnel, "available", lambda: False)
         runner.require_tunnel_support(self.config(tunnelled=False))
 
     def test_it_passes_when_the_extra_is_there(self):
-        from cumo_schema_comparer import runner
+        from db_schema_comparer import runner
 
         runner.require_tunnel_support(self.config(tunnelled=True))
 
     def test_it_names_the_sources_and_the_extra(self, monkeypatch):
-        from cumo_schema_comparer import runner
+        from db_schema_comparer import runner
 
         monkeypatch.setattr(tunnel, "available", lambda: False)
         with pytest.raises(ConfigError) as raised:
@@ -310,7 +310,7 @@ class TestTheExtraIsCheckedBeforeAnythingConnects:
 
         message = str(raised.value)
         assert "'qa'" in message
-        assert "cumo-db-schema-comparer[ssh]" in message
+        assert "db-schema-comparer[ssh]" in message
 
     def test_available_answers_rather_than_raising(self):
         assert tunnel.available() is True

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cumo-db-schema-comparer"
+name = "db-schema-comparer"
 version = "0.1.0"
 description = "Inventory a master PostgreSQL database and compare 1..n other environments for schema drift"
 readme = "README.md"
@@ -60,18 +60,21 @@ ssh = [
 exe = [
   # 4.2 is the first release that compiles under Python 3.14, which the GUI requires.
   "nuitka>=4.2,<5",
+  # Nuitka's Linux standalone mode shells out to `patchelf`. The PyPI wheel ships the binary, so
+  # `make exe` needs no system package; the Makefile puts the venv on PATH so Nuitka finds it.
+  "patchelf>=0.17; sys_platform == 'linux'",
 ]
 
 [project.scripts]
-cumo-schema-diff = "cumo_schema_comparer.cli:main"
-cumo-schema-diff-gui = "cumo_schema_comparer.gui.launcher:main"
+cumo-schema-diff = "db_schema_comparer.cli:main"
+cumo-schema-diff-gui = "db_schema_comparer.gui.launcher:main"
 
 [tool.hatch.build.targets.wheel]
 # hatchling ships every file inside the package directory, including the .sql query files, the
 # Jinja templates and the bundled YAML. A force-include for them would add each one twice and
 # fail the build. The `build` CI job installs the wheel and loads a query from it, because a
 # packaging mistake here passes every test and fails on first real use.
-packages = ["src/cumo_schema_comparer"]
+packages = ["src/db_schema_comparer"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "tests", "README.md", "pyproject.toml"]
@@ -121,10 +124,10 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["cumo_schema_comparer"]
+source = ["db_schema_comparer"]
 branch = true
 # The GUI is an optional extra. slint cannot be installed on 3.11, which the `unit` matrix
 # includes, so there every GUI test skips and ~1600 statements would count as uncovered and fail
 # the gate. The GUI has its own floor in the `gui` job, which measures it with .coveragerc-gui
 # (same settings, without this omit) on an interpreter that can actually import slint.
-omit = ["*/cumo_schema_comparer/gui/*"]
+omit = ["*/db_schema_comparer/gui/*"]

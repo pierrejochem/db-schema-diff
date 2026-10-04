@@ -7,7 +7,7 @@ Nuitka names each module's generated C file after the module, so a program whose
 
     AssertionError: build/main.build/module.__main__.c
 
-`__main__.py` is now a shim over this, so `python -m cumo_schema_comparer.gui` still works and the
+`__main__.py` is now a shim over this, so `python -m db_schema_comparer.gui` still works and the
 compiled binary imports a module with a name of its own.
 """
 

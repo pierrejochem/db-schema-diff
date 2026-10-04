@@ -11,9 +11,9 @@ import textwrap
 
 import pytest
 
-from cumo_schema_comparer.config.loader import load_config_files
-from cumo_schema_comparer.gui.config_vm import ConfigDocument
-from cumo_schema_comparer.gui.errors import GuiError
+from db_schema_comparer.config.loader import load_config_files
+from db_schema_comparer.gui.config_vm import ConfigDocument
+from db_schema_comparer.gui.errors import GuiError
 
 FULL = textwrap.dedent(
     """

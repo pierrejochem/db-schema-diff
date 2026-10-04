@@ -82,7 +82,7 @@ def _raw_display(field: str, fallback: Callable[[Any], Any]) -> Callable[[Any], 
     render as one removed and one added line however long it is.
 
     ``raw`` is the text the server printed (``pg_get_viewdef``, ``prosrc``), line breaks and all.
-    It is masked by :func:`cumo_schema_comparer.build.redact_inventory` alongside the canonical
+    It is masked by :func:`db_schema_comparer.build.redact_inventory` alongside the canonical
     value — every ``raw`` entry is, unconditionally — so showing it reopens no credential path.
 
     An inventory captured before a given raw value was recorded has none; then the canonical value

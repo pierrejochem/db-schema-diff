@@ -67,7 +67,7 @@ def test_the_gui_entry_script_imports_no_toolkit_before_the_fonts_are_installed(
     names = imported_names((ROOT / "main.py").read_text(encoding="utf-8"))
     assert not any(name.split(".")[0] == "slint" for name in names)
     # And it must not reach the application module either, which imports slint itself.
-    assert "cumo_schema_comparer.gui.app" not in names
+    assert "db_schema_comparer.gui.app" not in names
 
 
 @pytest.mark.parametrize("script", sorted(ENTRY_SCRIPTS))
@@ -99,7 +99,7 @@ class TestBuildFlags:
         data read through importlib.resources at run time. Nuitka ships none of it by default, so
         without this the build is clean and the binary dies on its first query.
         """
-        assert "--include-package-data=cumo_schema_comparer" in self.flags()
+        assert "--include-package-data=db_schema_comparer" in self.flags()
 
     def test_everything_is_built_into_the_build_directory(self):
         assert "--output-dir=build" in self.flags()
@@ -170,13 +170,14 @@ class TestBuildFlags:
         build that completed here produced a binary missing a module added minutes earlier, and
         nothing about either the install or the build looked wrong.
         """
-        installs = [
-            line
-            for line in MAKEFILE.splitlines()
-            if "pip install" in line and "nuitka" not in line and ".[" in line
-        ]
-        assert installs, "the exe targets no longer install anything"
-        for line in installs:
+        lines = MAKEFILE.splitlines()
+        # The exe targets install through the `pipinstall` macro; its definitions are where the
+        # command line is spelled out, once for uv and once for pip.
+        calls = [line for line in lines if "$(call pipinstall," in line and ".[" in line]
+        assert calls, "the exe targets no longer install anything"
+        definitions = [line for line in lines if line.startswith(("pipinstall =", "pipinstall:="))]
+        assert definitions, "the install macro is gone"
+        for line in definitions:
             assert " -e " in line, f"non-editable install of this project: {line.strip()}"
 
     def test_the_help_text_warns_what_a_build_costs(self):
@@ -256,7 +257,7 @@ class TestMacosAppBundle:
         import re
 
         generator = (ROOT / "packaging" / "logo.py").read_text(encoding="utf-8")
-        tokens = (ROOT / "src" / "cumo_schema_comparer" / "gui" / "ui" / "tokens.slint").read_text(
+        tokens = (ROOT / "src" / "db_schema_comparer" / "gui" / "ui" / "tokens.slint").read_text(
             encoding="utf-8"
         )
         declared = dict(re.findall(r"out property <color> (\S+): #([0-9a-fA-F]{6});", tokens))

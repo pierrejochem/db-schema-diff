@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.config.model import IgnoreConfig, IgnoreRule
-from cumo_schema_comparer.diff.ignores import (
+from db_schema_comparer.config.model import IgnoreConfig, IgnoreRule
+from db_schema_comparer.diff.ignores import (
     Action,
     IgnoreRuleSet,
     load_default_ignores,
 )
-from cumo_schema_comparer.diff.model import ObjectStatus
-from cumo_schema_comparer.diff.severity import Severity
-from cumo_schema_comparer.model.keys import ObjectKey, column_key, table_key
-from cumo_schema_comparer.model.kinds import ObjectKind
+from db_schema_comparer.diff.model import ObjectStatus
+from db_schema_comparer.diff.severity import Severity
+from db_schema_comparer.model.keys import ObjectKey, column_key, table_key
+from db_schema_comparer.model.kinds import ObjectKind
 
 
 def ruleset(*rules: dict, case_insensitive: bool = True) -> IgnoreRuleSet:

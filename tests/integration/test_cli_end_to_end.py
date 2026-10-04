@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from cumo_schema_comparer.exit_codes import ExitCode
+from db_schema_comparer.exit_codes import ExitCode
 from tests.integration.conftest import apply_sql
 
 pytestmark = pytest.mark.integration

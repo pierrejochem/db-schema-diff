@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import pytest
 
-from cumo_schema_comparer.build import build_inventory
-from cumo_schema_comparer.config.model import SourceRef
-from cumo_schema_comparer.config.secrets import Dsn
-from cumo_schema_comparer.db.connect import open_connection
-from cumo_schema_comparer.diff.engine import diff_inventories
-from cumo_schema_comparer.diff.severity import Severity
-from cumo_schema_comparer.model.kinds import ObjectKind
+from db_schema_comparer.build import build_inventory
+from db_schema_comparer.config.model import SourceRef
+from db_schema_comparer.config.secrets import Dsn
+from db_schema_comparer.db.connect import open_connection
+from db_schema_comparer.diff.engine import diff_inventories
+from db_schema_comparer.diff.severity import Severity
+from db_schema_comparer.model.kinds import ObjectKind
 
 pytestmark = pytest.mark.integration
 

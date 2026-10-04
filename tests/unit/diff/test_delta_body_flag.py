@@ -2,9 +2,9 @@
 
 import pytest
 
-from cumo_schema_comparer.diff.engine import diff_inventories
-from cumo_schema_comparer.diff.model import AttributeDelta
-from cumo_schema_comparer.diff.severity import Severity
+from db_schema_comparer.diff.engine import diff_inventories
+from db_schema_comparer.diff.model import AttributeDelta
+from db_schema_comparer.diff.severity import Severity
 from tests.support.builders import col, inventory, routine, table
 
 
@@ -24,7 +24,7 @@ def test_a_false_flag_is_omitted_from_json():
 
 
 def test_every_body_spec_is_reachable():
-    from cumo_schema_comparer.diff.attributes import SPECS
+    from db_schema_comparer.diff.attributes import SPECS
 
     body_specs = [spec.name for specs in SPECS.values() for spec in specs if spec.body]
     assert "routine.body_hash" in body_specs

@@ -132,7 +132,7 @@ class HtmlReporter:
 
     def __init__(self) -> None:
         self._environment = Environment(
-            loader=PackageLoader("cumo_schema_comparer.report", "templates"),
+            loader=PackageLoader("db_schema_comparer.report", "templates"),
             # Autoescaping is not optional here: schema identifiers, default expressions and
             # function bodies all reach the page, and any of them can contain angle brackets.
             autoescape=select_autoescape(default_for_string=True, default=True),
@@ -345,7 +345,7 @@ def load_template_source() -> str:
     from importlib import resources
 
     return (
-        resources.files("cumo_schema_comparer.report")
+        resources.files("db_schema_comparer.report")
         .joinpath("templates", TEMPLATE)
         .read_text(encoding="utf-8")
     )

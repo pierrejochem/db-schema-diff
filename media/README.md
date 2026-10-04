@@ -18,7 +18,7 @@ same geometry, because that is where `make exe` looks for it.
 ## Changing the brand
 
 Nothing here is drawn by hand twice. The geometry and the palette live in `packaging/logo.py`,
-which takes its colours from `src/cumo_schema_comparer/gui/ui/tokens.slint` and nowhere else. To
+which takes its colours from `src/db_schema_comparer/gui/ui/tokens.slint` and nowhere else. To
 change the mark:
 
 1. Edit `packaging/logo.py` (or the tokens, if it is a colour).

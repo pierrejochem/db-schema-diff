@@ -25,7 +25,7 @@ MEASURE = """
 import json, os, sys
 install = os.environ.pop("MEASURE_INSTALL", "") == "1"
 if install:
-    from cumo_schema_comparer.gui import fonts
+    from db_schema_comparer.gui import fonts
     fonts.install()
 import slint
 ui = slint.load_file(sys.argv[1])

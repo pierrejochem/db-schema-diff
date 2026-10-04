@@ -1,6 +1,6 @@
 <img src="media/logo.svg" alt="DB Schema Diff" width="390">
 
-# cumo-db-schema-comparer
+# db-schema-comparer
 
 Inventory one **master** PostgreSQL database and compare it against **1..n other
 environments** of the same service to prove they are in sync — structurally and by Liquibase
@@ -84,10 +84,10 @@ or notarized, so Gatekeeper will warn anyone who did not build it themselves. On
 and for the command-line tool everywhere, the output is a single file.
 
 Each target installs Nuitka on demand (the `exe` extra, deliberately out of `dev`: no test or CI
-job compiles anything) and needs a C toolchain — Xcode command line tools on macOS, `gcc` and `patchelf` on Linux. A build takes
+job compiles anything) and needs a C toolchain — Xcode command line tools on macOS, `gcc` on Linux (`patchelf` comes with the `exe` extra). A build takes
 several minutes.
 
-The build passes `--include-package-data=cumo_schema_comparer`, which is not optional. Everything
+The build passes `--include-package-data=db_schema_comparer`, which is not optional. Everything
 this program reads at run time is package data loaded through `importlib.resources`: the catalog
 queries, the report templates, the bundled ignore ruleset, the `.slint` markup and the typefaces.
 Nuitka ships none of it by default, so without that flag the build succeeds and the binary fails on
@@ -136,7 +136,7 @@ and no local port number ever reaches a config file. The local port is chosen by
 captures cannot collide. TLS still verifies against the real hostname: the connection sets
 `hostaddr` and leaves `host` alone, so `sslmode=verify-full` keeps working through the tunnel.
 
-Install the extra to use it — `pip install 'cumo-db-schema-comparer[ssh]'`. A config that names an
+Install the extra to use it — `pip install 'db-schema-comparer[ssh]'`. A config that names an
 `ssh:` block without it exits 2 saying so, rather than raising an ImportError.
 
 **Host keys are trusted on first use.** An unknown gateway is pinned to `known_hosts` on first
@@ -622,7 +622,7 @@ capture or `--baseline` file keeps working.
 
 The logo lives in [`media/`](media/) — an SVG lockup, a light and a dark form, the mark on its own,
 and PNGs for anywhere an SVG is not accepted. All of it is generated from `packaging/logo.py`,
-which takes its palette from `src/cumo_schema_comparer/gui/ui/tokens.slint`, so the dock icon, the
+which takes its palette from `src/db_schema_comparer/gui/ui/tokens.slint`, so the dock icon, the
 README header and a slide are the same drawing. `media/README.md` says how to change it.
 
 ## Development

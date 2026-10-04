@@ -12,15 +12,15 @@ import tempfile
 
 import pytest
 
-GUI = pathlib.Path(__file__).resolve().parents[3] / "src" / "cumo_schema_comparer" / "gui"
+GUI = pathlib.Path(__file__).resolve().parents[3] / "src" / "db_schema_comparer" / "gui"
 
 FORBIDDEN = (
-    "cumo_schema_comparer.db",
-    "cumo_schema_comparer.normalize",
-    "cumo_schema_comparer.build",
-    "cumo_schema_comparer.model.objects",
-    "cumo_schema_comparer.model.inventory",
-    "cumo_schema_comparer.diff.engine",
+    "db_schema_comparer.db",
+    "db_schema_comparer.normalize",
+    "db_schema_comparer.build",
+    "db_schema_comparer.model.objects",
+    "db_schema_comparer.model.inventory",
+    "db_schema_comparer.diff.engine",
 )
 
 
@@ -41,8 +41,8 @@ def imported_names(path: pathlib.Path) -> set[str]:
                 for alias in node.names:
                     names.add(f"{node.module}.{alias.name}")
             elif node.level > 0:
-                # Relative import: resolve against cumo_schema_comparer.gui.
-                base_parts = ["cumo_schema_comparer", "gui"]
+                # Relative import: resolve against db_schema_comparer.gui.
+                base_parts = ["db_schema_comparer", "gui"]
                 # Walk up by node.level - 1 (level 1 is same package, level 2 is parent, etc.)
                 base_parts = base_parts[: -(node.level - 1)] if node.level > 1 else base_parts
                 if node.module:
@@ -65,7 +65,7 @@ def test_the_boundary_checker_catches_forbidden_imports():
     source_code = """
 from .. import db
 from ..db import connect
-from cumo_schema_comparer import normalize
+from db_schema_comparer import normalize
 """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(source_code)
@@ -73,9 +73,9 @@ from cumo_schema_comparer import normalize
     try:
         names = imported_names(temp_path)
         # The checker should have found these forbidden imports.
-        assert "cumo_schema_comparer.db" in names
-        assert "cumo_schema_comparer.db.connect" in names
-        assert "cumo_schema_comparer.normalize" in names
+        assert "db_schema_comparer.db" in names
+        assert "db_schema_comparer.db.connect" in names
+        assert "db_schema_comparer.normalize" in names
     finally:
         temp_path.unlink()
 

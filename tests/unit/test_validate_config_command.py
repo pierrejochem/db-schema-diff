@@ -13,8 +13,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from cumo_schema_comparer import cli as cli_module
-from cumo_schema_comparer.exit_codes import ExitCode
+from db_schema_comparer import cli as cli_module
+from db_schema_comparer.exit_codes import ExitCode
 
 CONFIG = textwrap.dedent(
     """

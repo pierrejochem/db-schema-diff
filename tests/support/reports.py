@@ -7,7 +7,7 @@ and a value containing characters that break XML.
 
 from __future__ import annotations
 
-from cumo_schema_comparer.diff.model import (
+from db_schema_comparer.diff.model import (
     AttributeDelta,
     ComparisonReport,
     Note,
@@ -16,8 +16,8 @@ from cumo_schema_comparer.diff.model import (
     ObjectStatus,
     TargetDiff,
 )
-from cumo_schema_comparer.diff.severity import Severity
-from cumo_schema_comparer.model.keys import column_key, table_key
+from db_schema_comparer.diff.severity import Severity
+from db_schema_comparer.model.keys import column_key, table_key
 
 from .builders import source
 

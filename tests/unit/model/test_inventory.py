@@ -2,10 +2,10 @@
 
 import pytest
 
-from cumo_schema_comparer.model.inventory import Inventory
-from cumo_schema_comparer.model.keys import ObjectKey, column_key, table_key
-from cumo_schema_comparer.model.kinds import KIND_ORDER, ObjectKind
-from cumo_schema_comparer.model.objects import SERIAL_SENTINEL, Column, RawValues
+from db_schema_comparer.model.inventory import Inventory
+from db_schema_comparer.model.keys import ObjectKey, column_key, table_key
+from db_schema_comparer.model.kinds import KIND_ORDER, ObjectKind
+from db_schema_comparer.model.objects import SERIAL_SENTINEL, Column, RawValues
 from tests.support.builders import changelog, changeset, col, inventory, table
 
 
@@ -162,7 +162,7 @@ class TestEmptinessIgnoresDefaultExtensions:
     """
 
     def _extension(self, name: str):
-        from cumo_schema_comparer.model.objects import Extension
+        from db_schema_comparer.model.objects import Extension
 
         key = ObjectKey(ObjectKind.EXTENSION, "pg_catalog", name)
         return {key: Extension(key=key, version="1.0")}

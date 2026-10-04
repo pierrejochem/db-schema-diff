@@ -25,12 +25,12 @@ from __future__ import annotations
 import hashlib
 import re
 
-from cumo_schema_comparer.literals import (
+from db_schema_comparer.literals import (
     SECRET_KEYWORDS,
     looks_like_connection_string,
     looks_like_credential_url,
 )
-from cumo_schema_comparer.normalize.tokenizer import (
+from db_schema_comparer.normalize.tokenizer import (
     DOLLAR_TAG,
     Token,
     TokenType,

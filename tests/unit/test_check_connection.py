@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from unittest import mock
 
-from cumo_schema_comparer.config.model import SourceRef
-from cumo_schema_comparer.config.secrets import Dsn
-from cumo_schema_comparer.errors import ConnectionFailed
-from cumo_schema_comparer.runner import ConnectionStatus, check_connection
+from db_schema_comparer.config.model import SourceRef
+from db_schema_comparer.config.secrets import Dsn
+from db_schema_comparer.errors import ConnectionFailed
+from db_schema_comparer.runner import ConnectionStatus, check_connection
 
 SOURCE = SourceRef(label="prod", dsn_env="PROD_DSN")
 DSN = Dsn("postgresql://u:secret@h:5432/invoicing", env_name="PROD_DSN")
@@ -21,7 +21,7 @@ DSN = Dsn("postgresql://u:secret@h:5432/invoicing", env_name="PROD_DSN")
 def test_a_failure_is_reported_as_a_result_not_raised():
     # The GUI shows one row per source; one unreachable host must not abort the others.
     with mock.patch(
-        "cumo_schema_comparer.runner.open_connection",
+        "db_schema_comparer.runner.open_connection",
         side_effect=ConnectionFailed("prod: cannot connect (host=h, port=5432)"),
     ):
         status = check_connection(SOURCE, DSN)
@@ -33,7 +33,7 @@ def test_a_failure_is_reported_as_a_result_not_raised():
 
 def test_the_failure_text_never_contains_a_credential():
     with mock.patch(
-        "cumo_schema_comparer.runner.open_connection",
+        "db_schema_comparer.runner.open_connection",
         side_effect=ConnectionFailed("prod: cannot connect (host=h, port=5432, source=$PROD_DSN)"),
     ):
         status = check_connection(SOURCE, DSN)
@@ -54,9 +54,9 @@ def test_a_successful_check_reports_the_server_and_schemas():
     introspector.locate_changelog.return_value = []
 
     with (
-        mock.patch("cumo_schema_comparer.runner.open_connection"),
-        mock.patch("cumo_schema_comparer.runner.Introspector", return_value=introspector),
-        mock.patch("cumo_schema_comparer.runner.server_features"),
+        mock.patch("db_schema_comparer.runner.open_connection"),
+        mock.patch("db_schema_comparer.runner.Introspector", return_value=introspector),
+        mock.patch("db_schema_comparer.runner.server_features"),
     ):
         status = check_connection(SOURCE, DSN)
 
@@ -71,7 +71,7 @@ def test_a_successful_check_reports_the_server_and_schemas():
 
 
 def test_a_located_changelog_is_reported_with_its_count_and_tag():
-    from cumo_schema_comparer.model.changelog import ChangelogLocation, ChangelogState
+    from db_schema_comparer.model.changelog import ChangelogLocation, ChangelogState
     from tests.support.builders import changeset
 
     location = ChangelogLocation(schema="cumo-invoicing", table="DATABASECHANGELOG")
@@ -92,9 +92,9 @@ def test_a_located_changelog_is_reported_with_its_count_and_tag():
     )
 
     with (
-        mock.patch("cumo_schema_comparer.runner.open_connection"),
-        mock.patch("cumo_schema_comparer.runner.Introspector", return_value=introspector),
-        mock.patch("cumo_schema_comparer.runner.server_features"),
+        mock.patch("db_schema_comparer.runner.open_connection"),
+        mock.patch("db_schema_comparer.runner.Introspector", return_value=introspector),
+        mock.patch("db_schema_comparer.runner.server_features"),
     ):
         status = check_connection(SOURCE, DSN)
 
@@ -106,7 +106,7 @@ def test_a_located_changelog_is_reported_with_its_count_and_tag():
 
 def test_several_changelog_candidates_are_reported_as_ambiguous():
     # Guessing would make the answer depend on catalog ordering.
-    from cumo_schema_comparer.model.changelog import ChangelogLocation
+    from db_schema_comparer.model.changelog import ChangelogLocation
 
     introspector = mock.MagicMock()
     introspector.server_info.return_value = {
@@ -123,9 +123,9 @@ def test_several_changelog_candidates_are_reported_as_ambiguous():
     ]
 
     with (
-        mock.patch("cumo_schema_comparer.runner.open_connection"),
-        mock.patch("cumo_schema_comparer.runner.Introspector", return_value=introspector),
-        mock.patch("cumo_schema_comparer.runner.server_features"),
+        mock.patch("db_schema_comparer.runner.open_connection"),
+        mock.patch("db_schema_comparer.runner.Introspector", return_value=introspector),
+        mock.patch("db_schema_comparer.runner.server_features"),
     ):
         status = check_connection(SOURCE, DSN)
 
@@ -137,7 +137,7 @@ def test_several_changelog_candidates_are_reported_as_ambiguous():
 
 
 def test_a_configured_changelog_location_is_used_instead_of_searching():
-    from cumo_schema_comparer.model.changelog import ChangelogState
+    from db_schema_comparer.model.changelog import ChangelogState
 
     source = SourceRef(
         label="qa",
@@ -156,9 +156,9 @@ def test_a_configured_changelog_location_is_used_instead_of_searching():
     introspector.changelog_state.return_value = ChangelogState(location=None)
 
     with (
-        mock.patch("cumo_schema_comparer.runner.open_connection"),
-        mock.patch("cumo_schema_comparer.runner.Introspector", return_value=introspector),
-        mock.patch("cumo_schema_comparer.runner.server_features"),
+        mock.patch("db_schema_comparer.runner.open_connection"),
+        mock.patch("db_schema_comparer.runner.Introspector", return_value=introspector),
+        mock.patch("db_schema_comparer.runner.server_features"),
     ):
         check_connection(source, DSN)
 

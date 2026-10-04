@@ -293,7 +293,7 @@ def _object_to_json(key: ObjectKey, value: Any) -> dict[str, Any]:
 def _nested_element_types(cls: type) -> dict[str, type]:
     """Tuple fields whose elements are themselves dataclasses, and that element type.
 
-    An index's keys are a tuple of :class:`~cumo_schema_comparer.model.objects.IndexKey`, so the
+    An index's keys are a tuple of :class:`~db_schema_comparer.model.objects.IndexKey`, so the
     JSON form has to nest and the round trip has to rebuild them. Resolved from the annotations
     rather than by inspecting values, so an empty tuple round-trips correctly too.
     """
