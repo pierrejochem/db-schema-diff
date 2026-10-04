@@ -456,11 +456,17 @@ export component ResultsTab inherits ScrollView {
                                     border-radius: Tokens.radius-subtle;
                                     background: line.kind == "added" || line.kind == "removed"
                                         ? root.diff-colour(line.kind).with-alpha(0.12) : transparent;
-                                    Text {
-                                        text: line.text;
-                                        font-family: Tokens.family-mono;
-                                        wrap: no-wrap;
-                                        color: root.diff-colour(line.kind);
+                                    // A layout, not a bare child: Slint centres a child that sets no
+                                    // x, which put a short line in the middle of its bar, and a child
+                                    // placed by hand gives the bar no height.
+                                    HorizontalLayout {
+                                        alignment: start;
+                                        Text {
+                                            text: line.text;
+                                            font-family: Tokens.family-mono;
+                                            wrap: no-wrap;
+                                            color: root.diff-colour(line.kind);
+                                        }
                                     }
                                 }
                             }
