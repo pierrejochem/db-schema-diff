@@ -152,18 +152,20 @@ jobs:
 
       # Slint's Linux wheel links against system libraries the runner image does not ship; without
       # libinput the very first `import slint` fails at collection, not at a test.
-      - run: sudo apt-get update && sudo apt-get install -y libinput10 libxkbcommon0 libfontconfig1 libgl1
+      - run: sudo apt-get update && sudo apt-get install -y libinput10 libxkbcommon0 libfontconfig1 libgl1 xvfb
 
       # --pre is required: every slint Python release is a pre-release. `dev` is not optional
       # either -- without pytest-asyncio the session tests fail rather than skip.
       - run: pip install --pre -e '.[dev,gui]'
 
-      # Headless: slint.load_file instantiates without a display, so no xvfb is needed.
-      #
+      # A runner has no display, and without one Slint falls back to the Linux framebuffer backend
+      # and fails to open /dev/dri. A virtual X server and the software renderer give it a window
+      # to instantiate against.
       # The GUI carries its own coverage floor, because the default configuration omits it: the
       # `unit` matrix includes 3.11, where slint cannot be installed and every GUI test skips.
       # Measured at 93.32% when the floor was set.
       - run: >-
+          xvfb-run -a env SLINT_BACKEND=winit-software
           pytest tests/unit/gui -v
           --cov --cov-config=.coveragerc-gui
           --cov-report=term-missing --cov-fail-under=90
